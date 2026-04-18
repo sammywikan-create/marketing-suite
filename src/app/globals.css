@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-primary: #1A237E;
+  --color-primary-dark: #0D1557;
+  --color-primary-light: #3949AB;
+  --color-primary-50: #E8EAF6;
+  --color-primary-100: #C5CAE9;
+  --color-accent: #FF6F00;
+  --color-success: #2E7D32;
+  --color-warning: #F9A825;
+  --color-danger: #C62828;
+  --color-background: #F5F7FA;
+  --color-foreground: #1E293B;
+  --color-card: #FFFFFF;
+  --color-sidebar: #1A237E;
+  --color-sidebar-hover: #283593;
+  --color-muted: #64748B;
+  --color-border: #E2E8F0;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+@media print {
+  body { background: white !important; }
+  aside, nav, .print\:hidden, button, [class*="AIAssistant"] { display: none !important; }
+  .print\:block { display: block !important; }
+  .print\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  main { overflow: visible !important; }
+  table { font-size: 10px !important; }
+  input { border: none !important; background: transparent !important; }
+  @page { size: A4 landscape; margin: 10mm; }
+}
