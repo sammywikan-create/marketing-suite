@@ -53,6 +53,7 @@ const tabGroups: TabGroup[] = [
       { key: "gmv-checklist", label: "Checklist Evaluasi", icon: <ClipboardCheck size={18} /> },
       { key: "gmv-optimasi", label: "Optimasi Kreatif", icon: <Wrench size={18} /> },
       { key: "gmv-kalkulator", label: "ROI Calculator", icon: <Calculator size={18} /> },
+      { key: "product-cards", label: "📦 Kartu Produk", icon: <Package size={18} /> },
     ],
   },
   {

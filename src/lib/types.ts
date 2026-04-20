@@ -171,7 +171,8 @@ export type TabKey =
   | "affiliate"
   | "report-builder"
   | "live-analytics"
-  | "gmax-overview";
+  | "gmax-overview"
+  | "product-cards";
 
 export interface TabConfig {
   key: TabKey;

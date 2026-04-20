@@ -267,6 +267,124 @@ ALTER TABLE live_core_stats ALTER COLUMN gpm TYPE decimal(10,2);
 ALTER TABLE live_core_stats ALTER COLUMN ctr_live TYPE decimal(8,4);
 ALTER TABLE live_core_stats ALTER COLUMN order_per_click TYPE decimal(8,4);
 ALTER TABLE live_core_stats ALTER COLUMN avg_watch_time TYPE decimal(8,2);
+
+-- ═══════════════════════════════════════════════════
+-- 9. PRODUCT CARDS (Kartu Produk)
+-- ═══════════════════════════════════════════════════
+
+-- TABEL 1: Master daftar produk
+CREATE TABLE IF NOT EXISTS product_cards (
+  id                uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  store_id          uuid REFERENCES stores(id) ON DELETE CASCADE,
+  product_id        varchar(30) NOT NULL,
+  product_name      varchar(500) NOT NULL,
+  product_image_url varchar(500),
+  status            varchar(20) DEFAULT 'active',
+  created_at        timestamptz DEFAULT now(),
+  updated_at        timestamptz DEFAULT now(),
+  UNIQUE(store_id, product_id)
+);
+
+ALTER TABLE product_cards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON product_cards;
+CREATE POLICY "Allow all for anon" ON product_cards FOR ALL USING (true) WITH CHECK (true);
+
+-- TABEL 2: Performa per produk per periode
+CREATE TABLE IF NOT EXISTS product_card_stats (
+  id                           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  store_id                     uuid REFERENCES stores(id),
+  product_id                   varchar(30) NOT NULL,
+  period_start                 date NOT NULL,
+  period_end                   date NOT NULL,
+  period_type                  varchar(10) DEFAULT 'monthly',
+  channel_source               varchar(30) DEFAULT 'product_card',
+  penonton                     int DEFAULT 0,
+  tayangan                     int DEFAULT 0,
+  impresi_unik                 int DEFAULT 0,
+  perolehan_impresi            int DEFAULT 0,
+  klik_unik                    int DEFAULT 0,
+  klik                         int DEFAULT 0,
+  pesanan_sku                  int DEFAULT 0,
+  pembeli                      int DEFAULT 0,
+  produk_terjual               int DEFAULT 0,
+  add_to_cart                  int DEFAULT 0,
+  klik_to_cart                 int DEFAULT 0,
+  gmv                          bigint DEFAULT 0,
+  gmv_from_content             bigint DEFAULT 0,
+  gmv_avg_per_buyer            bigint DEFAULT 0,
+  refund_amount                bigint DEFAULT 0,
+  pesanan_refund               int DEFAULT 0,
+  rate_tayangan_to_klik        decimal(8,6) DEFAULT 0,
+  rate_tayangan_to_pembayaran  decimal(8,6) DEFAULT 0,
+  rate_klik_to_cart            decimal(8,6) DEFAULT 0,
+  rate_klik_to_pembayaran      decimal(8,6) DEFAULT 0,
+  rate_cart_to_pembayaran      decimal(8,6) DEFAULT 0,
+  rate_pesanan_per_klik        decimal(8,6) DEFAULT 0,
+  source            varchar(20) DEFAULT 'excel_import',
+  import_batch_id   uuid,
+  created_at        timestamptz DEFAULT now(),
+  UNIQUE(store_id, product_id, period_start, period_end, channel_source)
+);
+
+ALTER TABLE product_card_stats ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON product_card_stats;
+CREATE POLICY "Allow all for anon" ON product_card_stats FOR ALL USING (true) WITH CHECK (true);
+
+-- TABEL 3: Traffic harian agregat semua produk
+CREATE TABLE IF NOT EXISTS product_card_daily_traffic (
+  id                           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  store_id                     uuid REFERENCES stores(id),
+  date                         date NOT NULL,
+  channel_source               varchar(30) NOT NULL DEFAULT 'product_card',
+  tayangan                     int DEFAULT 0,
+  penonton                     int DEFAULT 0,
+  klik                         int DEFAULT 0,
+  klik_unik                    int DEFAULT 0,
+  pembeli                      int DEFAULT 0,
+  pesanan_sku                  int DEFAULT 0,
+  add_to_cart                  int DEFAULT 0,
+  klik_to_cart                 int DEFAULT 0,
+  pesanan_refund               int DEFAULT 0,
+  gmv                          bigint DEFAULT 0,
+  gmv_from_content             bigint DEFAULT 0,
+  gmv_avg_per_buyer            bigint DEFAULT 0,
+  refund_amount                bigint DEFAULT 0,
+  rate_tayangan_to_klik        decimal(8,6) DEFAULT 0,
+  rate_tayangan_to_pembayaran  decimal(8,6) DEFAULT 0,
+  rate_klik_to_cart            decimal(8,6) DEFAULT 0,
+  rate_klik_to_pembayaran      decimal(8,6) DEFAULT 0,
+  rate_cart_to_pembayaran      decimal(8,6) DEFAULT 0,
+  rate_pesanan_per_klik        decimal(8,6) DEFAULT 0,
+  source            varchar(20) DEFAULT 'excel_import',
+  created_at        timestamptz DEFAULT now(),
+  UNIQUE(store_id, date, channel_source)
+);
+
+ALTER TABLE product_card_daily_traffic ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON product_card_daily_traffic;
+CREATE POLICY "Allow all for anon" ON product_card_daily_traffic FOR ALL USING (true) WITH CHECK (true);
+
+-- TABEL 4: Log setiap kali upload Excel
+CREATE TABLE IF NOT EXISTS product_card_import_logs (
+  id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  store_id     uuid REFERENCES stores(id),
+  filename     varchar(300),
+  file_type    varchar(30),
+  period       varchar(20),
+  total_rows   int DEFAULT 0,
+  status       varchar(20) DEFAULT 'success',
+  error_log    jsonb,
+  imported_at  timestamptz DEFAULT now()
+);
+
+ALTER TABLE product_card_import_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON product_card_import_logs;
+CREATE POLICY "Allow all for anon" ON product_card_import_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- Index untuk performa query
+CREATE INDEX IF NOT EXISTS idx_pc_stats_store  ON product_card_stats(store_id, channel_source, period_start DESC);
+CREATE INDEX IF NOT EXISTS idx_pc_daily_store  ON product_card_daily_traffic(store_id, channel_source, date DESC);
+CREATE INDEX IF NOT EXISTS idx_pc_stats_produk ON product_card_stats(product_id, period_start DESC);
 ALTER TABLE live_sessions ALTER COLUMN ctr TYPE decimal(8,4);
 ALTER TABLE live_sessions ALTER COLUMN order_per_click TYPE decimal(8,4);
 ALTER TABLE live_sessions ALTER COLUMN avg_watch_time TYPE decimal(8,2);
