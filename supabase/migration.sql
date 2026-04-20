@@ -221,6 +221,47 @@ ALTER TABLE live_sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all for anon" ON live_sessions;
 CREATE POLICY "Allow all for anon" ON live_sessions FOR ALL USING (true) WITH CHECK (true);
 
+-- 7. GMAX CAMPAIGNS
+CREATE TABLE IF NOT EXISTS gmax_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID REFERENCES stores(id) ON DELETE CASCADE,
+  camp_name TEXT NOT NULL,
+  camp_code TEXT,
+  campaign_type TEXT DEFAULT 'ads',          -- ads | promo | live | bundle | other
+  budget_set DECIMAL(14,2) DEFAULT 0,
+  roi_target DECIMAL(6,2) DEFAULT 3.0,
+  status TEXT DEFAULT 'active',              -- active | paused | completed
+  start_date DATE,
+  end_date DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE gmax_campaigns ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON gmax_campaigns;
+CREATE POLICY "Allow all for anon" ON gmax_campaigns FOR ALL USING (true) WITH CHECK (true);
+
+-- 8. GMAX DAILY
+CREATE TABLE IF NOT EXISTS gmax_daily (
+  id BIGSERIAL PRIMARY KEY,
+  store_id UUID REFERENCES stores(id) ON DELETE CASCADE,
+  campaign_id UUID REFERENCES gmax_campaigns(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  budget_spent DECIMAL(14,2) DEFAULT 0,
+  gmv DECIMAL(14,2) DEFAULT 0,
+  roi DECIMAL(8,4) DEFAULT 0,
+  cac DECIMAL(8,4) DEFAULT 0,
+  orders INT DEFAULT 0,
+  clicks INT DEFAULT 0,
+  impressions INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(campaign_id, date)
+);
+
+ALTER TABLE gmax_daily ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON gmax_daily;
+CREATE POLICY "Allow all for anon" ON gmax_daily FOR ALL USING (true) WITH CHECK (true);
+
 -- FIX: Ubah kolom yang bisa berisi desimal dari INT/REAL → DECIMAL
 ALTER TABLE live_core_stats ALTER COLUMN gpm TYPE decimal(10,2);
 ALTER TABLE live_core_stats ALTER COLUMN ctr_live TYPE decimal(8,4);

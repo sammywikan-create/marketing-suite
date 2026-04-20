@@ -170,7 +170,8 @@ export type TabKey =
   | "okr"
   | "affiliate"
   | "report-builder"
-  | "live-analytics";
+  | "live-analytics"
+  | "gmax-overview";
 
 export interface TabConfig {
   key: TabKey;

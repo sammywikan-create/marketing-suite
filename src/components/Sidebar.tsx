@@ -56,6 +56,12 @@ const tabGroups: TabGroup[] = [
     ],
   },
   {
+    title: "GMV Maximizer",
+    items: [
+      { key: "gmax-overview", label: "🚀 GMAX Overview", icon: <DollarSign size={18} /> },
+    ],
+  },
+  {
     title: "OKR",
     items: [
       { key: "okr", label: "🎯 OKR Framework", icon: <Target size={18} /> },
