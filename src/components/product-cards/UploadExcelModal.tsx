@@ -16,15 +16,26 @@ interface ParsedFile {
   error?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface ParsedFileResult {
+  fileType: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any[];
+  filename: string;
+  period_start?: string;
+  period_end?: string;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   storeId: string;
   storeName: string;
   onImportDone: () => void;
+  onParsedData?: (results: ParsedFileResult[]) => void;
 }
 
-export default function UploadExcelModal({ open, onClose, storeId, storeName, onImportDone }: Props) {
+export default function UploadExcelModal({ open, onClose, storeId, storeName, onImportDone, onParsedData }: Props) {
   const [files, setFiles] = useState<ParsedFile[]>([]);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string>("");
@@ -104,6 +115,18 @@ export default function UploadExcelModal({ open, onClose, storeId, storeName, on
       }
 
       setImportResult(`✅ ${imported} file berhasil diimport (${totalRows.toLocaleString("id-ID")} baris data)`);
+
+      // Pass parsed data to parent for immediate local-state display
+      if (onParsedData) {
+        onParsedData(validFiles.map(f => ({
+          fileType: f.parsed.fileType,
+          data: f.parsed.data,
+          filename: f.filename,
+          period_start: f.parsed.period_start,
+          period_end: f.parsed.period_end,
+        })));
+      }
+
       onImportDone();
     } catch (err) {
       setImportResult(`❌ Error: ${err instanceof Error ? err.message : "Gagal import"}`);

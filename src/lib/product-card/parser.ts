@@ -6,6 +6,12 @@ export function parsePercent(val: unknown): number {
   return parseFloat(String(val).replace('%', '').replace(',', '.').trim()) / 100;
 }
 
+// Helper: bersihkan format angka Indonesia: "1.234" → 1234, "1.234,56" → 1234.56
+export function cleanNumber(val: unknown): number {
+  if (!val) return 0;
+  return Number(String(val).replace(/\./g, '').replace(',', '.')) || 0;
+}
+
 // Helper: extract date range from first row of Excel
 function extractDateRange(rows: unknown[][]): { start: string; end: string } {
   const raw = String(rows[0]?.[0] || '');
@@ -25,7 +31,7 @@ export type ExcelFileType =
 
 export function detectFileType(workbook: XLSX.WorkBook, filename: string): ExcelFileType {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true });
   const h = (rows[2] || []) as string[];
   const name = filename.toLowerCase();
 
@@ -57,7 +63,7 @@ export const FILE_TYPE_LABELS: Record<ExcelFileType, string> = {
 // PARSER 1: Products-Card-List.xlsx
 export function parseProductCardList(workbook: XLSX.WorkBook) {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true });
   const { start: period_start, end: period_end } = extractDateRange(rows);
 
   const data = [];
@@ -70,21 +76,21 @@ export function parseProductCardList(workbook: XLSX.WorkBook) {
       channel_source: 'product_card',
       period_start, period_end,
       period_type: 'monthly',
-      penonton: Number(r[2]) || 0,
-      tayangan: Number(r[3]) || 0,
-      klik_unik: Number(r[4]) || 0,
-      klik: Number(r[5]) || 0,
-      pesanan_sku: Number(r[6]) || 0,
-      pembeli: Number(r[7]) || 0,
-      add_to_cart: Number(r[8]) || 0,
-      klik_to_cart: Number(r[9]) || 0,
-      gmv: Number(r[10]) || 0,
+      penonton: cleanNumber(r[2]),
+      tayangan: cleanNumber(r[3]),
+      klik_unik: cleanNumber(r[4]),
+      klik: cleanNumber(r[5]),
+      pesanan_sku: cleanNumber(r[6]),
+      pembeli: cleanNumber(r[7]),
+      add_to_cart: cleanNumber(r[8]),
+      klik_to_cart: cleanNumber(r[9]),
+      gmv: cleanNumber(r[10]),
       rate_tayangan_to_pembayaran: parsePercent(r[11]),
       rate_tayangan_to_klik: parsePercent(r[12]),
       rate_klik_to_cart: parsePercent(r[13]),
       rate_klik_to_pembayaran: parsePercent(r[14]),
       rate_cart_to_pembayaran: parsePercent(r[15]),
-      gmv_from_content: Number(r[16]) || 0,
+      gmv_from_content: cleanNumber(r[16]),
     });
   }
   return { fileType: 'PRODUCT_CARD_LIST' as ExcelFileType, period_start, period_end, data };
@@ -93,68 +99,82 @@ export function parseProductCardList(workbook: XLSX.WorkBook) {
 // PARSER 2: Product-Card-Traffic-Stats.xlsx
 export function parseProductCardTraffic(workbook: XLSX.WorkBook) {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true });
+
+  console.log('parseProductCardTraffic - Total baris:', rows.length);
+  console.log('Header (baris 2):', rows[2]);
+  console.log('Data pertama (baris 3):', rows[3]);
 
   const data = [];
   for (let i = 3; i < rows.length; i++) {
     const r = rows[i] as unknown[];
-    if (!r[0]) continue;
+    if (!r || !r[0]) continue;
+    const dateStr = String(r[0]).trim();
+    if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
     data.push({
-      date: String(r[0]),
+      date: dateStr,
       channel_source: 'product_card',
-      tayangan: Number(r[1]) || 0,
-      klik: Number(r[2]) || 0,
-      pembeli: Number(r[3]) || 0,
-      pesanan_sku: Number(r[4]) || 0,
-      gmv: Number(r[5]) || 0,
+      tayangan: cleanNumber(r[1]),
+      klik: cleanNumber(r[2]),
+      pembeli: cleanNumber(r[3]),
+      pesanan_sku: cleanNumber(r[4]),
+      gmv: cleanNumber(r[5]),
       rate_cart_to_pembayaran: parsePercent(r[6]),
-      penonton: Number(r[7]) || 0,
-      klik_to_cart: Number(r[8]) || 0,
-      klik_unik: Number(r[9]) || 0,
-      add_to_cart: Number(r[10]) || 0,
+      penonton: cleanNumber(r[7]),
+      klik_to_cart: cleanNumber(r[8]),
+      klik_unik: cleanNumber(r[9]),
+      add_to_cart: cleanNumber(r[10]),
       rate_klik_to_cart: parsePercent(r[11]),
       rate_tayangan_to_klik: parsePercent(r[12]),
       rate_tayangan_to_pembayaran: parsePercent(r[13]),
       rate_klik_to_pembayaran: parsePercent(r[14]),
-      gmv_from_content: Number(r[15]) || 0,
+      gmv_from_content: cleanNumber(r[15]),
     });
   }
+  console.log('parseProductCardTraffic - Baris berhasil diparse:', data.length);
   return { fileType: 'PRODUCT_CARD_TRAFFIC' as ExcelFileType, data };
 }
 
 // PARSER 3 & 4: Core-Stats.xlsx & Channel-Stats-Search.xlsx
 export function parseShopTabDaily(workbook: XLSX.WorkBook, channelSource: string) {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true });
+
+  console.log('parseShopTabDaily - channel:', channelSource, 'Total baris:', rows.length);
+  console.log('Header (baris 2):', rows[2]);
+  console.log('Data pertama (baris 3):', rows[3]);
 
   const data = [];
   for (let i = 3; i < rows.length; i++) {
     const r = rows[i] as unknown[];
-    if (!r[0]) continue;
+    if (!r || !r[0]) continue;
+    const dateStr = String(r[0]).trim();
+    if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
     data.push({
-      date: String(r[0]),
+      date: dateStr,
       channel_source: channelSource,
-      gmv: Number(r[1]) || 0,
-      gmv_avg_per_buyer: Number(r[2]) || 0,
-      refund_amount: Number(r[3]) || 0,
-      penonton: Number(r[4]) || 0,
-      klik_unik: Number(r[5]) || 0,
-      add_to_cart: Number(r[6]) || 0,
-      pesanan_sku: Number(r[7]) || 0,
-      pembeli: Number(r[8]) || 0,
-      pesanan_refund: Number(r[9]) || 0,
+      gmv: cleanNumber(r[1]),
+      gmv_avg_per_buyer: cleanNumber(r[2]),
+      refund_amount: cleanNumber(r[3]),
+      penonton: cleanNumber(r[4]),
+      klik_unik: cleanNumber(r[5]),
+      add_to_cart: cleanNumber(r[6]),
+      pesanan_sku: cleanNumber(r[7]),
+      pembeli: cleanNumber(r[8]),
+      pesanan_refund: cleanNumber(r[9]),
       rate_tayangan_to_klik: parsePercent(r[10]),
       rate_pesanan_per_klik: parsePercent(r[11]),
       rate_tayangan_to_pembayaran: parsePercent(r[12]),
     });
   }
+  console.log('parseShopTabDaily - Baris berhasil diparse:', data.length);
   return { fileType: channelSource as ExcelFileType, data };
 }
 
 // PARSER 5: Shopping_Center_Overview_Product.xlsx
 export function parseShopTabProduct(workbook: XLSX.WorkBook) {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true });
   const { start: period_start, end: period_end } = extractDateRange(rows);
 
   const data = [];
@@ -167,15 +187,15 @@ export function parseShopTabProduct(workbook: XLSX.WorkBook) {
       channel_source: 'shop_tab_shopping_center',
       period_start, period_end,
       period_type: 'monthly',
-      tayangan: Number(r[2]) || 0,
-      perolehan_impresi: Number(r[3]) || 0,
-      impresi_unik: Number(r[4]) || 0,
-      klik_unik: Number(r[5]) || 0,
+      tayangan: cleanNumber(r[2]),
+      perolehan_impresi: cleanNumber(r[3]),
+      impresi_unik: cleanNumber(r[4]),
+      klik_unik: cleanNumber(r[5]),
       rate_tayangan_to_klik: parsePercent(r[6]),
-      pembeli: Number(r[7]) || 0,
+      pembeli: cleanNumber(r[7]),
       rate_klik_to_pembayaran: parsePercent(r[8]),
-      produk_terjual: Number(r[9]) || 0,
-      gmv: Number(r[10]) || 0,
+      produk_terjual: cleanNumber(r[9]),
+      gmv: cleanNumber(r[10]),
     });
   }
   return { fileType: 'SHOP_TAB_PRODUCT' as ExcelFileType, period_start, period_end, data };

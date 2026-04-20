@@ -16,6 +16,7 @@ import ConversionBenchmarkTable from "@/components/product-cards/ConversionBench
 import ProductInsightCards from "@/components/product-cards/ProductInsightCards";
 import ChannelComparisonSection from "@/components/product-cards/ChannelComparisonSection";
 import UploadExcelModal from "@/components/product-cards/UploadExcelModal";
+import type { ParsedFileResult } from "@/components/product-cards/UploadExcelModal";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
@@ -90,6 +91,62 @@ export default function ProductCardsScreen() {
 
   useEffect(() => { loadData(); }, [loadData, refreshKey]);
 
+  // ─── Handle parsed data from upload modal (local-state first) ──
+  const handleParsedData = useCallback((results: ParsedFileResult[]) => {
+    for (const r of results) {
+      const ft = r.fileType;
+      const d = r.data;
+      console.log(`[handleParsedData] fileType=${ft}, rows=${d.length}`);
+
+      if (ft === 'PRODUCT_CARD_TRAFFIC') {
+        setKpDaily(prev => {
+          const merged = [...prev];
+          for (const row of d) {
+            const idx = merged.findIndex(m => m.date === row.date && m.channel_source === row.channel_source);
+            if (idx >= 0) merged[idx] = row; else merged.push(row);
+          }
+          return merged.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        });
+      } else if (ft === 'PRODUCT_CARD_LIST') {
+        setKpProducts(prev => {
+          const merged = [...prev];
+          for (const row of d) {
+            const idx = merged.findIndex(m => m.product_id === row.product_id && m.channel_source === row.channel_source);
+            if (idx >= 0) merged[idx] = row; else merged.push(row);
+          }
+          return merged;
+        });
+      } else if (ft === 'SHOP_TAB_CORE' || ft === 'shop_tab_all') {
+        setStCoreDaily(prev => {
+          const merged = [...prev];
+          for (const row of d) {
+            const idx = merged.findIndex(m => m.date === row.date);
+            if (idx >= 0) merged[idx] = row; else merged.push(row);
+          }
+          return merged.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        });
+      } else if (ft === 'SHOP_TAB_SEARCH' || ft === 'shop_tab_search') {
+        setStSearchDaily(prev => {
+          const merged = [...prev];
+          for (const row of d) {
+            const idx = merged.findIndex(m => m.date === row.date);
+            if (idx >= 0) merged[idx] = row; else merged.push(row);
+          }
+          return merged.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        });
+      } else if (ft === 'SHOP_TAB_PRODUCT') {
+        setStProducts(prev => {
+          const merged = [...prev];
+          for (const row of d) {
+            const idx = merged.findIndex(m => m.product_id === row.product_id);
+            if (idx >= 0) merged[idx] = row; else merged.push(row);
+          }
+          return merged;
+        });
+      }
+    }
+  }, []);
+
   const hasData = kpDaily.length > 0 || kpProducts.length > 0 || stCoreDaily.length > 0 || stProducts.length > 0;
 
   // ─── If viewing product detail ──────────────────────
@@ -129,6 +186,7 @@ export default function ProductCardsScreen() {
             storeId={storeId}
             storeName={activeStore.name}
             onImportDone={() => { setRefreshKey((k) => k + 1); }}
+            onParsedData={handleParsedData}
           />
         )}
       </div>
@@ -176,6 +234,7 @@ export default function ProductCardsScreen() {
           storeId={storeId}
           storeName={activeStore.name}
           onImportDone={() => { setRefreshKey((k) => k + 1); setShowUpload(false); }}
+          onParsedData={handleParsedData}
         />
       )}
     </div>
