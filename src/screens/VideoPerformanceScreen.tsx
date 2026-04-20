@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -54,7 +54,6 @@ export default function VideoPerformanceScreen() {
   const activeStore = getActiveStore();
   const activeStores = stores;
   const setRawFile = useRawFileStore((s) => s.setFile);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   // ─── VIEW MODE ──────────────────────────────────────
   const [viewMode, setViewMode] = useState<"gabungan" | string>("gabungan");
@@ -98,26 +97,40 @@ export default function VideoPerformanceScreen() {
     return items;
   }, [allVideoData, viewMode, selectedPeriod]);
 
-  // ─── UPLOAD ─────────────────────────────────────────
-  const handleUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // ─── UPLOAD (per-store) ─────────────────────────────
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadStoreId, setUploadStoreId] = useState<string>("");
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  const openUploadModal = useCallback(() => {
+    // Default to viewMode store if specific, otherwise first store
+    const defaultStore = viewMode !== "gabungan" ? viewMode : stores[0]?.id || "";
+    setUploadStoreId(defaultStore);
+    setUploadMsg("");
+    setShowUploadModal(true);
+  }, [viewMode, stores]);
+
+  const handleUploadForStore = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !activeStore) return;
-    setRawFile(activeStore.id, 'video', file);
+    const targetStore = stores.find((s) => s.id === uploadStoreId);
+    if (!file || !targetStore) return;
+    setRawFile(targetStore.id, 'video', file);
     const reader = new FileReader();
     reader.onload = (ev) => {
       const wb = XLSX.read(ev.target?.result, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
       const parsed = parseVideoPerformance(raw);
-      const dupIdx = activeStore.videoData.findIndex((m) => m.periodRaw === parsed.periodRaw);
+      const dupIdx = targetStore.videoData.findIndex((m) => m.periodRaw === parsed.periodRaw);
       if (dupIdx >= 0) {
-        if (!confirm(`Data periode "${parsed.periodRaw}" sudah ada. Ganti dengan data baru?`)) return;
+        if (!confirm(`Data periode "${parsed.periodRaw}" untuk "${targetStore.name}" sudah ada. Ganti dengan data baru?`)) return;
       }
-      saveVideoData(activeStore.id, parsed);
+      saveVideoData(targetStore.id, parsed);
+      setUploadMsg(`✅ ${parsed.videos.length} video berhasil diupload ke "${targetStore.name}" (${parsed.period})`);
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
-  }, [activeStore, saveVideoData]);
+  }, [stores, uploadStoreId, saveVideoData, setRawFile]);
 
   // ─── DELETE ─────────────────────────────────────────
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -170,18 +183,46 @@ export default function VideoPerformanceScreen() {
   // ─── EMPTY STATE ────────────────────────────────────
   if (allVideoData.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="w-24 h-24 rounded-full bg-blue-50 flex items-center justify-center mb-6">
-          <Video size={48} className="text-blue-500" />
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-6">
+          <Video size={40} className="text-blue-500" />
         </div>
         <h2 className="text-2xl font-bold mb-2">Upload Video Performance Report</h2>
-        <p className="text-gray-500 mb-6 max-w-md">
+        <p className="text-gray-500 mb-2 max-w-md">
           Export dari TikTok Seller Center → Kreator → Performa Video → Export Data
         </p>
-        <label className="cursor-pointer bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center gap-2">
-          <Upload size={20} /> Upload File Excel
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
-        </label>
+        <p className="text-sm text-gray-400 mb-8">Upload file Excel untuk <strong>masing-masing toko</strong> agar data terpisah.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg">
+          {stores.map((store) => (
+            <div key={store.id} className="bg-white rounded-2xl border border-gray-200 p-5 text-center">
+              <div className="text-3xl mb-2">{store.avatar}</div>
+              <h3 className="font-bold text-sm mb-1">{store.name}</h3>
+              <p className="text-xs text-gray-400 mb-3">
+                {(store.videoData || []).length > 0
+                  ? `✅ ${store.videoData.reduce((a: number, d: VideoPerformanceData) => a + d.videos.length, 0)} video`
+                  : "Belum ada data"}
+              </p>
+              <label className="cursor-pointer inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+                <Upload size={14} /> Upload untuk {store.name.replace("Fresh Vision Official", "FVO").replace("Freshvision Shop", "FVS")}
+                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setRawFile(store.id, 'video', file);
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const wb = XLSX.read(ev.target?.result, { type: "array" });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                    const parsed = parseVideoPerformance(raw);
+                    saveVideoData(store.id, parsed);
+                  };
+                  reader.readAsArrayBuffer(file);
+                  e.target.value = "";
+                }} />
+              </label>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -202,10 +243,10 @@ export default function VideoPerformanceScreen() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition">
+            <button onClick={openUploadModal}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
               📤 Upload
-              <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
-            </label>
+            </button>
             <button onClick={openDeleteDialog} disabled={allVideoData.length === 0}
               className="flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-40">
               🗑️ Hapus Data
@@ -277,6 +318,94 @@ export default function VideoPerformanceScreen() {
               <button onClick={handleDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition">🗑️ Ya, Hapus</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ═══ UPLOAD MODAL ═══ */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowUploadModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">📤</div>
+              <h3 className="text-lg font-bold text-gray-900">Upload Video Performance</h3>
+              <p className="text-xs text-gray-400 mt-1">Pilih toko, lalu upload file Excel-nya</p>
+            </div>
+
+            {/* Store selector */}
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Pilih Toko</label>
+              <select value={uploadStoreId} onChange={(e) => { setUploadStoreId(e.target.value); setUploadMsg(""); }}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                {stores.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Per-store data status */}
+            <div className="mb-4 space-y-2">
+              <label className="block text-xs font-medium text-gray-500">Status Data per Toko</label>
+              {stores.map((s) => {
+                const vd = s.videoData || [];
+                const totalVids = vd.reduce((a: number, d: VideoPerformanceData) => a + d.videos.length, 0);
+                return (
+                  <div key={s.id} className={`flex items-center justify-between p-2.5 rounded-xl text-xs border ${s.id === uploadStoreId ? "border-blue-300 bg-blue-50" : "border-gray-100 bg-gray-50"}`}>
+                    <div className="flex items-center gap-2">
+                      <span>{s.avatar}</span>
+                      <span className="font-medium">{s.name}</span>
+                    </div>
+                    <div>
+                      {vd.length > 0
+                        ? <span className="text-green-600 font-medium">✅ {totalVids} video · {vd.length} periode</span>
+                        : <span className="text-gray-400">⬜ Belum ada data</span>
+                      }
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Upload area */}
+            <label className="cursor-pointer flex flex-col items-center justify-center border-2 border-dashed border-blue-300 rounded-xl p-6 hover:bg-blue-50 transition mb-3">
+              <Upload size={28} className="text-blue-500 mb-2" />
+              <span className="text-sm font-medium text-blue-700">Klik untuk upload file Excel</span>
+              <span className="text-[11px] text-gray-400 mt-1">
+                Upload untuk: <strong>{stores.find((s) => s.id === uploadStoreId)?.name || "—"}</strong>
+              </span>
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUploadForStore} />
+            </label>
+
+            {/* Success message */}
+            {uploadMsg && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-3">
+                <p className="text-xs text-green-700 font-medium text-center">{uploadMsg}</p>
+              </div>
+            )}
+
+            <button onClick={() => setShowUploadModal(false)}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition">
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ PER-STORE DATA STATUS ═══ */}
+      {stores.some((s) => !(s.videoData || []).length) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm">⚠️</span>
+          <span className="text-sm text-amber-800 font-medium">
+            Data belum lengkap:
+          </span>
+          {stores.filter((s) => !(s.videoData || []).length).map((s) => (
+            <span key={s.id} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg font-medium">
+              {s.avatar} {s.name} — belum upload
+            </span>
+          ))}
+          <button onClick={openUploadModal}
+            className="ml-auto text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-blue-700 transition">
+            📤 Upload Sekarang
+          </button>
         </div>
       )}
 
