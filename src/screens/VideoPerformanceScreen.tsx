@@ -23,30 +23,80 @@ const STATUS_COLORS: Record<string, string> = {
   "⬜ NO SALES": "#9E9E9E",
 };
 
+const MONTH_NAMES_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+function formatPeriodVP(code: string): string {
+  if (!code || code === "all") return "Semua";
+  const [y, m] = code.split("-");
+  const mi = parseInt(m) - 1;
+  return mi >= 0 && mi < 12 ? `${MONTH_NAMES_ID[mi]} ${y}` : code;
+}
+
+const colorMap: Record<string, { bg: string; border: string; text: string; ring: string }> = {
+  blue: { bg: "bg-blue-50", border: "border-blue-100", text: "text-blue-700", ring: "bg-blue-100" },
+  green: { bg: "bg-green-50", border: "border-green-100", text: "text-green-700", ring: "bg-green-100" },
+  purple: { bg: "bg-purple-50", border: "border-purple-100", text: "text-purple-700", ring: "bg-purple-100" },
+  orange: { bg: "bg-orange-50", border: "border-orange-100", text: "text-orange-700", ring: "bg-orange-100" },
+  emerald: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700", ring: "bg-emerald-100" },
+  cyan: { bg: "bg-cyan-50", border: "border-cyan-100", text: "text-cyan-700", ring: "bg-cyan-100" },
+  indigo: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-700", ring: "bg-indigo-100" },
+  pink: { bg: "bg-pink-50", border: "border-pink-100", text: "text-pink-700", ring: "bg-pink-100" },
+  red: { bg: "bg-red-50", border: "border-red-100", text: "text-red-700", ring: "bg-red-100" },
+  rose: { bg: "bg-rose-50", border: "border-rose-100", text: "text-rose-700", ring: "bg-rose-100" },
+  amber: { bg: "bg-amber-50", border: "border-amber-100", text: "text-amber-700", ring: "bg-amber-100" },
+  gray: { bg: "bg-gray-50", border: "border-gray-100", text: "text-gray-700", ring: "bg-gray-100" },
+};
+
 // ══════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════
 export default function VideoPerformanceScreen() {
   const { getActiveStore, saveVideoData, deleteVideoData, stores, activeStoreId } = useStoreManager();
   const activeStore = getActiveStore();
+  const activeStores = stores;
   const setRawFile = useRawFileStore((s) => s.setFile);
-
-  const [allMonths, setAllMonths] = useState<VideoPerformanceData[]>([]);
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const [activeTab, setActiveTab] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Sync from store manager when active store changes
-  useEffect(() => {
-    if (activeStore) {
-      setAllMonths(activeStore.videoData);
-      setSelectedIdx(Math.max(0, activeStore.videoData.length - 1));
-    } else {
-      setAllMonths([]);
-      setSelectedIdx(0);
-    }
-  }, [activeStoreId, stores]);
+  // ─── VIEW MODE ──────────────────────────────────────
+  const [viewMode, setViewMode] = useState<"gabungan" | string>("gabungan");
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState(0);
 
+  // ─── COLLECT ALL VIDEO DATA ─────────────────────────
+  const allVideoData = useMemo(() => {
+    const result: { storeId: string; storeName: string; data: VideoPerformanceData }[] = [];
+    activeStores.forEach((store) => {
+      (store.videoData || []).forEach((d) => {
+        result.push({ storeId: store.id, storeName: store.name, data: d });
+      });
+    });
+    return result;
+  }, [stores, activeStoreId]);
+
+  // ─── ALL PERIODS (unique months) ────────────────────
+  const allPeriods = useMemo(() => {
+    const set = new Set<string>();
+    allVideoData.forEach(({ data }) => {
+      const raw = data.periodRaw?.split("~")[0]?.trim()?.slice(0, 7) || "";
+      if (raw) set.add(raw);
+    });
+    return [...set].sort();
+  }, [allVideoData]);
+
+  // ─── FILTERED VIDEOS ────────────────────────────────
+  const filteredVideos = useMemo(() => {
+    let items: (VideoPerformanceItem & { _storeId: string; _storeName: string; _period: string })[] = [];
+    allVideoData.forEach(({ storeId, storeName, data }) => {
+      if (viewMode !== "gabungan" && storeId !== viewMode) return;
+      const rawPeriod = data.periodRaw?.split("~")[0]?.trim()?.slice(0, 7) || "";
+      if (selectedPeriod !== "all" && rawPeriod !== selectedPeriod) return;
+      data.videos.forEach((v) => {
+        items.push({ ...v, _storeId: storeId, _storeName: storeName, _period: rawPeriod });
+      });
+    });
+    return items;
+  }, [allVideoData, viewMode, selectedPeriod]);
+
+  // ─── UPLOAD ─────────────────────────────────────────
   const handleUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeStore) return;
@@ -67,30 +117,56 @@ export default function VideoPerformanceScreen() {
     e.target.value = "";
   }, [activeStore, saveVideoData]);
 
-  const handleDeleteMonth = useCallback((idx: number) => {
-    if (!activeStore) return;
-    const m = allMonths[idx];
-    if (!confirm(`Hapus data periode "${m.period || m.periodRaw}"?`)) return;
-    deleteVideoData(activeStore.id, m.periodRaw);
-    setSelectedIdx((prev) => Math.min(prev, Math.max(allMonths.length - 2, 0)));
-  }, [allMonths, activeStore, deleteVideoData]);
+  // ─── DELETE ─────────────────────────────────────────
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteStore, setDeleteStore] = useState("");
+  const [deletePeriodRaw, setDeletePeriodRaw] = useState("");
 
-  const handleDeleteAll = useCallback(() => {
-    if (!activeStore) return;
-    if (!confirm("Hapus SEMUA data video performance? Tindakan ini tidak bisa dibatalkan.")) return;
-    activeStore.videoData.forEach((d) => deleteVideoData(activeStore.id, d.periodRaw));
-    setSelectedIdx(0);
-  }, [activeStore, deleteVideoData]);
+  const openDeleteDialog = useCallback(() => {
+    setDeleteStore(activeStore?.id || "");
+    setDeletePeriodRaw("");
+    setShowDeleteConfirm(true);
+  }, [activeStore]);
 
-  const data = allMonths[selectedIdx] || null;
-  const tabs = useMemo(() => {
-    const base = ["Dashboard", "Video Leaderboard", "Creator Comparison", "Kandidat Boost"];
-    if (allMonths.length >= 2) base.push("📈 Tren Bulanan");
-    return base;
-  }, [allMonths.length]);
+  const handleDelete = useCallback(() => {
+    if (!deleteStore) return;
+    const store = stores.find((s) => s.id === deleteStore);
+    if (!store) return;
+    if (deletePeriodRaw) {
+      deleteVideoData(deleteStore, deletePeriodRaw);
+    } else {
+      store.videoData.forEach((d) => deleteVideoData(deleteStore, d.periodRaw));
+    }
+    setShowDeleteConfirm(false);
+  }, [deleteStore, deletePeriodRaw, stores, deleteVideoData]);
 
-  // ── EMPTY STATE ──
-  if (!data) {
+  // ─── KPI ────────────────────────────────────────────
+  const kpi = useMemo(() => {
+    const vids = filteredVideos;
+    const n = vids.length || 1;
+    const withSales = vids.filter((v) => v.gmv > 0);
+    const nSales = withSales.length || 1;
+    return {
+      totalGMV: vids.reduce((a, v) => a + v.gmv, 0),
+      avgGPM: withSales.reduce((a, v) => a + v.gpm, 0) / nSales,
+      totalVV: vids.reduce((a, v) => a + v.vv, 0),
+      avgCTR: vids.reduce((a, v) => a + v.ctr, 0) / n,
+      avgOrderPerClick: vids.reduce((a, v) => a + v.ctor, 0) / n,
+      totalBuyers: vids.reduce((a, v) => a + v.uniqueBuyers, 0),
+      totalProducts: vids.reduce((a, v) => a + v.productsSold, 0),
+      totalOrders: vids.reduce((a, v) => a + v.videoOrders, 0),
+      totalLikes: vids.reduce((a, v) => a + v.likes, 0),
+      totalShares: vids.reduce((a, v) => a + v.shares, 0),
+      totalNewFollowers: vids.reduce((a, v) => a + v.newFollowers, 0),
+      avgWatchRate: vids.reduce((a, v) => a + v.watchRate, 0) / n,
+      totalVideos: vids.length,
+      totalCreators: new Set(vids.map((v) => v.creatorName)).size,
+      pctWithSales: vids.length > 0 ? (withSales.length / vids.length) * 100 : 0,
+    };
+  }, [filteredVideos]);
+
+  // ─── EMPTY STATE ────────────────────────────────────
+  if (allVideoData.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <div className="w-24 h-24 rounded-full bg-blue-50 flex items-center justify-center mb-6">
@@ -108,44 +184,173 @@ export default function VideoPerformanceScreen() {
     );
   }
 
+  const tabs = ["📈 Overview", "📅 Evaluasi Mingguan", "🎬 Videos", "👤 Kreator"];
+
   return (
     <div className="space-y-6">
-      {/* HEADER */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Video size={24} className="text-blue-600" /> Video Performance</h1>
-          <p className="text-sm text-gray-500">Periode: {data.period || data.periodRaw} · {data.summary.totalVideos} video · {data.summary.totalCreators} kreator</p>
+      {/* ═══ HEADER ═══ */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              🎥 Video Performance
+            </h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {kpi.totalVideos} video · {kpi.totalCreators} kreator
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition">
+              📤 Upload
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
+            </label>
+            <button onClick={openDeleteDialog} disabled={allVideoData.length === 0}
+              className="flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-40">
+              🗑️ Hapus Data
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors flex items-center gap-2">
-            <Upload size={16} /> Upload Baru
-            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
-          </label>
-          <button onClick={handleDeleteAll} className="px-4 py-2 rounded-lg text-sm font-semibold border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2" title="Hapus semua data">
-            <Trash2 size={16} /> Hapus Semua
-          </button>
+
+        {/* View Mode + Period */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+            <button onClick={() => setViewMode("gabungan")}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${viewMode === "gabungan" ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              🔀 Gabungan
+            </button>
+            {activeStores.map((store) => (
+              <button key={store.id} onClick={() => setViewMode(store.id)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${viewMode === store.id ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                🏪 {store.name.replace("Fresh Vision Official", "FVO").replace("Freshvision Shop", "FVS")}
+              </button>
+            ))}
+          </div>
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-1 flex-wrap">
+            <button onClick={() => setSelectedPeriod("all")}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${selectedPeriod === "all" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              📊 Semua
+            </button>
+            {allPeriods.map((m) => (
+              <button key={m} onClick={() => setSelectedPeriod(m)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${selectedPeriod === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                {formatPeriodVP(m)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* MONTH CHIPS */}
-      {allMonths.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
-          {allMonths.map((m, i) => (
-            <div key={m.periodRaw} className="flex items-center gap-1">
-              <button onClick={() => setSelectedIdx(i)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${i === selectedIdx ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                {m.period || m.periodRaw}
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteMonth(i); }}
-                className="p-1 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title={`Hapus ${m.period || m.periodRaw}`}>
-                <Trash2 size={12} />
-              </button>
+      {/* ═══ DELETE CONFIRMATION ═══ */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">⚠️</div>
+              <h3 className="text-lg font-bold text-gray-900">Hapus Data Video</h3>
             </div>
-          ))}
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Toko</label>
+              <select value={deleteStore} onChange={(e) => { setDeleteStore(e.target.value); setDeletePeriodRaw(""); }}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                {activeStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Periode</label>
+              <select value={deletePeriodRaw} onChange={(e) => setDeletePeriodRaw(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                <option value="">🗑️ Semua Periode</option>
+                {(stores.find((s) => s.id === deleteStore)?.videoData || []).map((d) => (
+                  <option key={d.periodRaw} value={d.periodRaw}>{d.period || d.periodRaw}</option>
+                ))}
+              </select>
+            </div>
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4">
+              <p className="text-xs text-red-600 font-medium text-center">
+                {deletePeriodRaw ? `Data periode "${deletePeriodRaw}" akan dihapus permanen.` : "Semua data video toko ini akan dihapus permanen."}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition">Batal</button>
+              <button onClick={handleDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition">🗑️ Ya, Hapus</button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* TABS */}
+      {/* ═══ STORE CONTRIBUTION (Gabungan only) ═══ */}
+      {viewMode === "gabungan" && activeStores.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {activeStores.map((store, i) => {
+            const storeVids = filteredVideos.filter((v) => v._storeId === store.id);
+            const storeGMV = storeVids.reduce((a, v) => a + v.gmv, 0);
+            const share = kpi.totalGMV > 0 ? (storeGMV / kpi.totalGMV) * 100 : 0;
+            const COLORS = ["#2563eb", "#f97316"];
+            return (
+              <div key={store.id} className="bg-white rounded-2xl border border-gray-100 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🏪</span>
+                    <div>
+                      <div className="font-semibold text-sm text-gray-900">{store.name}</div>
+                      <div className="text-xs text-gray-400">{storeVids.length} video</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-bold" style={{ color: COLORS[i] }}>{share.toFixed(1)}%</div>
+                    <div className="text-xs text-gray-400">kontribusi GMV</div>
+                  </div>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2 mb-4">
+                  <div className="h-2 rounded-full" style={{ width: `${share}%`, backgroundColor: COLORS[i] }} />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "GMV Video", value: formatRupiah(storeGMV) },
+                    { label: "Pesanan", value: formatNum(storeVids.reduce((a, v) => a + v.videoOrders, 0)) },
+                    { label: "Pembeli", value: formatNum(storeVids.reduce((a, v) => a + v.uniqueBuyers, 0)) },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-gray-50 rounded-xl p-2.5 text-center">
+                      <div className="text-xs text-gray-400 mb-0.5">{item.label}</div>
+                      <div className="text-sm font-bold text-gray-800">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ═══ 12 KPI CARDS ═══ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+        {[
+          { icon: "💰", label: "GMV Video", color: "green", value: formatRupiah(kpi.totalGMV), sub: `${kpi.pctWithSales.toFixed(0)}% video ada penjualan` },
+          { icon: "📊", label: "Avg GPM", color: "emerald", value: formatRupiah(Math.round(kpi.avgGPM)), sub: kpi.avgGPM >= 100000 ? "🟢 Di atas target" : "🔴 Di bawah 100rb" },
+          { icon: "👁️", label: "Total Views", color: "purple", value: formatNum(kpi.totalVV), sub: `${kpi.totalVideos} video` },
+          { icon: "🖱️", label: "Avg CTR", color: "cyan", value: fmtDec(kpi.avgCTR, 2) + "%", sub: kpi.avgCTR >= 3 ? "🟢 Bagus (≥3%)" : "🔴 Perlu perbaikan" },
+          { icon: "🛒", label: "Avg CTOR", color: "indigo", value: fmtDec(kpi.avgOrderPerClick, 2) + "%", sub: kpi.avgOrderPerClick >= 3 ? "🟢 Konversi baik" : "🔴 Perlu optimasi" },
+          { icon: "👥", label: "Pembeli", color: "blue", value: formatNum(kpi.totalBuyers), sub: `${formatNum(kpi.totalOrders)} pesanan` },
+          { icon: "📦", label: "Produk Terjual", color: "orange", value: formatNum(kpi.totalProducts), sub: `AOV ${formatRupiah(kpi.totalBuyers > 0 ? Math.round(kpi.totalGMV / kpi.totalBuyers) : 0)}` },
+          { icon: "🔄", label: "View→Order", color: "amber", value: kpi.totalVV > 0 ? fmtDec((kpi.totalOrders / kpi.totalVV) * 100, 3) + "%" : "0%", sub: "Rasio konversi total" },
+          { icon: "❤️", label: "Total Likes", color: "rose", value: formatNum(kpi.totalLikes), sub: `💬 ${formatNum(filteredVideos.reduce((a, v) => a + v.comments, 0))} komentar` },
+          { icon: "↗️", label: "Shares", color: "pink", value: formatNum(kpi.totalShares), sub: "Kali dibagikan" },
+          { icon: "🌟", label: "Followers Baru", color: "green", value: `+${formatNum(kpi.totalNewFollowers)}`, sub: "Dari video" },
+          { icon: "🏆", label: "Watch Rate", color: "amber", value: fmtDec(kpi.avgWatchRate, 2) + "%", sub: kpi.avgWatchRate >= 10 ? "🟢 Bagus (≥10%)" : "🔴 Rendah (<10%)" },
+        ].map((card) => {
+          const c = colorMap[card.color] || colorMap.gray;
+          return (
+            <div key={card.label} className={`${c.bg} border ${c.border} rounded-2xl p-4`}>
+              <div className={`${c.ring} rounded-xl p-2.5 text-xl w-fit mb-3`}>{card.icon}</div>
+              <div className={`text-lg font-bold ${c.text} mb-0.5 leading-tight`}>{card.value}</div>
+              <div className="text-xs text-gray-500 font-medium mb-0.5">{card.label}</div>
+              <div className="text-[11px] text-gray-400">{card.sub}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ═══ TABS ═══ */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl overflow-x-auto">
         {tabs.map((t, i) => (
           <button key={t} onClick={() => setActiveTab(i)}
@@ -156,99 +361,147 @@ export default function VideoPerformanceScreen() {
       </div>
 
       {/* TAB CONTENT */}
-      {activeTab === 0 && <DashboardTab data={data} />}
-      {activeTab === 1 && <LeaderboardTab videos={data.videos} />}
-      {activeTab === 2 && <CreatorTab videos={data.videos} />}
-      {activeTab === 3 && <BoostTab videos={data.videos} />}
-      {activeTab === 4 && allMonths.length >= 2 && <TrenTab allMonths={allMonths} />}
+      {activeTab === 0 && <OverviewTab videos={filteredVideos} allVideoData={allVideoData} viewMode={viewMode} selectedPeriod={selectedPeriod} />}
+      {activeTab === 1 && <WeeklyTab videos={filteredVideos} />}
+      {activeTab === 2 && <LeaderboardTab videos={filteredVideos} />}
+      {activeTab === 3 && <CreatorTab videos={filteredVideos} />}
     </div>
   );
 }
 
 // ══════════════════════════════════════
-// TAB 1: DASHBOARD
+// TAB 1: OVERVIEW
 // ══════════════════════════════════════
-function DashboardTab({ data }: { data: VideoPerformanceData }) {
-  const s = data.summary;
-  const kpis = [
-    { icon: <Video size={18} />, label: "Total Video", value: formatNum(s.totalVideos), color: "bg-blue-50 text-blue-600" },
-    { icon: <Eye size={18} />, label: "Total Views", value: formatNum(s.totalVV), color: "bg-purple-50 text-purple-600" },
-    { icon: <DollarSign size={18} />, label: "Total GMV Video", value: formatRupiah(s.totalGMV), color: "bg-green-50 text-green-600" },
-    { icon: <ShoppingCart size={18} />, label: "Total Pesanan", value: formatNum(s.totalOrders), color: "bg-orange-50 text-orange-600" },
-    { icon: <Target size={18} />, label: "Avg GPM (Rp)", value: formatRupiah(Math.round(s.avgGPM)), color: "bg-emerald-50 text-emerald-600" },
-    { icon: <BarChart3 size={18} />, label: "Avg CTR (%)", value: fmtDec(s.avgCTR, 2) + "%", color: "bg-cyan-50 text-cyan-600" },
-    { icon: <Package size={18} />, label: "Avg CTOR (%)", value: fmtDec(s.avgCTOR, 2) + "%", color: "bg-indigo-50 text-indigo-600" },
-    { icon: <Clock size={18} />, label: "Avg Watch Rate (%)", value: fmtDec(s.avgWatchRate, 2) + "%", color: "bg-pink-50 text-pink-600" },
-  ];
+type VidExtended = VideoPerformanceItem & { _storeId: string; _storeName: string; _period: string };
 
+function OverviewTab({ videos, allVideoData, viewMode, selectedPeriod }: {
+  videos: VidExtended[];
+  allVideoData: { storeId: string; storeName: string; data: VideoPerformanceData }[];
+  viewMode: string;
+  selectedPeriod: string;
+}) {
+  // GMV by period for chart
+  const gmvChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    videos.forEach((v) => {
+      const key = v._period || "unknown";
+      map.set(key, (map.get(key) || 0) + v.gmv);
+    });
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([p, gmv]) => ({
+      name: formatPeriodVP(p), gmv,
+    }));
+  }, [videos]);
+
+  // GPM / CTR / CTOR / Watch Rate metrics
+  const metrics = useMemo(() => {
+    const n = videos.length || 1;
+    const withSales = videos.filter((v) => v.gmv > 0);
+    const nSales = withSales.length || 1;
+    return {
+      avgGPM: withSales.reduce((a, v) => a + v.gpm, 0) / nSales,
+      avgCTR: videos.reduce((a, v) => a + v.ctr, 0) / n,
+      avgCTOR: videos.reduce((a, v) => a + v.ctor, 0) / n,
+      avgWatch: videos.reduce((a, v) => a + v.watchRate, 0) / n,
+    };
+  }, [videos]);
+
+  // Status distribution
   const statusDist = useMemo(() => {
     const counts: Record<string, number> = {};
-    data.videos.forEach((v) => { counts[v.videoStatus] = (counts[v.videoStatus] || 0) + 1; });
+    videos.forEach((v) => { counts[v.videoStatus] = (counts[v.videoStatus] || 0) + 1; });
     return Object.entries(STATUS_COLORS).map(([name, color]) => ({
       name, value: counts[name] || 0, color,
     }));
-  }, [data.videos]);
+  }, [videos]);
 
+  // Video funnel
   const funnelData = useMemo(() => {
+    const totalVV = videos.reduce((a, v) => a + v.vv, 0);
+    const totalPV = videos.reduce((a, v) => a + v.productViews, 0);
+    const totalPC = videos.reduce((a, v) => a + v.productClicks, 0);
+    const totalOrd = videos.reduce((a, v) => a + v.videoOrders, 0);
     const steps = [
-      { name: "Total VV", value: s.totalVV },
-      { name: "Produk Dilihat", value: s.totalProductViews },
-      { name: "Klik Produk", value: s.totalProductClicks },
-      { name: "Pesanan Video", value: s.totalOrders },
+      { name: "Total VV", value: totalVV },
+      { name: "Produk Dilihat", value: totalPV },
+      { name: "Klik Produk", value: totalPC },
+      { name: "Pesanan Video", value: totalOrd },
     ];
     return steps.map((st, i) => ({
       ...st,
       pctPrev: i === 0 ? 100 : steps[i - 1].value > 0 ? (st.value / steps[i - 1].value * 100) : 0,
       fill: ["#0D47A1", "#1565C0", "#42A5F5", "#90CAF9"][i],
     }));
-  }, [s]);
+  }, [videos]);
 
-  const scatterData = useMemo(() =>
-    data.videos.filter((v) => v.gmv > 0).map((v) => ({
-      x: v.watchRate, y: v.gmv / 1000, z: Math.max(v.vv / 500, 5),
-      fill: STATUS_COLORS[v.videoStatus] || "#999",
-      caption: v.videoInfo.substring(0, 50),
-      vv: v.vv, gpm: v.gpm, ctr: v.ctr, ctor: v.ctor, gmv: v.gmv,
-    }))
-  , [data.videos]);
-
+  // Benchmarks
   const benchmarks = useMemo(() => {
-    const vWithSales = data.videos.filter((v) => v.gmv > 0).length;
-    const pctSales = data.videos.length > 0 ? (vWithSales / data.videos.length * 100) : 0;
-    const boostCount = data.videos.filter((v) => v.boostCandidate).length;
-    const pctBoost = data.videos.length > 0 ? (boostCount / data.videos.length * 100) : 0;
+    const n = videos.length || 1;
+    const withSales = videos.filter((v) => v.gmv > 0);
+    const nSales = withSales.length || 1;
+    const avgGPM = withSales.reduce((a, v) => a + v.gpm, 0) / nSales;
+    const avgCTR = videos.reduce((a, v) => a + v.ctr, 0) / n;
+    const avgCTOR = videos.reduce((a, v) => a + v.ctor, 0) / n;
+    const avgWatch = videos.reduce((a, v) => a + v.watchRate, 0) / n;
+    const pctSales = videos.length > 0 ? (withSales.length / videos.length * 100) : 0;
+    const boostCount = videos.filter((v) => v.boostCandidate).length;
+    const pctBoost = videos.length > 0 ? (boostCount / videos.length * 100) : 0;
     return [
-      { metrik: "Avg GPM", yours: formatRupiah(Math.round(s.avgGPM)), target: "> Rp 100.000", ok: s.avgGPM >= 100000 },
-      { metrik: "Avg CTR", yours: fmtDec(s.avgCTR, 2) + "%", target: "> 3%", ok: s.avgCTR >= 3 },
-      { metrik: "Avg CTOR", yours: fmtDec(s.avgCTOR, 2) + "%", target: "> 3%", ok: s.avgCTOR >= 3 },
-      { metrik: "Avg Watch Rate", yours: fmtDec(s.avgWatchRate, 2) + "%", target: "> 10%", ok: s.avgWatchRate >= 10 },
+      { metrik: "Avg GPM", yours: formatRupiah(Math.round(avgGPM)), target: "> Rp 100.000", ok: avgGPM >= 100000 },
+      { metrik: "Avg CTR", yours: fmtDec(avgCTR, 2) + "%", target: "> 3%", ok: avgCTR >= 3 },
+      { metrik: "Avg CTOR", yours: fmtDec(avgCTOR, 2) + "%", target: "> 3%", ok: avgCTOR >= 3 },
+      { metrik: "Avg Watch Rate", yours: fmtDec(avgWatch, 2) + "%", target: "> 10%", ok: avgWatch >= 10 },
       { metrik: "% Video ada penjualan", yours: fmtDec(pctSales, 1) + "%", target: "> 30%", ok: pctSales >= 30 },
       { metrik: "% Kandidat Boost", yours: fmtDec(pctBoost, 1) + "%", target: "> 20%", ok: pctBoost >= 20 },
     ];
-  }, [data.videos, s]);
+  }, [videos]);
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
+      {/* GMV Chart */}
+      {gmvChartData.length > 0 && (
+        <div className="bg-white rounded-2xl border p-6">
+          <h3 className="font-semibold mb-4 text-sm">📊 GMV Video per Periode</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={gmvChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(0)}Jt`} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: any) => formatRupiah(Number(v))} />
+              <Bar dataKey="gmv" name="GMV" fill="#2563eb" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* GPM / CTR / CTOR / Watch Rate gauge cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k) => (
-          <div key={k.label} className="bg-white rounded-xl border p-4">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${k.color}`}>{k.icon}</div>
-            <p className="text-xs text-gray-500">{k.label}</p>
-            <p className="text-lg font-bold">{k.value}</p>
+        {[
+          { label: "Avg GPM", value: formatRupiah(Math.round(metrics.avgGPM)), target: 100000, actual: metrics.avgGPM, unit: "", ok: metrics.avgGPM >= 100000 },
+          { label: "Avg CTR", value: fmtDec(metrics.avgCTR, 2) + "%", target: 3, actual: metrics.avgCTR, unit: "%", ok: metrics.avgCTR >= 3 },
+          { label: "Avg CTOR", value: fmtDec(metrics.avgCTOR, 2) + "%", target: 3, actual: metrics.avgCTOR, unit: "%", ok: metrics.avgCTOR >= 3 },
+          { label: "Avg Watch Rate", value: fmtDec(metrics.avgWatch, 2) + "%", target: 10, actual: metrics.avgWatch, unit: "%", ok: metrics.avgWatch >= 10 },
+        ].map((m) => (
+          <div key={m.label} className={`rounded-2xl border p-5 ${m.ok ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}>
+            <div className="text-xs text-gray-500 font-medium mb-1">{m.label}</div>
+            <div className={`text-xl font-bold ${m.ok ? "text-green-700" : "text-red-700"}`}>{m.value}</div>
+            <div className="text-[11px] text-gray-400 mt-1">Target: {m.unit === "%" ? `≥${m.target}%` : `≥ ${formatRupiah(m.target)}`}</div>
+            <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+              <div className={`h-1.5 rounded-full ${m.ok ? "bg-green-500" : "bg-red-400"}`}
+                style={{ width: `${Math.min((m.actual / m.target) * 100, 100)}%` }} />
+            </div>
           </div>
         ))}
       </div>
 
       {/* Status Distribution */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold mb-4">Video Status Distribution</h3>
+      <div className="bg-white rounded-2xl border p-6">
+        <h3 className="font-semibold mb-4 text-sm">🏷️ Distribusi Status Video</h3>
         <div className="flex flex-col lg:flex-row gap-6 items-center">
           <div className="w-64 h-64">
             <ResponsiveContainer>
               <PieChart>
                 <Pie data={statusDist.filter((d) => d.value > 0)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100}
-                  label={({ name, percent }: any) => `${(percent * 100).toFixed(0)}%`} labelLine>
+                  label={({ percent }: any) => `${(percent * 100).toFixed(0)}%`} labelLine>
                   {statusDist.filter((d) => d.value > 0).map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Pie>
                 <Tooltip />
@@ -257,7 +510,7 @@ function DashboardTab({ data }: { data: VideoPerformanceData }) {
           </div>
           <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {statusDist.map((d) => (
-              <div key={d.name} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
+              <div key={d.name} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
                 <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                 <div>
                   <p className="text-sm font-medium">{d.name}</p>
@@ -270,8 +523,8 @@ function DashboardTab({ data }: { data: VideoPerformanceData }) {
       </div>
 
       {/* Video Funnel */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold mb-4">Video Funnel</h3>
+      <div className="bg-white rounded-2xl border p-6">
+        <h3 className="font-semibold mb-4 text-sm">🔄 Video Funnel</h3>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={funnelData} layout="vertical" margin={{ left: 20, right: 40 }}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -294,39 +547,9 @@ function DashboardTab({ data }: { data: VideoPerformanceData }) {
         </div>
       </div>
 
-      {/* Scatter: Watch Rate vs GMV */}
-      {scatterData.length > 0 && (
-        <div className="bg-white rounded-xl border p-6">
-          <h3 className="font-semibold mb-4">Watch Rate vs GMV</h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <ScatterChart margin={{ left: 10, right: 20, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" dataKey="x" name="Watch Rate" unit="%" tick={{ fontSize: 11 }} />
-              <YAxis type="number" dataKey="y" name="GMV" unit="K" tick={{ fontSize: 11 }} tickFormatter={(v) => `${formatNum(v)}K`} />
-              <ZAxis type="number" dataKey="z" range={[30, 400]} />
-              <Tooltip content={({ payload }: any) => {
-                if (!payload?.[0]) return null;
-                const d = payload[0].payload;
-                return (
-                  <div className="bg-white shadow-lg border rounded-lg p-3 text-xs max-w-xs">
-                    <p className="font-semibold mb-1">{d.caption}...</p>
-                    <p>VV: {formatNum(d.vv)} · GMV: {formatRupiah(d.gmv)}</p>
-                    <p>GPM: {formatRupiah(d.gpm)} · CTR: {fmtDec(d.ctr, 2)}%</p>
-                    <p>CTOR: {fmtDec(d.ctor, 2)}% · Watch: {fmtDec(d.x, 2)}%</p>
-                  </div>
-                );
-              }} />
-              <Scatter data={scatterData}>
-                {scatterData.map((d, i) => <Cell key={i} fill={d.fill} fillOpacity={0.7} />)}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
       {/* Benchmark Table */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold mb-4">Benchmark Performa Video</h3>
+      <div className="bg-white rounded-2xl border p-6">
+        <h3 className="font-semibold mb-4 text-sm">📋 Benchmark Performa Video</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b bg-gray-50">
@@ -350,7 +573,170 @@ function DashboardTab({ data }: { data: VideoPerformanceData }) {
 }
 
 // ══════════════════════════════════════
-// TAB 2: VIDEO LEADERBOARD
+// TAB 2: EVALUASI MINGGUAN
+// ══════════════════════════════════════
+function WeeklyTab({ videos }: { videos: VidExtended[] }) {
+  // Group videos by week
+  const weeklyData = useMemo(() => {
+    const weekMap = new Map<string, VidExtended[]>();
+    videos.forEach((v) => {
+      const date = v.postedAt?.split(" ")[0] || "";
+      if (!date) return;
+      const d = new Date(date.replace(/\//g, "-"));
+      if (isNaN(d.getTime())) return;
+      const dayOfWeek = d.getDay();
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7));
+      const key = monday.toISOString().slice(0, 10);
+      if (!weekMap.has(key)) weekMap.set(key, []);
+      weekMap.get(key)!.push(v);
+    });
+    return [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([weekStart, vids]) => {
+      const end = new Date(weekStart);
+      end.setDate(end.getDate() + 6);
+      const n = vids.length || 1;
+      const withSales = vids.filter((v) => v.gmv > 0);
+      const nSales = withSales.length || 1;
+      return {
+        weekStart,
+        weekLabel: `${weekStart.slice(5)} ~ ${end.toISOString().slice(5, 10)}`,
+        videos: vids.length,
+        totalGMV: vids.reduce((a, v) => a + v.gmv, 0),
+        totalVV: vids.reduce((a, v) => a + v.vv, 0),
+        totalOrders: vids.reduce((a, v) => a + v.videoOrders, 0),
+        avgGPM: withSales.reduce((a, v) => a + v.gpm, 0) / nSales,
+        avgCTR: vids.reduce((a, v) => a + v.ctr, 0) / n,
+        avgCTOR: vids.reduce((a, v) => a + v.ctor, 0) / n,
+        avgWatch: vids.reduce((a, v) => a + v.watchRate, 0) / n,
+        topPerformers: vids.filter((v) => v.videoStatus === "🏆 TOP PERFORMER").length,
+        underperformers: vids.filter((v) => v.videoStatus === "🔴 UNDERPERFORM").length,
+        vids,
+      };
+    });
+  }, [videos]);
+
+  const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
+
+  // Recommendations
+  const recommendations = useMemo(() => {
+    const tips: string[] = [];
+    if (videos.length === 0) return tips;
+    const n = videos.length;
+    const avgCTR = videos.reduce((a, v) => a + v.ctr, 0) / n;
+    const avgCTOR = videos.reduce((a, v) => a + v.ctor, 0) / n;
+    const avgWatch = videos.reduce((a, v) => a + v.watchRate, 0) / n;
+    const withSales = videos.filter((v) => v.gmv > 0);
+    const pctSales = (withSales.length / n) * 100;
+
+    if (avgCTR < 3) tips.push("🎯 CTR rendah (<3%) — Perbaiki hook 3 detik pertama & thumbnail. Gunakan teks overlay yang menarik perhatian.");
+    if (avgCTOR < 3) tips.push("🛒 CTOR rendah (<3%) — Tingkatkan call-to-action di video. Tampilkan produk lebih jelas dan berikan alasan untuk beli sekarang.");
+    if (avgWatch < 10) tips.push("⏱️ Watch Rate rendah (<10%) — Video terlalu panjang atau kurang engaging. Coba durasi 15-30 detik dengan konten padat.");
+    if (pctSales < 30) tips.push("📉 Kurang dari 30% video menghasilkan penjualan — Fokus pada konten yang demonstrasikan produk secara langsung.");
+    if (tips.length === 0) tips.push("✅ Performa video sudah bagus! Pertahankan konsistensi konten.");
+
+    return tips;
+  }, [videos]);
+
+  return (
+    <div className="space-y-6">
+      {/* Weekly GMV Chart */}
+      {weeklyData.length > 0 && (
+        <div className="bg-white rounded-2xl border p-6">
+          <h3 className="font-semibold mb-4 text-sm">📊 GMV per Minggu</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={weeklyData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(1)}Jt`} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: any) => formatRupiah(Number(v))} />
+              <Bar dataKey="totalGMV" name="GMV" fill="#10b981" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Weekly metrics */}
+      {weeklyData.length > 1 && (
+        <div className="bg-white rounded-2xl border p-6">
+          <h3 className="font-semibold mb-4 text-sm">📈 Tren Mingguan CTR & CTOR</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={weeklyData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} />
+              <YAxis unit="%" tick={{ fontSize: 10 }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="avgCTR" name="CTR" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="avgCTOR" name="CTOR" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Weekly Accordion */}
+      <div className="space-y-3">
+        <h3 className="font-semibold text-sm">📅 Detail per Minggu</h3>
+        {weeklyData.map((w) => (
+          <div key={w.weekStart} className="bg-white rounded-2xl border overflow-hidden">
+            <button onClick={() => setExpandedWeek(expandedWeek === w.weekStart ? null : w.weekStart)}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-gray-900">Minggu {w.weekLabel}</span>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{w.videos} video</span>
+                {w.topPerformers > 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">🏆 {w.topPerformers}</span>}
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-bold text-green-700">{formatRupiah(w.totalGMV)}</span>
+                {expandedWeek === w.weekStart ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </div>
+            </button>
+            {expandedWeek === w.weekStart && (
+              <div className="border-t p-4 space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  {[
+                    ["GMV", formatRupiah(w.totalGMV)], ["Views", formatNum(w.totalVV)],
+                    ["Pesanan", formatNum(w.totalOrders)], ["Avg GPM", formatRupiah(Math.round(w.avgGPM))],
+                    ["Avg CTR", fmtDec(w.avgCTR, 2) + "%"], ["Avg CTOR", fmtDec(w.avgCTOR, 2) + "%"],
+                    ["Watch Rate", fmtDec(w.avgWatch, 2) + "%"], ["Under-perform", String(w.underperformers)],
+                  ].map(([l, val]) => (
+                    <div key={l} className="bg-gray-50 rounded-xl p-3">
+                      <div className="text-gray-400 mb-0.5">{l}</div>
+                      <div className="font-bold text-gray-800">{val}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Top 3 videos of the week */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">🏆 Top Video Minggu Ini</p>
+                  {w.vids.sort((a, b) => b.gmv - a.gmv).slice(0, 3).map((v, i) => (
+                    <div key={v.videoId + i} className="flex items-center gap-2 py-1.5 border-b border-gray-100 last:border-0 text-xs">
+                      <span className="font-bold text-gray-400 w-5">{i + 1}.</span>
+                      <span className="flex-1 truncate">{v.videoInfo.substring(0, 60)}</span>
+                      <span className="text-green-700 font-bold">{formatRupiah(v.gmv)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Recommendations */}
+      <div className="bg-amber-50 border border-amber-100 rounded-2xl p-6">
+        <h3 className="font-semibold text-sm mb-3">💡 Rekomendasi Konten</h3>
+        <ul className="space-y-2">
+          {recommendations.map((r, i) => (
+            <li key={i} className="text-sm text-gray-700">{r}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════
+// TAB 3: VIDEOS (LEADERBOARD)
 // ══════════════════════════════════════
 function LeaderboardTab({ videos }: { videos: VideoPerformanceItem[] }) {
   const [search, setSearch] = useState("");
@@ -585,7 +971,7 @@ function RowGroup({ v, idx, rowBg, expanded, onToggle }: {
 }
 
 // ══════════════════════════════════════
-// TAB 3: CREATOR COMPARISON
+// TAB 4: KREATOR
 // ══════════════════════════════════════
 function CreatorTab({ videos }: { videos: VideoPerformanceItem[] }) {
   const creators = useMemo(() => {
@@ -719,181 +1105,3 @@ function CreatorTab({ videos }: { videos: VideoPerformanceItem[] }) {
   );
 }
 
-// ══════════════════════════════════════
-// TAB 4: KANDIDAT BOOST
-// ══════════════════════════════════════
-function BoostTab({ videos }: { videos: VideoPerformanceItem[] }) {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const candidates = useMemo(() =>
-    videos.filter((v) => v.boostCandidate).sort((a, b) => b.videoScore - a.videoScore)
-  , [videos]);
-
-  const copyInfo = (v: VideoPerformanceItem) => {
-    const text = `Video: ${v.videoInfo} | VV: ${v.vv} | GMV: Rp ${v.gmv.toLocaleString("id-ID")} | GPM: Rp ${v.gpm.toLocaleString("id-ID")} | CTR: ${v.ctr}% | CTOR: ${v.ctor}%`;
-    navigator.clipboard.writeText(text);
-    setCopiedId(v.videoId);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const reasons = (v: VideoPerformanceItem): string[] => {
-    const r: string[] = [];
-    if (v.gpm >= 200000) r.push("💰 GPM sangat tinggi — efisien untuk di-scale");
-    if (v.ctr >= 3) r.push("🎯 CTR bagus — hook & thumbnail terbukti menarik");
-    if (v.ctor >= 3) r.push("🛒 CTOR tinggi — konversi klik ke order kuat");
-    if (v.vv >= 50000) r.push("📈 Views tinggi — potensi jangkauan besar");
-    if (v.watchRate >= 10) r.push("⏱️ Watch rate baik — penonton engaged");
-    return r;
-  };
-
-  if (candidates.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border p-12 text-center">
-        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4"><Rocket size={32} className="text-gray-400" /></div>
-        <h3 className="text-lg font-bold mb-2">Belum Ada Kandidat Boost</h3>
-        <p className="text-sm text-gray-500 max-w-md mx-auto">
-          Belum ada video yang memenuhi kriteria boost (VV≥5.000, GMV&gt;0, GPM≥Rp50.000).
-          Coba upload data bulan lain atau tingkatkan performa video organik terlebih dahulu.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-600"><strong>{candidates.length}</strong> video layak di-boost</p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {candidates.map((v) => (
-          <div key={v.videoId} className="bg-white rounded-xl border p-5 relative">
-            <span className="absolute top-3 right-3 bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-bold flex items-center gap-1">
-              <Rocket size={10} /> LAYAK DI-BOOST
-            </span>
-            <p className="text-sm font-semibold pr-28 mb-1" title={v.videoInfo}>{v.videoInfo.substring(0, 60)}{v.videoInfo.length > 60 ? "..." : ""}</p>
-            <p className="text-xs text-gray-500 mb-3">{v.creatorName} · {v.postedAt.split(" ")[0]}</p>
-            <div className="grid grid-cols-3 gap-2 text-xs mb-3">
-              {[["VV", formatNum(v.vv)], ["GMV", formatRupiah(v.gmv)], ["GPM", formatRupiah(v.gpm)],
-                ["CTR", fmtDec(v.ctr, 2) + "%"], ["CTOR", fmtDec(v.ctor, 2) + "%"], ["Watch", fmtDec(v.watchRate, 2) + "%"],
-              ].map(([l, val]) => (
-                <div key={l} className="bg-gray-50 rounded-lg p-2 text-center">
-                  <p className="text-gray-500">{l}</p><p className="font-bold">{val}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mb-3">
-              <div className="flex justify-between text-xs mb-1"><span>Score</span><span className="font-bold">{v.videoScore}/100</span></div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${v.videoScore}%` }} />
-              </div>
-            </div>
-            <ul className="text-xs space-y-1 mb-3">
-              {reasons(v).map((r, i) => <li key={i}>{r}</li>)}
-            </ul>
-            <button onClick={() => copyInfo(v)} className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-medium hover:bg-gray-50 transition-colors">
-              {copiedId === v.videoId ? <><Check size={12} className="text-green-600" /> Copied!</> : <><Copy size={12} /> Copy Info</>}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════
-// TAB 5: TREN BULANAN
-// ══════════════════════════════════════
-function TrenTab({ allMonths }: { allMonths: VideoPerformanceData[] }) {
-  const chartData = useMemo(() =>
-    allMonths.map((m, i) => ({
-      name: m.period || m.periodRaw,
-      gmv: m.summary.totalGMV,
-      gpm: Math.round(m.summary.avgGPM),
-      ctr: parseFloat(m.summary.avgCTR.toFixed(2)),
-      ctor: parseFloat(m.summary.avgCTOR.toFixed(2)),
-      videos: m.summary.totalVideos,
-      vv: m.summary.totalVV,
-      orders: m.summary.totalOrders,
-      growthGMV: i === 0 ? null : allMonths[i - 1].summary.totalGMV > 0
-        ? ((m.summary.totalGMV - allMonths[i - 1].summary.totalGMV) / allMonths[i - 1].summary.totalGMV * 100)
-        : null,
-    }))
-  , [allMonths]);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* GMV per bulan */}
-        <div className="bg-white rounded-xl border p-6">
-          <h3 className="font-semibold mb-4 text-sm">Total GMV per Bulan</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(0)}Jt`} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: any) => formatRupiah(Number(v))} />
-              <Line type="monotone" dataKey="gmv" stroke="#1A237E" strokeWidth={2} dot={{ r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        {/* Avg GPM per bulan */}
-        <div className="bg-white rounded-xl border p-6">
-          <h3 className="font-semibold mb-4 text-sm">Avg GPM per Bulan</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={(v) => formatRupiah(v)} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: any) => formatRupiah(Number(v))} />
-              <Line type="monotone" dataKey="gpm" stroke="#2E7D32" strokeWidth={2} dot={{ r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* CTR & CTOR */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold mb-4 text-sm">Avg CTR & CTOR per Bulan</h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis unit="%" tick={{ fontSize: 10 }} />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="ctr" name="CTR" stroke="#1565C0" strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="ctor" name="CTOR" stroke="#FF6F00" strokeWidth={2} dot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Trend Table */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold mb-4 text-sm">Ringkasan Tren Bulanan</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead><tr className="border-b bg-gray-50 text-left">
-              <th className="p-2">Bulan</th><th className="p-2 text-right">Video</th><th className="p-2 text-right">Total VV</th>
-              <th className="p-2 text-right">Total GMV</th><th className="p-2 text-right">Avg GPM</th>
-              <th className="p-2 text-right">Avg CTR</th><th className="p-2 text-right">Avg CTOR</th>
-              <th className="p-2 text-right">Growth GMV</th>
-            </tr></thead>
-            <tbody>
-              {chartData.map((d) => (
-                <tr key={d.name} className="border-b hover:bg-gray-50">
-                  <td className="p-2 font-medium">{d.name}</td>
-                  <td className="p-2 text-right">{d.videos}</td>
-                  <td className="p-2 text-right">{formatNum(d.vv)}</td>
-                  <td className="p-2 text-right">{formatRupiah(d.gmv)}</td>
-                  <td className="p-2 text-right">{formatRupiah(d.gpm)}</td>
-                  <td className="p-2 text-right">{d.ctr}%</td>
-                  <td className="p-2 text-right">{d.ctor}%</td>
-                  <td className={`p-2 text-right font-medium ${d.growthGMV === null ? "" : d.growthGMV >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {d.growthGMV === null ? "-" : `${d.growthGMV >= 0 ? "+" : ""}${fmtDec(d.growthGMV, 1)}%`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
