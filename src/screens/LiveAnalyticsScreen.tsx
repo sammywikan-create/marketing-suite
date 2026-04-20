@@ -1,8 +1,10 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
 import { useLiveAnalytics } from "@/hooks/useLiveAnalytics";
 import type { LiveCoreStat, LiveSession } from "@/hooks/useLiveAnalytics";
+import { parseLiveExcel } from "@/lib/liveParser";
+import { saveLiveCoreStats, saveLiveSessions } from "@/lib/db";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
@@ -55,7 +57,8 @@ const colorMap: Record<string, { bg: string; ring: string; text: string; border:
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
 export default function LiveAnalyticsScreen() {
-  const { stores } = useStoreManager();
+  const { stores, getActiveStore } = useStoreManager();
+  const activeStore = getActiveStore();
 
   // Active stores (exclude test)
   const activeStores = useMemo(
@@ -64,6 +67,43 @@ export default function LiveAnalyticsScreen() {
   );
 
   const { coreStats, sessions, isLoading } = useLiveAnalytics(activeStores);
+
+  // ─── UPLOAD STATE ─────────────────────────────────────
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeStore) return;
+    if (!file.name.match(/\.xlsx?$/i)) {
+      setUploadMsg({ type: "err", text: "Hanya file .xlsx atau .xls yang diterima." });
+      return;
+    }
+    setIsUploading(true);
+    setUploadMsg(null);
+    try {
+      const { sessions: parsedSessions, coreStats: parsedStats } = await parseLiveExcel(file, activeStore.id);
+      if (parsedSessions.length === 0) {
+        setUploadMsg({ type: "err", text: "File tidak mengandung data sesi LIVE yang valid." });
+        setIsUploading(false);
+        return;
+      }
+      await Promise.all([
+        saveLiveCoreStats(parsedStats),
+        saveLiveSessions(parsedSessions),
+      ]);
+      setUploadMsg({ type: "ok", text: `✅ Berhasil upload ${parsedSessions.length} sesi LIVE (${parsedStats.length} hari). Refresh halaman untuk melihat data.` });
+      setReloadKey((k) => k + 1);
+    } catch (err: any) {
+      console.error("Upload LIVE error:", err);
+      setUploadMsg({ type: "err", text: err?.message || "Gagal memproses file." });
+    } finally {
+      setIsUploading(false);
+      if (e.target) e.target.value = "";
+    }
+  }, [activeStore]);
 
   // ─── STATE ──────────────────────────────────────────
   const [selectedStore, setSelectedStore] = useState<string>("all");
@@ -395,9 +435,19 @@ export default function LiveAnalyticsScreen() {
       <div className="text-center py-20">
         <div className="text-5xl mb-4">🔴</div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Belum ada data LIVE</h2>
-        <p className="text-sm text-gray-400">
-          Upload data live analytics terlebih dahulu dari menu Upload Data.
+        <p className="text-sm text-gray-400 mb-6">
+          Upload file Excel LIVE analytics dari TikTok Seller Center.
         </p>
+        <label className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl text-sm font-medium cursor-pointer transition">
+          {isUploading ? "⏳ Memproses..." : "📤 Upload File LIVE"}
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
+        </label>
+        {uploadMsg && (
+          <div className={`mt-4 text-sm ${uploadMsg.type === "ok" ? "text-green-600" : "text-red-600"}`}>
+            {uploadMsg.text}
+          </div>
+        )}
+        {!activeStore && <p className="text-xs text-red-400 mt-2">Pilih toko aktif terlebih dahulu.</p>}
       </div>
     );
   }
@@ -446,8 +496,23 @@ export default function LiveAnalyticsScreen() {
               </button>
             ))}
           </div>
+
+          <label className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition">
+            {isUploading ? "⏳ Memproses..." : "📤 Upload LIVE"}
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
+          </label>
         </div>
       </div>
+
+      {/* Upload feedback */}
+      {uploadMsg && (
+        <div className={`rounded-xl px-4 py-3 text-sm flex items-center justify-between ${
+          uploadMsg.type === "ok" ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"
+        }`}>
+          <span>{uploadMsg.text}</span>
+          <button onClick={() => setUploadMsg(null)} className="ml-2 font-bold hover:opacity-70">×</button>
+        </div>
+      )}
 
       {/* ═══ KPI CARDS (10) ═══ */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">

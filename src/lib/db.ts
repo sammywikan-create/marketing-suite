@@ -525,3 +525,43 @@ export async function loadVideoPerformanceDb(
   if (error) throw error
   return data || []
 }
+
+// ─── LIVE ANALYTICS ──────────────────────────────────────
+export async function saveLiveCoreStats(
+  rows: Omit<import('@/hooks/useLiveAnalytics').LiveCoreStat, 'id'>[],
+) {
+  requireSupabase()
+  if (!rows.length) return
+  const BATCH = 200
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH)
+    const { error } = await supabase
+      .from('live_core_stats')
+      .upsert(batch, { onConflict: 'store_id,date' })
+    if (error) throw error
+  }
+}
+
+export async function saveLiveSessions(
+  rows: Omit<import('@/hooks/useLiveAnalytics').LiveSession, 'id'>[],
+) {
+  requireSupabase()
+  if (!rows.length) return
+  // Delete existing sessions for same store + dates to avoid duplicates
+  const storeId = rows[0].store_id
+  const dates = [...new Set(rows.map((r) => r.session_date))]
+  for (const date of dates) {
+    await supabase
+      .from('live_sessions')
+      .delete()
+      .eq('store_id', storeId)
+      .eq('session_date', date)
+  }
+  // Insert in batches
+  const BATCH = 200
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH)
+    const { error } = await supabase.from('live_sessions').insert(batch)
+    if (error) throw error
+  }
+}
