@@ -32,6 +32,7 @@ import OKRScreen from "@/screens/OKRScreen";
 import AffiliateScreen from "@/screens/AffiliateScreen";
 import ReportBuilderScreen from "@/screens/ReportBuilderScreen";
 import HomeScreen from "@/screens/HomeScreen";
+import LiveAnalyticsScreen from "@/screens/LiveAnalyticsScreen";
 import StoreSettingsScreen from "@/screens/StoreSettingsScreen";
 import StoreSelector from "@/components/StoreSelector";
 import { useGMVStore } from "@/lib/gmvStore";
@@ -177,6 +178,7 @@ export default function Home() {
       case "compare-gabungan": return <CompareGabunganScreen />;
       case "okr": return <OKRScreen />;
       case "affiliate": return <AffiliateScreen />;
+      case "live-analytics": return <LiveAnalyticsScreen />;
       case "report-builder": return <ReportBuilderScreen />;
       case "store-settings": return <StoreSettingsScreen />;
       default: return <DashboardScreen />;

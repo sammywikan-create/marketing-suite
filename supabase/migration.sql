@@ -158,3 +158,65 @@ CREATE TABLE IF NOT EXISTS video_performance (
 ALTER TABLE video_performance ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all for anon" ON video_performance;
 CREATE POLICY "Allow all for anon" ON video_performance FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. LIVE CORE STATS (agregat harian)
+CREATE TABLE IF NOT EXISTS live_core_stats (
+  id BIGSERIAL PRIMARY KEY,
+  store_id UUID REFERENCES stores(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  gmv_live BIGINT DEFAULT 0,
+  gmv_earned BIGINT DEFAULT 0,
+  gpm REAL DEFAULT 0,
+  sessions_total INT DEFAULT 0,
+  sessions_with_gmv INT DEFAULT 0,
+  products_sold INT DEFAULT 0,
+  sku_orders INT DEFAULT 0,
+  buyers INT DEFAULT 0,
+  impressions BIGINT DEFAULT 0,
+  ctr_live REAL DEFAULT 0,
+  order_per_click REAL DEFAULT 0,
+  avg_watch_time REAL DEFAULT 0,
+  UNIQUE(store_id, date)
+);
+
+ALTER TABLE live_core_stats ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON live_core_stats;
+CREATE POLICY "Allow all for anon" ON live_core_stats FOR ALL USING (true) WITH CHECK (true);
+
+-- 6. LIVE SESSIONS (per sesi individual)
+CREATE TABLE IF NOT EXISTS live_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  store_id UUID REFERENCES stores(id) ON DELETE CASCADE,
+  creator_id TEXT,
+  creator_name TEXT,
+  creator_username TEXT,
+  started_at TIMESTAMPTZ NOT NULL,
+  session_date DATE NOT NULL,
+  duration_minutes REAL DEFAULT 0,
+  gmv BIGINT DEFAULT 0,
+  gmv_earned BIGINT DEFAULT 0,
+  avg_order_value BIGINT DEFAULT 0,
+  products_added INT DEFAULT 0,
+  products_sold INT DEFAULT 0,
+  sku_orders_created INT DEFAULT 0,
+  sku_orders_live INT DEFAULT 0,
+  products_sold_live INT DEFAULT 0,
+  unique_buyers INT DEFAULT 0,
+  order_per_click REAL DEFAULT 0,
+  unique_viewers INT DEFAULT 0,
+  total_views INT DEFAULT 0,
+  product_views INT DEFAULT 0,
+  product_clicks INT DEFAULT 0,
+  ctr REAL DEFAULT 0,
+  avg_watch_time REAL DEFAULT 0,
+  comments INT DEFAULT 0,
+  shares INT DEFAULT 0,
+  likes INT DEFAULT 0,
+  new_followers INT DEFAULT 0,
+  is_valid_session BOOLEAN DEFAULT true,
+  has_gmv BOOLEAN DEFAULT false
+);
+
+ALTER TABLE live_sessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON live_sessions;
+CREATE POLICY "Allow all for anon" ON live_sessions FOR ALL USING (true) WITH CHECK (true);

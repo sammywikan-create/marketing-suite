@@ -169,7 +169,8 @@ export type TabKey =
   | "compare-gabungan"
   | "okr"
   | "affiliate"
-  | "report-builder";
+  | "report-builder"
+  | "live-analytics";
 
 export interface TabConfig {
   key: TabKey;

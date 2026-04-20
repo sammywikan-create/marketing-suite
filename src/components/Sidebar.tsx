@@ -46,6 +46,7 @@ const tabGroups: TabGroup[] = [
       { key: "gmv-overview", label: "Overview Bisnis", icon: <BarChart3 size={18} /> },
       { key: "video-performance", label: "📹 Video Performance", icon: <Video size={18} /> },
       { key: "affiliate", label: "🤝 Affiliate Manager", icon: <Users size={18} /> },
+      { key: "live-analytics", label: "🔴 Live Analytics", icon: <BarChart3 size={18} /> },
       { key: "gmv-sku", label: "SKU Analyzer", icon: <Package size={18} /> },
       { key: "gmv-creative", label: "Creative Optimizer", icon: <Sparkles size={18} /> },
       { key: "gmv-benchmark", label: "Top Seller Metrics", icon: <Award size={18} /> },
