@@ -160,26 +160,26 @@ export async function parseLiveExcel(
       started_at: startedAt,
       session_date: sessionDate,
       duration_minutes: durationMinutes,
-      gmv,
-      gmv_earned: gmvEarned || gmv,
-      avg_order_value: parseRp(getVal(r, headers, "harga rata-rata", "avg order", "aov", "rata-rata harga")),
-      products_added: Number(getVal(r, headers, "produk yang ditambahkan", "products added", "produk ditambahkan")) || 0,
-      products_sold: Number(getVal(r, headers, "produk terjual", "products sold")) || 0,
-      sku_orders_created: Number(getVal(r, headers, "pesanan sku yang dibuat", "sku orders created")) || 0,
-      sku_orders_live: Number(getVal(r, headers, "pesanan sku dari live", "sku orders live", "pesanan sku live")) || 0,
-      products_sold_live: Number(getVal(r, headers, "produk yang terjual dari live", "products sold live", "produk terjual live")) || 0,
-      unique_buyers: Number(getVal(r, headers, "pembeli unik", "unique buyers", "pembeli")) || 0,
+      gmv: Math.round(gmv),
+      gmv_earned: Math.round(gmvEarned || gmv),
+      avg_order_value: Math.round(parseRp(getVal(r, headers, "harga rata-rata", "avg order", "aov", "rata-rata harga"))),
+      products_added: Math.round(Number(getVal(r, headers, "produk yang ditambahkan", "products added", "produk ditambahkan")) || 0),
+      products_sold: Math.round(Number(getVal(r, headers, "produk terjual", "products sold")) || 0),
+      sku_orders_created: Math.round(Number(getVal(r, headers, "pesanan sku yang dibuat", "sku orders created")) || 0),
+      sku_orders_live: Math.round(Number(getVal(r, headers, "pesanan sku dari live", "sku orders live", "pesanan sku live")) || 0),
+      products_sold_live: Math.round(Number(getVal(r, headers, "produk yang terjual dari live", "products sold live", "produk terjual live")) || 0),
+      unique_buyers: Math.round(Number(getVal(r, headers, "pembeli unik", "unique buyers", "pembeli")) || 0),
       order_per_click: parsePct(getVal(r, headers, "rasio pesanan per klik", "order per click", "pesanan per klik")),
-      unique_viewers: Number(getVal(r, headers, "penonton", "unique viewers", "penonton unik")) || 0,
-      total_views: Number(getVal(r, headers, "live stream dilihat", "total views", "stream views", "tayangan")) || 0,
-      product_views: Number(getVal(r, headers, "produk dilihat", "product views", "tampilan produk")) || 0,
-      product_clicks: Number(getVal(r, headers, "klik produk", "product clicks")) || 0,
+      unique_viewers: Math.round(Number(getVal(r, headers, "penonton", "unique viewers", "penonton unik")) || 0),
+      total_views: Math.round(Number(getVal(r, headers, "live stream dilihat", "total views", "stream views", "tayangan")) || 0),
+      product_views: Math.round(Number(getVal(r, headers, "produk dilihat", "product views", "tampilan produk")) || 0),
+      product_clicks: Math.round(Number(getVal(r, headers, "klik produk", "product clicks")) || 0),
       ctr: parsePct(getVal(r, headers, "ctr")),
       avg_watch_time: parseWatchTime(getVal(r, headers, "durasi menonton rata-rata", "avg watch time", "rata-rata menonton")),
-      comments: Number(getVal(r, headers, "komentar", "comments")) || 0,
-      shares: Number(getVal(r, headers, "live dibagikan", "shares", "dibagikan")) || 0,
-      likes: Number(getVal(r, headers, "suka pada live", "likes", "suka")) || 0,
-      new_followers: Number(getVal(r, headers, "pengikut baru", "new followers", "followers baru")) || 0,
+      comments: Math.round(Number(getVal(r, headers, "komentar", "comments")) || 0),
+      shares: Math.round(Number(getVal(r, headers, "live dibagikan", "shares", "dibagikan")) || 0),
+      likes: Math.round(Number(getVal(r, headers, "suka pada live", "likes", "suka")) || 0),
+      new_followers: Math.round(Number(getVal(r, headers, "pengikut baru", "new followers", "followers baru")) || 0),
       is_valid_session: durationMinutes >= 5,
       has_gmv: gmv > 0,
     };
@@ -211,20 +211,28 @@ export async function parseLiveExcel(
       };
     }
     const d = dailyMap[date];
-    d.gmv_live += s.gmv;
-    d.gmv_earned += s.gmv_earned;
+    d.gmv_live += s.gmv || 0;
+    d.gmv_earned += s.gmv_earned || 0;
     d.sessions_total += 1;
     if (s.has_gmv) d.sessions_with_gmv += 1;
-    d.products_sold += s.products_sold;
-    d.sku_orders += s.sku_orders_created;
-    d.buyers += s.unique_buyers;
-    d.impressions += s.total_views;
+    d.products_sold += s.products_sold || 0;
+    d.sku_orders += s.sku_orders_created || 0;
+    d.buyers += s.unique_buyers || 0;
+    d.impressions += s.total_views || 0;
   });
 
-  // Compute averages
+  // Compute averages & round all INT fields
   const coreStats = Object.values(dailyMap).map((d) => {
     const daySessions = sessions.filter((s) => s.session_date === d.date && s.is_valid_session);
     const n = daySessions.length || 1;
+    d.gmv_live = Math.round(d.gmv_live);
+    d.gmv_earned = Math.round(d.gmv_earned);
+    d.products_sold = Math.round(d.products_sold);
+    d.sku_orders = Math.round(d.sku_orders);
+    d.buyers = Math.round(d.buyers);
+    d.impressions = Math.round(d.impressions);
+    d.sessions_total = Math.round(d.sessions_total);
+    d.sessions_with_gmv = Math.round(d.sessions_with_gmv);
     d.gpm = d.impressions > 0 ? (d.gmv_live / d.impressions) * 1000 : 0;
     d.ctr_live = daySessions.reduce((a, s) => a + s.ctr, 0) / n;
     d.order_per_click = daySessions.reduce((a, s) => a + s.order_per_click, 0) / n;
