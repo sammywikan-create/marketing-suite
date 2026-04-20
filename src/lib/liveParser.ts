@@ -115,23 +115,31 @@ export async function parseLiveExcel(
     throw new Error("File kosong atau tidak memiliki data.");
   }
 
-  const headers = (rows[0] || []).map((h: any) => String(h || ""));
+  // ── Find actual header row (skip metadata like "Date Range: ..." rows) ──
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const rowStr = (rows[i] || []).map((h: any) => String(h || "").toLowerCase());
+    if (
+      rowStr.some((h) => h.includes("id kreator") || h.includes("creator id")) ||
+      rowStr.some((h) => h.includes("waktu live") || h.includes("live time") || h.includes("started at")) ||
+      rowStr.some((h) => h.includes("durasi") && h.length < 30) // "Durasi" column, not "Date Range: ..."
+    ) {
+      headerIdx = i;
+      break;
+    }
+  }
 
-  // Validate this is a live session file
-  const hasLiveCol =
-    findCol(headers, "waktu live", "live time", "started at") >= 0 ||
-    findCol(headers, "nilai bruto", "gmv", "gross merchandise") >= 0 ||
-    findCol(headers, "durasi", "duration") >= 0;
-
-  if (!hasLiveCol) {
+  if (headerIdx < 0) {
     throw new Error(
       "File tidak mengandung data LIVE yang valid. Pastikan file berasal dari export TikTok LIVE Analytics."
     );
   }
 
+  const headers = (rows[headerIdx] || []).map((h: any) => String(h || ""));
+
   const sessions: Omit<LiveSession, "id">[] = [];
 
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || r.every((c: any) => !c && c !== 0)) continue; // skip empty rows
 
