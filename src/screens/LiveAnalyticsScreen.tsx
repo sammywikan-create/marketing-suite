@@ -4,7 +4,7 @@ import { useStoreManager } from "@/store/useStoreManager";
 import { useLiveAnalytics } from "@/hooks/useLiveAnalytics";
 import type { LiveCoreStat, LiveSession } from "@/hooks/useLiveAnalytics";
 import { parseLiveExcel } from "@/lib/liveParser";
-import { saveLiveCoreStats, saveLiveSessions } from "@/lib/db";
+import { saveLiveCoreStats, saveLiveSessions, deleteLiveData } from "@/lib/db";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
@@ -107,6 +107,29 @@ export default function LiveAnalyticsScreen() {
 
   // ─── STATE ──────────────────────────────────────────
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
+
+  // ─── DELETE STATE ────────────────────────────────────
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleDelete = useCallback(async () => {
+    if (!activeStore) return;
+    setIsDeleting(true);
+    setUploadMsg(null);
+    try {
+      const month = selectedMonth !== "all" ? selectedMonth : undefined;
+      await deleteLiveData(activeStore.id, month);
+      const label = month ? formatPeriod(month) : "semua bulan";
+      setUploadMsg({ type: "ok", text: `🗑️ Data LIVE ${activeStore.name} (${label}) berhasil dihapus. Refresh halaman.` });
+      setShowDeleteConfirm(false);
+      setReloadKey((k) => k + 1);
+    } catch (err: any) {
+      console.error("Delete LIVE error:", err);
+      setUploadMsg({ type: "err", text: err?.message || "Gagal menghapus data." });
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [activeStore, selectedMonth]);
   const [viewMode, setViewMode] = useState<"gabungan" | string>("gabungan");
   const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "harian">("overview");
 
@@ -478,10 +501,19 @@ export default function LiveAnalyticsScreen() {
               Performa LIVE streaming per sesi &amp; harian
             </p>
           </div>
-          <label className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition w-fit">
-            {isUploading ? "⏳ Memproses..." : "📤 Upload LIVE"}
-            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
-          </label>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition">
+              {isUploading ? "⏳ Memproses..." : "📤 Upload LIVE"}
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
+            </label>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={isDeleting || (!coreStats.length && !sessions.length)}
+              className="flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isDeleting ? "⏳ Menghapus..." : "🗑️ Hapus Data"}
+            </button>
+          </div>
         </div>
 
         {/* View Mode: Gabungan / per Toko */}
@@ -548,6 +580,39 @@ export default function LiveAnalyticsScreen() {
         }`}>
           <span>{uploadMsg.text}</span>
           <button onClick={() => setUploadMsg(null)} className="ml-2 font-bold hover:opacity-70">×</button>
+        </div>
+      )}
+
+      {/* ═══ DELETE CONFIRMATION MODAL ═══ */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">⚠️</div>
+              <h3 className="text-lg font-bold text-gray-900">Hapus Data LIVE?</h3>
+              <p className="text-sm text-gray-500 mt-2">
+                {selectedMonth !== "all"
+                  ? `Semua data LIVE ${activeStore?.name || "toko"} untuk bulan ${formatPeriod(selectedMonth)} akan dihapus permanen.`
+                  : `Semua data LIVE ${activeStore?.name || "toko"} (semua bulan) akan dihapus permanen.`}
+              </p>
+              <p className="text-xs text-red-500 mt-2 font-medium">Aksi ini tidak bisa dibatalkan!</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50"
+              >
+                {isDeleting ? "⏳ Menghapus..." : "🗑️ Ya, Hapus"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

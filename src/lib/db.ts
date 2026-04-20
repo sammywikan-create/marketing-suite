@@ -542,6 +542,24 @@ export async function saveLiveCoreStats(
   }
 }
 
+export async function deleteLiveData(
+  storeId: string,
+  month?: string, // "2026-01" or undefined for all
+) {
+  requireSupabase()
+  // Delete core stats
+  let qStats = supabase.from('live_core_stats').delete().eq('store_id', storeId)
+  if (month) qStats = qStats.gte('date', `${month}-01`).lte('date', `${month}-31`)
+  const { error: e1 } = await qStats
+  if (e1) throw e1
+
+  // Delete sessions
+  let qSess = supabase.from('live_sessions').delete().eq('store_id', storeId)
+  if (month) qSess = qSess.gte('session_date', `${month}-01`).lte('session_date', `${month}-31`)
+  const { error: e2 } = await qSess
+  if (e2) throw e2
+}
+
 export async function saveLiveSessions(
   rows: Omit<import('@/hooks/useLiveAnalytics').LiveSession, 'id'>[],
 ) {
