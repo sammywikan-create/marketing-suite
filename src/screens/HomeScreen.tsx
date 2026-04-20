@@ -7,7 +7,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
   PieChart, Pie, Cell,
 } from "recharts";
-import { Upload, FileText, Video, Zap } from "lucide-react";
+// lucide-react icons removed — quick actions use emoji
 
 // ─── HELPERS ──────────────────────────────────────────────
 const fRp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -15,6 +15,24 @@ const fN = (n: number) => Math.round(n).toLocaleString("id-ID");
 const fP = (n: number) => n.toFixed(1) + "%";
 
 const STORE_COLORS = ["#1a237e", "#00bcd4", "#ff6b35", "#7c3aed"];
+
+const BULAN_ID = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+function formatPeriod(period: string): string {
+  if (!period) return "";
+  if (/^\d{4}-\d{2}$/.test(period)) {
+    const [year, month] = period.split("-");
+    return `${BULAN_ID[parseInt(month) - 1]} ${year}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(period)) {
+    const d = new Date(period);
+    return `${BULAN_ID[d.getMonth()]} ${d.getFullYear()}`;
+  }
+  return period;
+}
 
 // ─── TYPES ────────────────────────────────────────────────
 interface Alert {
@@ -50,6 +68,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return all;
   }, [stores]);
 
+  // ─── ACTIVE STORES (exclude test data) ──────────────────
+  const activeStores = useMemo(() => {
+    const storeIdsWithData = new Set(allAffiliateData.map((d) => d.storeId));
+    return stores.filter(
+      (s) => storeIdsWithData.has(s.id) && !["toko", "toko2"].includes(s.name)
+    );
+  }, [stores, allAffiliateData]);
+
   // ─── PERIOD SELECTOR ───────────────────────────────────
   const allPeriods = useMemo(
     () => [...new Set(allAffiliateData.map((d) => d.period))].sort(),
@@ -72,26 +98,27 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   // ─── KPI CALCULATIONS ──────────────────────────────────
   const agg = useMemo(() => {
-    const totalGMV = periodSummaries.reduce((a, d) => a + d.summary.totalGMV, 0);
-    const totalRefund = periodSummaries.reduce((a, d) => a + d.summary.totalRefundedGMV, 0);
-    const totalOrders = periodSummaries.reduce((a, d) => a + d.summary.totalOrders, 0);
-    const totalVideos = periodSummaries.reduce((a, d) => a + d.summary.totalVideos, 0);
-    const totalLive = periodSummaries.reduce((a, d) => a + d.summary.totalLive, 0);
-    const totalCommission = periodSummaries.reduce((a, d) => a + d.summary.totalCommission, 0);
-    const videoGMV = periodSummaries.reduce((a, d) => a + d.summary.videoGMV, 0);
-    const liveGMV = periodSummaries.reduce((a, d) => a + d.summary.liveGMV, 0);
-    const productCardGMV = periodSummaries.reduce((a, d) => a + d.summary.productCardGMV, 0);
-    const activeCreators = periodSummaries.reduce((a, d) => a + d.summary.activeCreators, 0);
-    const totalCreators = periodSummaries.reduce((a, d) => a + d.summary.totalCreators, 0);
+    const totalGMV = periodSummaries.reduce((a, d) => a + (d.summary.totalGMV || 0), 0);
+    const totalRefund = periodSummaries.reduce((a, d) => a + (d.summary.totalRefundedGMV || 0), 0);
+    const totalOrders = periodSummaries.reduce((a, d) => a + (d.summary.totalOrders || 0), 0);
+    const totalVideos = periodSummaries.reduce((a, d) => a + (d.summary.totalVideos || 0), 0);
+    const totalLive = periodSummaries.reduce((a, d) => a + (d.summary.totalLive || 0), 0);
+    const totalCommission = periodSummaries.reduce((a, d) => a + (d.summary.totalCommission || 0), 0);
+    const videoGMV = periodSummaries.reduce((a, d) => a + (d.summary.videoGMV || 0), 0);
+    const liveGMV = periodSummaries.reduce((a, d) => a + (d.summary.liveGMV || 0), 0);
+    const productCardGMV = periodSummaries.reduce((a, d) => a + (d.summary.productCardGMV || 0), 0);
+    const activeCreators = periodSummaries.reduce((a, d) => a + (d.summary.activeCreators || 0), 0);
+    const totalCreators = periodSummaries.reduce((a, d) => a + (d.summary.totalCreators || 0), 0);
     const refundRate = totalGMV > 0 ? (totalRefund / totalGMV) * 100 : 0;
     const netGMV = totalGMV - totalRefund;
     const netAfterComm = netGMV - totalCommission;
     const aov = totalOrders > 0 ? totalGMV / totalOrders : 0;
+    const commRate = totalGMV > 0 ? (totalCommission / totalGMV) * 100 : 0;
 
     return {
       totalGMV, totalRefund, totalOrders, totalVideos, totalLive,
       totalCommission, videoGMV, liveGMV, productCardGMV,
-      activeCreators, totalCreators, refundRate, netGMV, netAfterComm, aov,
+      activeCreators, totalCreators, refundRate, netGMV, netAfterComm, aov, commRate,
     };
   }, [periodSummaries]);
 
@@ -105,7 +132,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     if (!prevPeriod) return null;
     const prevGMV = allAffiliateData
       .filter((d) => d.period === prevPeriod)
-      .reduce((a, d) => a + d.summary.totalGMV, 0);
+      .reduce((a, d) => a + (d.summary.totalGMV || 0), 0);
     return prevGMV > 0 ? ((agg.totalGMV - prevGMV) / prevGMV) * 100 : null;
   }, [prevPeriod, allAffiliateData, agg.totalGMV]);
 
@@ -120,22 +147,48 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const targetProgress = targetGMV > 0 ? (agg.totalGMV / targetGMV) * 100 : 0;
   const targetRemaining = Math.max(0, targetGMV - agg.totalGMV);
 
-  // ─── CREATORS ───────────────────────────────────────────
-  const periodCreators = useMemo(() => {
+  // ─── CREATORS (robust with fallback) ────────────────────
+  const allLoadedCreators = useMemo(() => {
     const all: AffiliateCreatorItem[] = [];
+    allAffiliateData.forEach((d) => all.push(...d.creators));
+    return all;
+  }, [allAffiliateData]);
+
+  useEffect(() => {
+    if (allLoadedCreators.length > 0) {
+      console.log("=== DEBUG KREATOR ===");
+      console.log("Total kreator loaded:", allLoadedCreators.length);
+      console.log("Periods in data:", [...new Set(allAffiliateData.map((d) => d.period))]);
+      console.log("selectedPeriod:", activePeriod);
+      console.log("periodSummaries count:", periodSummaries.length);
+      const creatorsInPeriod: AffiliateCreatorItem[] = [];
+      periodSummaries.forEach((d) => d.creators.forEach((c) => { if (c.affiliateGMV > 0) creatorsInPeriod.push(c); }));
+      console.log("Creators with GMV in period:", creatorsInPeriod.length);
+    }
+  }, [allLoadedCreators, activePeriod, allAffiliateData, periodSummaries]);
+
+  const periodCreators = useMemo(() => {
+    const fromPeriod: AffiliateCreatorItem[] = [];
     periodSummaries.forEach((d) => {
       d.creators.forEach((c) => {
-        if (c.affiliateGMV > 0) all.push(c);
+        if ((c.affiliateGMV || 0) > 0) fromPeriod.push(c);
       });
     });
-    return all.sort((a, b) => b.affiliateGMV - a.affiliateGMV);
-  }, [periodSummaries]);
+    if (fromPeriod.length > 0) {
+      return fromPeriod.sort((a, b) => b.affiliateGMV - a.affiliateGMV);
+    }
+    console.warn("periodCreators kosong, pakai fallback semua kreator");
+    return allLoadedCreators
+      .filter((c) => (c.affiliateGMV || 0) > 0)
+      .sort((a, b) => b.affiliateGMV - a.affiliateGMV);
+  }, [periodSummaries, allLoadedCreators]);
 
   const allCreatorsPeriod = useMemo(() => {
     const all: AffiliateCreatorItem[] = [];
     periodSummaries.forEach((d) => all.push(...d.creators));
+    if (all.length === 0 && allLoadedCreators.length > 0) return allLoadedCreators;
     return all;
-  }, [periodSummaries]);
+  }, [periodSummaries, allLoadedCreators]);
 
   const top5Creators = periodCreators.slice(0, 5);
 
@@ -149,9 +202,8 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   // ─── SEGMENTATION ──────────────────────────────────────
   const segmentasi = useMemo(() => {
-    const avgGMV = periodCreators.length > 0
-      ? periodCreators.reduce((a, c) => a + c.affiliateGMV, 0) / periodCreators.length
-      : 0;
+    if (!periodCreators.length) return { bintang: [] as AffiliateCreatorItem[], efisien: [] as AffiliateCreatorItem[], potensi: [] as AffiliateCreatorItem[], perluDorong: [] as AffiliateCreatorItem[] };
+    const avgGMV = periodCreators.reduce((a, c) => a + c.affiliateGMV, 0) / periodCreators.length;
     const bintang: AffiliateCreatorItem[] = [];
     const efisien: AffiliateCreatorItem[] = [];
     const potensi: AffiliateCreatorItem[] = [];
@@ -181,18 +233,26 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       });
     }
 
-    if (targetProgress >= 80 && targetProgress < 100) {
+    if (targetGMV > 0 && targetProgress >= 100) {
       list.push({
-        type: "info", icon: "🎯", title: "Target Hampir Tercapai!",
-        message: `GMV ${fP(targetProgress)} dari target. Tinggal ${fRp(targetRemaining)} lagi.`,
-        action: { label: "Lihat Target", tab: "affiliate" },
+        type: "success", icon: "🎉", title: `Target ${formatPeriod(activePeriod)} Tercapai! ${fP(targetProgress)}`,
+        message: `GMV ${fRp(agg.totalGMV)} melampaui target ${fRp(targetGMV)}.`,
       });
     }
 
-    if (targetProgress >= 100) {
+    if (targetGMV > 0 && targetProgress >= 80 && targetProgress < 100) {
       list.push({
-        type: "success", icon: "🎉", title: `Target Tercapai! ${fP(targetProgress)}`,
-        message: `GMV ${fRp(agg.totalGMV)} melampaui target ${fRp(targetGMV)}. Luar biasa!`,
+        type: "info", icon: "🎯", title: "Target Hampir Tercapai!",
+        message: `${fP(targetProgress)} tercapai. Sisa ${fRp(targetRemaining)} lagi.`,
+        action: { label: "Lihat Detail", tab: "affiliate" },
+      });
+    }
+
+    if (momGrowth !== null && momGrowth < -20) {
+      list.push({
+        type: "warning", icon: "📉", title: "GMV Turun Signifikan",
+        message: `GMV turun ${Math.abs(momGrowth).toFixed(1)}% dibanding ${formatPeriod(prevPeriod || "")}. Perlu investigasi.`,
+        action: { label: "Lihat Tren", tab: "affiliate" },
       });
     }
 
@@ -213,38 +273,49 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     }
 
     return list;
-  }, [agg, targetProgress, targetRemaining, targetGMV, dormantRate, dormantCount, highRefundCreators]);
+  }, [agg, targetGMV, targetProgress, targetRemaining, activePeriod, momGrowth, prevPeriod, dormantRate, dormantCount, highRefundCreators]);
 
   const visibleAlerts = alerts.filter((_, i) => !dismissedAlerts.includes(i));
   const dismissAlert = useCallback((i: number) => {
     setDismissedAlerts((prev) => [...prev, i]);
   }, []);
 
-  // ─── TREND DATA ─────────────────────────────────────────
+  // ─── DAILY AVERAGES ───────────────────────────────────
+  const dailyAvg = useMemo(() => {
+    const days = 30;
+    return {
+      revenuePerDay: agg.totalGMV / days,
+      ordersPerDay: agg.totalOrders / days,
+      contentPerDay: (agg.totalVideos + agg.totalLive) / days,
+      gmvPerVideo: agg.totalVideos > 0 ? agg.videoGMV / agg.totalVideos : 0,
+      gmvPerLive: agg.totalLive > 0 ? agg.liveGMV / agg.totalLive : 0,
+      gmvPerCreator: agg.activeCreators > 0 ? agg.totalGMV / agg.activeCreators : 0,
+    };
+  }, [agg]);
+
+  // ─── TREND DATA ───────────────────────────────────────
   const trendData = useMemo(() => {
     return allPeriods.map((period) => {
       const ps = allAffiliateData.filter((d) => d.period === period);
+      const gabGMV = ps.reduce((a, d) => a + (d.summary.totalGMV || 0), 0);
+      const gabRefund = ps.reduce((a, d) => a + (d.summary.totalRefundedGMV || 0), 0);
       const row: Record<string, string | number> = {
-        period: period.replace(/ 20\d{2}$/, ""),
-        Gabungan: parseFloat((ps.reduce((a, d) => a + d.summary.totalGMV, 0) / 1e6).toFixed(1)),
-        Gabungan_refund: parseFloat((
-          ps.reduce((a, d) => a + d.summary.totalGMV, 0) > 0
-            ? ps.reduce((a, d) => a + d.summary.totalRefundedGMV, 0) / ps.reduce((a, d) => a + d.summary.totalGMV, 0) * 100
-            : 0
-        ).toFixed(1)),
+        period: formatPeriod(period),
+        Gabungan: parseFloat((gabGMV / 1e6).toFixed(1)),
+        Gabungan_refund: parseFloat((gabGMV > 0 ? (gabRefund / gabGMV) * 100 : 0).toFixed(1)),
       };
-      stores.forEach((store) => {
+      activeStores.forEach((store) => {
         const s = ps.find((x) => x.storeId === store.id);
-        row[store.name] = s ? parseFloat((s.summary.totalGMV / 1e6).toFixed(1)) : 0;
-        row[store.name + "_refund"] = s ? parseFloat(s.summary.refundRate.toFixed(1)) : 0;
+        row[store.name] = s ? parseFloat(((s.summary.totalGMV || 0) / 1e6).toFixed(1)) : 0;
+        row[store.name + "_refund"] = s ? parseFloat(((s.summary.refundRate || 0)).toFixed(1)) : 0;
       });
       return row;
     });
-  }, [allAffiliateData, allPeriods, stores]);
+  }, [allAffiliateData, allPeriods, activeStores]);
 
   // ─── STORE BREAKDOWN ────────────────────────────────────
   const storeBreakdown = useMemo(() => {
-    return stores.map((store) => {
+    return activeStores.map((store) => {
       const s = periodSummaries.find((x) => x.storeId === store.id);
       const sm = s?.summary;
       return {
@@ -266,7 +337,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     })
     .filter((s) => s.gmv > 0)
     .sort((a, b) => b.gmv - a.gmv);
-  }, [stores, periodSummaries, agg.totalGMV]);
+  }, [activeStores, periodSummaries, agg.totalGMV]);
 
   // ─── CHANNEL DATA ───────────────────────────────────────
   const channelData = useMemo(() => [
@@ -294,7 +365,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     {
       id: "gmv", label: "Total GMV", value: fRp(agg.totalGMV),
       sub: momGrowth !== null
-        ? `${momGrowth >= 0 ? "↑" : "↓"} ${Math.abs(momGrowth).toFixed(1)}% vs ${prevPeriod}`
+        ? `${momGrowth >= 0 ? "↑" : "↓"} ${Math.abs(momGrowth).toFixed(1)}% vs ${formatPeriod(prevPeriod || "")}`
         : "Periode pertama",
       subOk: momGrowth === null || momGrowth >= 0,
       icon: "💰", color: "blue", tab: "affiliate",
@@ -307,7 +378,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     },
     {
       id: "netcomm", label: "Net Setelah Komisi", value: fRp(agg.netAfterComm),
-      sub: `Komisi ${fRp(agg.totalCommission)} (${fP(agg.totalGMV > 0 ? (agg.totalCommission / agg.totalGMV) * 100 : 0)})`,
+      sub: `Komisi ${fRp(agg.totalCommission)} (${fP(agg.commRate)})`,
       subOk: true,
       icon: "💳", color: "teal", tab: "affiliate",
     },
@@ -351,12 +422,12 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   ], [agg, momGrowth, prevPeriod, targetGMV, targetProgress, targetRemaining]);
 
   // ─── QUICK ACTIONS ──────────────────────────────────────
-  const quickActions = useMemo(() => [
-    { icon: <Upload className="w-5 h-5" />, label: "Upload Data", desc: "Import Excel TikTok / Tokopedia", tab: "gmv-upload", color: "bg-blue-600 hover:bg-blue-700" },
-    { icon: <FileText className="w-5 h-5" />, label: "Generate Laporan", desc: "Export PDF atau Excel", tab: "report-builder", color: "bg-indigo-600 hover:bg-indigo-700" },
-    { icon: <Video className="w-5 h-5" />, label: "Performa Video", desc: "Analisis konten kreator", tab: "video-performance", color: "bg-purple-600 hover:bg-purple-700" },
-    { icon: <Zap className="w-5 h-5" />, label: "GMV Max", desc: "Iklan & creative performance", tab: "gmv-creative", color: "bg-orange-500 hover:bg-orange-600" },
-  ], []);
+  const quickActions = [
+    { icon: "📤", label: "Upload Data", desc: "Import Excel TikTok / Tokopedia", tab: "gmv-upload", color: "bg-blue-600 hover:bg-blue-700" },
+    { icon: "📄", label: "Generate Laporan", desc: "Export PDF atau Excel", tab: "report-builder", color: "bg-indigo-600 hover:bg-indigo-700" },
+    { icon: "🎥", label: "Performa Video", desc: "Analisis konten kreator", tab: "video-performance", color: "bg-purple-600 hover:bg-purple-700" },
+    { icon: "🎯", label: "GMV Max", desc: "Iklan & creative performance", tab: "gmv-creative", color: "bg-orange-500 hover:bg-orange-600" },
+  ];
 
   // ─── COLOR MAP ──────────────────────────────────────────
   const colorMap: Record<string, { bg: string; icon: string; text: string; border: string }> = {
@@ -382,7 +453,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{greeting}, Kak 👋</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {dateStr} — {stores.map((s) => s.name).join(" & ")}
+            {dateStr} — {activeStores.map((s) => s.name).join(" & ")}
           </p>
         </div>
         {allPeriods.length > 0 && (
@@ -399,7 +470,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                       : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
-                  {period}
+                  {formatPeriod(period)}
                 </button>
               ))}
             </div>
@@ -465,7 +536,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       {/* ═══ ZONA 3: KPI GABUNGAN ═══ */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          📊 Ringkasan {activePeriod} — Gabungan Semua Toko
+          📊 Ringkasan {formatPeriod(activePeriod)} — Gabungan Semua Toko
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {kpiCards.map((card) => {
@@ -494,6 +565,26 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           })}
         </div>
       </div>
+
+      {/* ═══ ZONA 3.5: RATA-RATA HARIAN ═══ */}
+      {agg.totalGMV > 0 && (
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { label: "Omset/Hari", value: fRp(dailyAvg.revenuePerDay), icon: "📅" },
+            { label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)), icon: "🛒" },
+            { label: "Konten/Hari", value: fN(Math.round(dailyAvg.contentPerDay)), icon: "📹" },
+            { label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo), icon: "🎬" },
+            { label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive), icon: "🔴" },
+            { label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator), icon: "👤" },
+          ].map((item) => (
+            <div key={item.label} className="bg-white border border-gray-100 rounded-xl p-3 text-center">
+              <div className="text-lg mb-1">{item.icon}</div>
+              <div className="text-sm font-bold text-gray-900">{item.value}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{item.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ═══ ZONA 4: TREND CHART ═══ */}
       {trendData.length > 0 && (
@@ -572,7 +663,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                   connectNulls
                 />
               ) : (
-                stores.map((store, i) => (
+                activeStores.map((store, i) => (
                   <Line
                     key={store.id}
                     type="monotone"
@@ -595,7 +686,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       {storeBreakdown.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            🏪 Kontribusi Per Toko — {activePeriod}
+            � Kontribusi Per Toko — {formatPeriod(activePeriod)}
           </h2>
           <div className={`grid grid-cols-1 ${storeBreakdown.length >= 2 ? "lg:grid-cols-2" : ""} gap-4`}>
             {storeBreakdown.map((sd, i) => (
@@ -608,7 +699,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                     </div>
                     <div>
                       <div className="font-semibold text-gray-900">{sd.store.name}</div>
-                      <div className="text-xs text-gray-400">{activePeriod}</div>
+                      <div className="text-xs text-gray-400">{formatPeriod(activePeriod)}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -724,7 +815,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-gray-900">📊 Kontribusi Channel</h3>
-            <span className="text-xs text-gray-400">{activePeriod}</span>
+            <span className="text-xs text-gray-400">{formatPeriod(activePeriod)}</span>
           </div>
           {channelData.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-8">Belum ada data channel</p>
@@ -801,7 +892,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">
-              🎯 Target GMV — {activePeriod}
+              🎯 Target GMV — {formatPeriod(activePeriod)}
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
               {targetGMV > 0
