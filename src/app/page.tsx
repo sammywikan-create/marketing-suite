@@ -31,6 +31,7 @@ import CompareGabunganScreen from "@/screens/CompareGabunganScreen";
 import OKRScreen from "@/screens/OKRScreen";
 import AffiliateScreen from "@/screens/AffiliateScreen";
 import ReportBuilderScreen from "@/screens/ReportBuilderScreen";
+import HomeScreen from "@/screens/HomeScreen";
 import StoreSettingsScreen from "@/screens/StoreSettingsScreen";
 import StoreSelector from "@/components/StoreSelector";
 import { useGMVStore } from "@/lib/gmvStore";
@@ -40,7 +41,7 @@ import { useAIPageContext } from "@/hooks/useAIPageContext";
 import type { BusinessOverviewData, VideoPerformanceData } from "@/lib/types";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
+  const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [hydrated, setHydrated] = useState(false);
   const { fileName, setData: setGMVData } = useGMVStore();
   const { stores, activeStoreId, getActiveStore, addStore, setActiveStore, saveOverviewData, saveVideoData, migrated, setMigrated, initFromSupabase, loadAffiliateFromSupabase } = useStoreManager();
@@ -148,6 +149,7 @@ export default function Home() {
 
   const renderScreen = () => {
     switch (activeTab) {
+      case "home": return <HomeScreen onNavigate={navigate} />;
       case "dashboard": return <DashboardScreen />;
       case "panduan": return <PanduanScreen />;
       case "content-tracker": return <ContentTrackerScreen />;

@@ -140,6 +140,7 @@ export interface PanduanItem {
 }
 
 export type TabKey =
+  | "home"
   | "dashboard"
   | "panduan"
   | "content-tracker"

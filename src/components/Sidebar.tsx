@@ -15,6 +15,12 @@ interface TabGroup {
 
 const tabGroups: TabGroup[] = [
   {
+    title: "Home",
+    items: [
+      { key: "home", label: "🏠 Executive Summary", icon: <LayoutDashboard size={18} /> },
+    ],
+  },
+  {
     title: "Marketing Planner",
     items: [
       { key: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
