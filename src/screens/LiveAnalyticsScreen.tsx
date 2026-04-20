@@ -111,16 +111,25 @@ export default function LiveAnalyticsScreen() {
   // ─── DELETE STATE ────────────────────────────────────
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteMonth, setDeleteMonth] = useState<string>("");
+  const [deleteStore, setDeleteStore] = useState<string>("");
+
+  const openDeleteDialog = useCallback(() => {
+    setDeleteMonth("");
+    setDeleteStore(activeStore?.id || "");
+    setShowDeleteConfirm(true);
+  }, [activeStore]);
 
   const handleDelete = useCallback(async () => {
-    if (!activeStore) return;
+    if (!deleteStore) return;
     setIsDeleting(true);
     setUploadMsg(null);
     try {
-      const month = selectedMonth !== "all" ? selectedMonth : undefined;
-      await deleteLiveData(activeStore.id, month);
+      const month = deleteMonth || undefined;
+      await deleteLiveData(deleteStore, month);
+      const storeName = activeStores.find((s) => s.id === deleteStore)?.name || "toko";
       const label = month ? formatPeriod(month) : "semua bulan";
-      setUploadMsg({ type: "ok", text: `🗑️ Data LIVE ${activeStore.name} (${label}) berhasil dihapus. Refresh halaman.` });
+      setUploadMsg({ type: "ok", text: `🗑️ Data LIVE ${storeName} (${label}) berhasil dihapus. Refresh halaman.` });
       setShowDeleteConfirm(false);
       setReloadKey((k) => k + 1);
     } catch (err: any) {
@@ -129,7 +138,7 @@ export default function LiveAnalyticsScreen() {
     } finally {
       setIsDeleting(false);
     }
-  }, [activeStore, selectedMonth]);
+  }, [deleteStore, deleteMonth, activeStores]);
   const [viewMode, setViewMode] = useState<"gabungan" | string>("gabungan");
   const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "harian">("overview");
 
@@ -507,7 +516,7 @@ export default function LiveAnalyticsScreen() {
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
             </label>
             <button
-              onClick={() => setShowDeleteConfirm(true)}
+              onClick={openDeleteDialog}
               disabled={isDeleting || (!coreStats.length && !sessions.length)}
               className="flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -589,14 +598,47 @@ export default function LiveAnalyticsScreen() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-4">
               <div className="text-4xl mb-2">⚠️</div>
-              <h3 className="text-lg font-bold text-gray-900">Hapus Data LIVE?</h3>
-              <p className="text-sm text-gray-500 mt-2">
-                {selectedMonth !== "all"
-                  ? `Semua data LIVE ${activeStore?.name || "toko"} untuk bulan ${formatPeriod(selectedMonth)} akan dihapus permanen.`
-                  : `Semua data LIVE ${activeStore?.name || "toko"} (semua bulan) akan dihapus permanen.`}
-              </p>
-              <p className="text-xs text-red-500 mt-2 font-medium">Aksi ini tidak bisa dibatalkan!</p>
+              <h3 className="text-lg font-bold text-gray-900">Hapus Data LIVE</h3>
             </div>
+
+            {/* Pilih Toko */}
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Toko</label>
+              <select
+                value={deleteStore}
+                onChange={(e) => setDeleteStore(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
+              >
+                {activeStores.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Pilih Bulan */}
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Periode</label>
+              <select
+                value={deleteMonth}
+                onChange={(e) => setDeleteMonth(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
+              >
+                <option value="">🗑️ Semua Bulan (hapus semua)</option>
+                {allMonths.map((m) => (
+                  <option key={m} value={m}>{formatPeriod(m)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4">
+              <p className="text-xs text-red-600 font-medium text-center">
+                {deleteMonth
+                  ? `Data LIVE bulan ${formatPeriod(deleteMonth)} akan dihapus permanen.`
+                  : "Semua data LIVE toko ini akan dihapus permanen."}
+              </p>
+              <p className="text-[11px] text-red-400 text-center mt-1">Aksi ini tidak bisa dibatalkan!</p>
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
@@ -606,7 +648,7 @@ export default function LiveAnalyticsScreen() {
               </button>
               <button
                 onClick={handleDelete}
-                disabled={isDeleting}
+                disabled={isDeleting || !deleteStore}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50"
               >
                 {isDeleting ? "⏳ Menghapus..." : "🗑️ Ya, Hapus"}
