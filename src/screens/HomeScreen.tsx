@@ -1,7 +1,7 @@
 "use client";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
-import type { AffiliateMonthData, AffiliateCreatorItem, AffiliateTarget } from "@/lib/types";
+import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -13,6 +13,8 @@ import { Upload, FileText, Video, Zap } from "lucide-react";
 const fRp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fN = (n: number) => Math.round(n).toLocaleString("id-ID");
 const fP = (n: number) => n.toFixed(1) + "%";
+
+const STORE_COLORS = ["#1a237e", "#00bcd4", "#ff6b35", "#7c3aed"];
 
 // ─── TYPES ────────────────────────────────────────────────
 interface Alert {
@@ -31,11 +33,15 @@ interface HomeScreenProps {
 // HOME SCREEN COMPONENT
 // ═══════════════════════════════════════════════════════════
 export default function HomeScreen({ onNavigate }: HomeScreenProps) {
-  const { stores, getActiveStore } = useStoreManager();
+  const { stores } = useStoreManager();
   const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
-  const [activeMetric, setActiveMetric] = useState<"gmv" | "refund">("gmv");
+  const [chartView, setChartView] = useState<"gabungan" | "pertoko">("gabungan");
+  const [chartMetric, setChartMetric] = useState<"gmv" | "refund">("gmv");
+  const [showTargetForm, setShowTargetForm] = useState(false);
+  const [targetInput, setTargetInput] = useState("");
+  const [targetVersion, setTargetVersion] = useState(0);
 
-  // ─── AGGREGATE DATA ─────────────────────────────────────
+  // ─── ALL AFFILIATE DATA ─────────────────────────────────
   const allAffiliateData = useMemo(() => {
     const all: AffiliateMonthData[] = [];
     stores.forEach((s) => {
@@ -44,113 +50,124 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return all;
   }, [stores]);
 
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
-
-  const thisMonthData = useMemo(
-    () => allAffiliateData.filter((d) => d.period?.startsWith(currentMonth)),
-    [allAffiliateData, currentMonth]
+  // ─── PERIOD SELECTOR ───────────────────────────────────
+  const allPeriods = useMemo(
+    () => [...new Set(allAffiliateData.map((d) => d.period))].sort(),
+    [allAffiliateData]
   );
+  const latestPeriod = allPeriods[allPeriods.length - 1] || "";
+  const [selectedPeriod, setSelectedPeriod] = useState("");
 
-  const lastMonthKey = useMemo(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 7);
-  }, []);
+  useEffect(() => {
+    if (!selectedPeriod && latestPeriod) setSelectedPeriod(latestPeriod);
+  }, [latestPeriod, selectedPeriod]);
 
-  const lastMonthData = useMemo(
-    () => allAffiliateData.filter((d) => d.period?.startsWith(lastMonthKey)),
-    [allAffiliateData, lastMonthKey]
+  const activePeriod = selectedPeriod || latestPeriod;
+
+  // ─── PERIOD SUMMARIES (gabungan semua toko, 1 periode) ──
+  const periodSummaries = useMemo(
+    () => allAffiliateData.filter((d) => d.period === activePeriod),
+    [allAffiliateData, activePeriod]
   );
 
   // ─── KPI CALCULATIONS ──────────────────────────────────
   const agg = useMemo(() => {
-    const totalGMV = thisMonthData.reduce((a, d) => a + d.summary.totalGMV, 0);
-    const totalRefund = thisMonthData.reduce((a, d) => a + d.summary.totalRefundedGMV, 0);
-    const totalOrders = thisMonthData.reduce((a, d) => a + d.summary.totalOrders, 0);
-    const totalVideos = thisMonthData.reduce((a, d) => a + d.summary.totalVideos, 0);
-    const totalLive = thisMonthData.reduce((a, d) => a + d.summary.totalLive, 0);
-    const totalCommission = thisMonthData.reduce((a, d) => a + d.summary.totalCommission, 0);
-    const videoGMV = thisMonthData.reduce((a, d) => a + d.summary.videoGMV, 0);
-    const liveGMV = thisMonthData.reduce((a, d) => a + d.summary.liveGMV, 0);
-    const productCardGMV = thisMonthData.reduce((a, d) => a + d.summary.productCardGMV, 0);
-    const activeCreators = thisMonthData.reduce((a, d) => a + d.summary.activeCreators, 0);
-    const totalCreators = thisMonthData.reduce((a, d) => a + d.summary.totalCreators, 0);
+    const totalGMV = periodSummaries.reduce((a, d) => a + d.summary.totalGMV, 0);
+    const totalRefund = periodSummaries.reduce((a, d) => a + d.summary.totalRefundedGMV, 0);
+    const totalOrders = periodSummaries.reduce((a, d) => a + d.summary.totalOrders, 0);
+    const totalVideos = periodSummaries.reduce((a, d) => a + d.summary.totalVideos, 0);
+    const totalLive = periodSummaries.reduce((a, d) => a + d.summary.totalLive, 0);
+    const totalCommission = periodSummaries.reduce((a, d) => a + d.summary.totalCommission, 0);
+    const videoGMV = periodSummaries.reduce((a, d) => a + d.summary.videoGMV, 0);
+    const liveGMV = periodSummaries.reduce((a, d) => a + d.summary.liveGMV, 0);
+    const productCardGMV = periodSummaries.reduce((a, d) => a + d.summary.productCardGMV, 0);
+    const activeCreators = periodSummaries.reduce((a, d) => a + d.summary.activeCreators, 0);
+    const totalCreators = periodSummaries.reduce((a, d) => a + d.summary.totalCreators, 0);
     const refundRate = totalGMV > 0 ? (totalRefund / totalGMV) * 100 : 0;
     const netGMV = totalGMV - totalRefund;
-
-    const lastGMV = lastMonthData.reduce((a, d) => a + d.summary.totalGMV, 0);
-    const momGrowth = lastGMV > 0 ? ((totalGMV - lastGMV) / lastGMV) * 100 : 0;
+    const netAfterComm = netGMV - totalCommission;
+    const aov = totalOrders > 0 ? totalGMV / totalOrders : 0;
 
     return {
       totalGMV, totalRefund, totalOrders, totalVideos, totalLive,
       totalCommission, videoGMV, liveGMV, productCardGMV,
-      activeCreators, totalCreators, refundRate, netGMV, momGrowth,
+      activeCreators, totalCreators, refundRate, netGMV, netAfterComm, aov,
     };
-  }, [thisMonthData, lastMonthData]);
+  }, [periodSummaries]);
 
-  // ─── TARGET ─────────────────────────────────────────────
-  const target = useMemo(() => {
-    let t: AffiliateTarget | null = null;
-    for (const s of stores) {
-      const targets = s.affiliateTargets || [];
-      const found = targets.find((tg) => tg.period === currentMonth || tg.period === "all");
-      if (found) { t = found; break; }
-    }
-    return t;
-  }, [stores, currentMonth]);
+  // ─── MoM COMPARISON ─────────────────────────────────────
+  const prevPeriod = useMemo(() => {
+    const idx = allPeriods.indexOf(activePeriod);
+    return idx > 0 ? allPeriods[idx - 1] : null;
+  }, [allPeriods, activePeriod]);
 
-  const targetGMV = target?.targetGMV || 0;
+  const momGrowth = useMemo(() => {
+    if (!prevPeriod) return null;
+    const prevGMV = allAffiliateData
+      .filter((d) => d.period === prevPeriod)
+      .reduce((a, d) => a + d.summary.totalGMV, 0);
+    return prevGMV > 0 ? ((agg.totalGMV - prevGMV) / prevGMV) * 100 : null;
+  }, [prevPeriod, allAffiliateData, agg.totalGMV]);
+
+  // ─── TARGET (localStorage) ──────────────────────────────
+  const getTarget = useCallback((period: string) => {
+    if (typeof window === "undefined") return 0;
+    return Number(localStorage.getItem(`target_gmv_${period}`) || 0);
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const targetGMV = useMemo(() => getTarget(activePeriod), [activePeriod, targetVersion, getTarget]);
   const targetProgress = targetGMV > 0 ? (agg.totalGMV / targetGMV) * 100 : 0;
   const targetRemaining = Math.max(0, targetGMV - agg.totalGMV);
 
   // ─── CREATORS ───────────────────────────────────────────
-  const thisMonthCreators = useMemo(() => {
+  const periodCreators = useMemo(() => {
     const all: AffiliateCreatorItem[] = [];
-    thisMonthData.forEach((d) => {
+    periodSummaries.forEach((d) => {
       d.creators.forEach((c) => {
         if (c.affiliateGMV > 0) all.push(c);
       });
     });
     return all.sort((a, b) => b.affiliateGMV - a.affiliateGMV);
-  }, [thisMonthData]);
+  }, [periodSummaries]);
 
-  const top5Creators = thisMonthCreators.slice(0, 5);
+  const allCreatorsPeriod = useMemo(() => {
+    const all: AffiliateCreatorItem[] = [];
+    periodSummaries.forEach((d) => all.push(...d.creators));
+    return all;
+  }, [periodSummaries]);
+
+  const top5Creators = periodCreators.slice(0, 5);
 
   const highRefundCreators = useMemo(
-    () => thisMonthCreators.filter((c) => c.refundRate > 50 && c.affiliateGMV > 500000),
-    [thisMonthCreators]
+    () => periodCreators.filter((c) => c.refundRate > 50 && c.affiliateGMV > 500000),
+    [periodCreators]
   );
 
-  // Dormant
-  const allCreatorsThisMonth = useMemo(() => {
-    const all: AffiliateCreatorItem[] = [];
-    thisMonthData.forEach((d) => all.push(...d.creators));
-    return all;
-  }, [thisMonthData]);
-  const dormantCount = allCreatorsThisMonth.filter((c) => c.affiliateGMV === 0).length;
-  const dormantRate = allCreatorsThisMonth.length > 0 ? (dormantCount / allCreatorsThisMonth.length) * 100 : 0;
+  const dormantCount = allCreatorsPeriod.filter((c) => c.affiliateGMV === 0).length;
+  const dormantRate = allCreatorsPeriod.length > 0 ? (dormantCount / allCreatorsPeriod.length) * 100 : 0;
 
   // ─── SEGMENTATION ──────────────────────────────────────
   const segmentasi = useMemo(() => {
-    const avgGMV = thisMonthCreators.length > 0
-      ? thisMonthCreators.reduce((a, c) => a + c.affiliateGMV, 0) / thisMonthCreators.length
+    const avgGMV = periodCreators.length > 0
+      ? periodCreators.reduce((a, c) => a + c.affiliateGMV, 0) / periodCreators.length
       : 0;
     const bintang: AffiliateCreatorItem[] = [];
     const efisien: AffiliateCreatorItem[] = [];
     const potensi: AffiliateCreatorItem[] = [];
     const perluDorong: AffiliateCreatorItem[] = [];
 
-    allCreatorsThisMonth.forEach((c) => {
+    allCreatorsPeriod.forEach((c) => {
       const hasContent = (c.affiliateShoppableVideos || 0) + (c.affiliateLiveStreams || 0) >= 1;
       const highGMV = c.affiliateGMV >= avgGMV && c.affiliateGMV > 0;
       if (highGMV && hasContent) bintang.push(c);
       else if (highGMV && !hasContent) efisien.push(c);
-      else if (!highGMV && hasContent) potensi.push(c);
+      else if (!highGMV && c.affiliateGMV > 0 && hasContent) potensi.push(c);
       else perluDorong.push(c);
     });
 
     return { bintang, efisien, potensi, perluDorong };
-  }, [thisMonthCreators, allCreatorsThisMonth]);
+  }, [periodCreators, allCreatorsPeriod]);
 
   // ─── ALERTS ─────────────────────────────────────────────
   const alerts = useMemo(() => {
@@ -167,14 +184,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     if (targetProgress >= 80 && targetProgress < 100) {
       list.push({
         type: "info", icon: "🎯", title: "Target Hampir Tercapai!",
-        message: `GMV bulan ini ${fP(targetProgress)} dari target. Tinggal ${fRp(targetRemaining)} lagi.`,
+        message: `GMV ${fP(targetProgress)} dari target. Tinggal ${fRp(targetRemaining)} lagi.`,
         action: { label: "Lihat Target", tab: "affiliate" },
       });
     }
 
     if (targetProgress >= 100) {
       list.push({
-        type: "success", icon: "🎉", title: `Target Bulan Ini Tercapai! ${fP(targetProgress)}`,
+        type: "success", icon: "🎉", title: `Target Tercapai! ${fP(targetProgress)}`,
         message: `GMV ${fRp(agg.totalGMV)} melampaui target ${fRp(targetGMV)}. Luar biasa!`,
       });
     }
@@ -205,24 +222,58 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   // ─── TREND DATA ─────────────────────────────────────────
   const trendData = useMemo(() => {
-    const periodMap: Record<string, Record<string, number>> = {};
-
-    allAffiliateData.forEach((d) => {
-      const period = d.period?.slice(0, 7) || "";
-      if (!period) return;
-      if (!periodMap[period]) periodMap[period] = {};
-      const storeName = stores.find((s) => s.id === d.storeId)?.name || "Toko";
-      periodMap[period][storeName] = (periodMap[period][storeName] || 0) + d.summary.totalGMV / 1_000_000;
-      periodMap[period][storeName + "_refund"] = d.summary.refundRate;
+    return allPeriods.map((period) => {
+      const ps = allAffiliateData.filter((d) => d.period === period);
+      const row: Record<string, string | number> = {
+        period: period.replace(/ 20\d{2}$/, ""),
+        Gabungan: parseFloat((ps.reduce((a, d) => a + d.summary.totalGMV, 0) / 1e6).toFixed(1)),
+        Gabungan_refund: parseFloat((
+          ps.reduce((a, d) => a + d.summary.totalGMV, 0) > 0
+            ? ps.reduce((a, d) => a + d.summary.totalRefundedGMV, 0) / ps.reduce((a, d) => a + d.summary.totalGMV, 0) * 100
+            : 0
+        ).toFixed(1)),
+      };
+      stores.forEach((store) => {
+        const s = ps.find((x) => x.storeId === store.id);
+        row[store.name] = s ? parseFloat((s.summary.totalGMV / 1e6).toFixed(1)) : 0;
+        row[store.name + "_refund"] = s ? parseFloat(s.summary.refundRate.toFixed(1)) : 0;
+      });
+      return row;
     });
+  }, [allAffiliateData, allPeriods, stores]);
 
-    return Object.entries(periodMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([period, vals]) => ({ period: period.slice(2), ...vals }));
-  }, [allAffiliateData, stores]);
+  // ─── STORE BREAKDOWN ────────────────────────────────────
+  const storeBreakdown = useMemo(() => {
+    return stores.map((store) => {
+      const s = periodSummaries.find((x) => x.storeId === store.id);
+      const sm = s?.summary;
+      return {
+        store,
+        gmv: sm?.totalGMV || 0,
+        netGMV: (sm?.totalGMV || 0) - (sm?.totalRefundedGMV || 0),
+        refund: sm?.totalRefundedGMV || 0,
+        refundRate: sm?.refundRate || 0,
+        orders: sm?.totalOrders || 0,
+        videos: sm?.totalVideos || 0,
+        live: sm?.totalLive || 0,
+        creators: sm?.activeCreators || 0,
+        commission: sm?.totalCommission || 0,
+        videoGMV: sm?.videoGMV || 0,
+        liveGMV: sm?.liveGMV || 0,
+        productCardGMV: sm?.productCardGMV || 0,
+        share: agg.totalGMV > 0 ? ((sm?.totalGMV || 0) / agg.totalGMV) * 100 : 0,
+      };
+    })
+    .filter((s) => s.gmv > 0)
+    .sort((a, b) => b.gmv - a.gmv);
+  }, [stores, periodSummaries, agg.totalGMV]);
 
-  const storeNames = useMemo(() => stores.map((s) => s.name), [stores]);
-  const STORE_COLORS = ["#1a237e", "#00bcd4", "#ff6b35", "#7c3aed"];
+  // ─── CHANNEL DATA ───────────────────────────────────────
+  const channelData = useMemo(() => [
+    { name: "Video Shoppable", value: agg.videoGMV, color: "#1a237e" },
+    { name: "Product Card", value: agg.productCardGMV, color: "#00bcd4" },
+    { name: "LIVE Stream", value: agg.liveGMV, color: "#ff6b35" },
+  ].filter((d) => d.value > 0), [agg]);
 
   // ─── GREETING ───────────────────────────────────────────
   const greeting = useMemo(() => {
@@ -241,57 +292,63 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   // ─── KPI CARDS ──────────────────────────────────────────
   const kpiCards = useMemo(() => [
     {
-      id: "gmv", label: "Total GMV Bulan Ini", value: fRp(agg.totalGMV),
-      sub: `${agg.momGrowth >= 0 ? "↑" : "↓"} ${Math.abs(agg.momGrowth).toFixed(1)}% vs bulan lalu`,
-      subColor: agg.momGrowth >= 0 ? "text-green-600" : "text-red-500",
-      icon: "💰", color: "blue" as const, tab: "affiliate",
+      id: "gmv", label: "Total GMV", value: fRp(agg.totalGMV),
+      sub: momGrowth !== null
+        ? `${momGrowth >= 0 ? "↑" : "↓"} ${Math.abs(momGrowth).toFixed(1)}% vs ${prevPeriod}`
+        : "Periode pertama",
+      subOk: momGrowth === null || momGrowth >= 0,
+      icon: "💰", color: "blue", tab: "affiliate",
     },
     {
-      id: "netgmv", label: "Net GMV (Setelah Refund)", value: fRp(agg.netGMV),
+      id: "netgmv", label: "Net GMV (setelah refund)", value: fRp(agg.netGMV),
       sub: `Refund ${fRp(agg.totalRefund)} (${fP(agg.refundRate)})`,
-      subColor: agg.refundRate > 15 ? "text-red-500" : "text-green-600",
-      icon: "✅", color: "green" as const, tab: "affiliate",
+      subOk: agg.refundRate <= 15,
+      icon: "✅", color: "green", tab: "affiliate",
+    },
+    {
+      id: "netcomm", label: "Net Setelah Komisi", value: fRp(agg.netAfterComm),
+      sub: `Komisi ${fRp(agg.totalCommission)} (${fP(agg.totalGMV > 0 ? (agg.totalCommission / agg.totalGMV) * 100 : 0)})`,
+      subOk: true,
+      icon: "💳", color: "teal", tab: "affiliate",
     },
     {
       id: "orders", label: "Total Pesanan", value: fN(agg.totalOrders),
-      sub: `AOV ${fRp(agg.totalOrders > 0 ? agg.totalGMV / agg.totalOrders : 0)}`,
-      subColor: "text-gray-500", icon: "🛒", color: "purple" as const, tab: "affiliate",
+      sub: `AOV ${fRp(agg.aov)} per pesanan`,
+      subOk: true,
+      icon: "🛒", color: "purple", tab: "affiliate",
     },
     {
       id: "creators", label: "Kreator Aktif", value: fN(agg.activeCreators),
-      sub: `${agg.totalCreators > 0 ? fP((agg.activeCreators / agg.totalCreators) * 100) : "0%"} dari ${fN(agg.totalCreators)} terdaftar`,
-      subColor: "text-gray-500", icon: "🎥", color: "orange" as const, tab: "affiliate",
+      sub: `dari ${fN(agg.totalCreators)} terdaftar (${agg.totalCreators > 0 ? fP((agg.activeCreators / agg.totalCreators) * 100) : "0%"})`,
+      subOk: agg.totalCreators > 0 ? (agg.activeCreators / agg.totalCreators) * 100 >= 5 : true,
+      icon: "🎥", color: "orange", tab: "affiliate",
     },
     {
-      id: "commission", label: "Total Komisi", value: fRp(agg.totalCommission),
-      sub: `${fP(agg.totalGMV > 0 ? (agg.totalCommission / agg.totalGMV) * 100 : 0)} dari GMV`,
-      subColor: "text-gray-500", icon: "💳", color: "teal" as const, tab: "affiliate",
-    },
-    {
-      id: "target", label: "Progress Target", value: targetGMV > 0 ? fP(targetProgress) : "—",
-      sub: targetGMV > 0 ? `${fRp(agg.totalGMV)} / ${fRp(targetGMV)}` : "Belum set target",
-      subColor: targetProgress >= 100 ? "text-green-600" : targetProgress >= 70 ? "text-yellow-600" : "text-red-500",
-      icon: "🎯", color: targetProgress >= 100 ? "green" : "yellow", tab: "affiliate",
-    },
-    {
-      id: "videos", label: "Total Konten Kreator", value: fN(agg.totalVideos + agg.totalLive),
+      id: "videos", label: "Konten Dibuat", value: fN(agg.totalVideos + agg.totalLive),
       sub: `${fN(agg.totalVideos)} video + ${fN(agg.totalLive)} LIVE`,
-      subColor: "text-gray-500", icon: "📹", color: "indigo" as const, tab: "video-performance",
+      subOk: true,
+      icon: "📹", color: "indigo", tab: "video-performance",
     },
     {
       id: "refund", label: "Refund Rate", value: fP(agg.refundRate),
-      sub: agg.refundRate > 20 ? "⚠️ Melebihi batas aman" : agg.refundRate > 10 ? "🟡 Perlu dipantau" : "🟢 Aman",
-      subColor: agg.refundRate > 20 ? "text-red-500" : agg.refundRate > 10 ? "text-yellow-600" : "text-green-600",
-      icon: "↩️", color: agg.refundRate > 20 ? "red" : "gray", tab: "affiliate",
+      sub: agg.refundRate > 20 ? "🔴 Di atas batas aman (15%)" : agg.refundRate > 10 ? "🟡 Perlu dipantau" : "🟢 Aman",
+      subOk: agg.refundRate <= 15,
+      icon: "↩️", color: agg.refundRate > 20 ? "red" : agg.refundRate > 10 ? "yellow" : "gray",
+      tab: "affiliate",
     },
-  ], [agg, targetGMV, targetProgress]);
-
-  // ─── CHANNEL DATA ───────────────────────────────────────
-  const channelData = useMemo(() => [
-    { name: "Video", value: agg.videoGMV, color: "#1a237e" },
-    { name: "Product Card", value: agg.productCardGMV, color: "#00bcd4" },
-    { name: "LIVE", value: agg.liveGMV, color: "#ff6b35" },
-  ].filter((d) => d.value > 0), [agg]);
+    {
+      id: "target", label: "Progress Target",
+      value: targetGMV > 0 ? fP(targetProgress) : "Belum diset",
+      sub: targetGMV > 0
+        ? (targetProgress >= 100
+            ? `🎉 Tercapai! ${fRp(agg.totalGMV)} / ${fRp(targetGMV)}`
+            : `Sisa ${fRp(targetRemaining)} lagi`)
+        : "Klik untuk set target",
+      subOk: targetProgress >= 100 || targetGMV === 0,
+      icon: "🎯", color: targetProgress >= 100 ? "green" : targetProgress >= 70 ? "yellow" : "red",
+      tab: "",
+    },
+  ], [agg, momGrowth, prevPeriod, targetGMV, targetProgress, targetRemaining]);
 
   // ─── QUICK ACTIONS ──────────────────────────────────────
   const quickActions = useMemo(() => [
@@ -319,17 +376,38 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   // ═══════════════════════════════════════════════════════
   return (
     <div className="space-y-6">
-      {/* ─── BAGIAN 1: GREETING ─── */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {greeting}, Kak 👋
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {dateStr} — {stores.map((s) => s.name).join(" + ")}
-        </p>
+
+      {/* ═══ ZONA 1: HEADER + PERIOD SELECTOR ═══ */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{greeting}, Kak 👋</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {dateStr} — {stores.map((s) => s.name).join(" & ")}
+          </p>
+        </div>
+        {allPeriods.length > 0 && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-xs text-gray-400">Periode:</span>
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-wrap">
+              {allPeriods.map((period) => (
+                <button
+                  key={period}
+                  onClick={() => setSelectedPeriod(period)}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                    activePeriod === period
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ─── BAGIAN 2: ALERT BANNERS ─── */}
+      {/* ═══ ZONA 2: ALERT BANNERS ═══ */}
       {visibleAlerts.length > 0 && (
         <div className="space-y-2">
           {visibleAlerts.map((alert, i) => {
@@ -384,98 +462,222 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </div>
       )}
 
-      {/* ─── BAGIAN 3: KPI CARDS ─── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCards.map((card) => {
-          const c = colorMap[card.color] || colorMap.gray;
-          return (
-            <button
-              key={card.id}
-              onClick={() => onNavigate(card.tab)}
-              className={`text-left ${c.bg} border ${c.border} rounded-2xl p-4 hover:shadow-md transition group`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className={`${c.icon} rounded-xl p-2.5 text-xl`}>
-                  {card.icon}
+      {/* ═══ ZONA 3: KPI GABUNGAN ═══ */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          📊 Ringkasan {activePeriod} — Gabungan Semua Toko
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpiCards.map((card) => {
+            const c = colorMap[card.color] || colorMap.gray;
+            return (
+              <button
+                key={card.id}
+                onClick={() => {
+                  if (card.id === "target") {
+                    document.getElementById("target-section")?.scrollIntoView({ behavior: "smooth" });
+                  } else if (card.tab) {
+                    onNavigate(card.tab);
+                  }
+                }}
+                className={`text-left ${c.bg} border ${c.border} rounded-2xl p-4 hover:shadow-md transition group`}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className={`${c.icon} rounded-xl p-2.5 text-xl`}>{card.icon}</div>
+                  <span className="text-xs text-gray-400 group-hover:text-gray-600 transition">→</span>
                 </div>
-                <span className="text-xs text-gray-400 group-hover:text-gray-600 transition">→</span>
-              </div>
-              <div className={`text-2xl font-bold ${c.text} mb-1`}>{card.value}</div>
-              <div className="text-xs text-gray-500 font-medium">{card.label}</div>
-              <div className={`text-xs mt-1 ${card.subColor}`}>{card.sub}</div>
-            </button>
-          );
-        })}
+                <div className={`text-2xl font-bold ${c.text} mb-1`}>{card.value}</div>
+                <div className="text-xs text-gray-500 font-medium">{card.label}</div>
+                <div className={`text-xs mt-1 ${card.subOk ? "text-green-600" : "text-red-500"}`}>{card.sub}</div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ─── BAGIAN 4: TREND CHART ─── */}
-      {trendData.length > 1 && (
+      {/* ═══ ZONA 4: TREND CHART ═══ */}
+      {trendData.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Tren GMV Bulanan</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Semua toko — dalam juta rupiah</p>
+              <h2 className="text-base font-semibold text-gray-900">
+                Tren {chartMetric === "gmv" ? "GMV" : "Refund Rate"} Bulanan
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {chartMetric === "gmv" ? "dalam juta rupiah" : "dalam persen"}
+              </p>
             </div>
-            <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
-              {(["gmv", "refund"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setActiveMetric(m)}
-                  className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${
-                    activeMetric === m
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {m === "gmv" ? "💰 GMV" : "↩️ Refund %"}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {(["gabungan", "pertoko"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setChartView(v)}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${
+                      chartView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {v === "gabungan" ? "🔀 Gabungan" : "🏪 Per Toko"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {(["gmv", "refund"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setChartMetric(v)}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${
+                      chartMetric === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {v === "gmv" ? "💰 GMV" : "↩️ Refund"}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
               <XAxis dataKey="period" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
               <YAxis
                 tick={{ fontSize: 11, fill: "#9ca3af" }}
                 axisLine={false} tickLine={false}
-                tickFormatter={(v) => activeMetric === "gmv" ? `${v}Jt` : `${v}%`}
+                tickFormatter={(v) => chartMetric === "gmv" ? `${v}Jt` : `${v}%`}
               />
               <Tooltip
                 contentStyle={{ borderRadius: "12px", border: "1px solid #e5e7eb", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
                 formatter={(val: any, name: any) => [
-                  activeMetric === "gmv" ? `Rp ${Number(val).toFixed(1)}Jt` : `${Number(val).toFixed(1)}%`,
+                  chartMetric === "gmv" ? `Rp ${Number(val).toFixed(1)}Jt` : `${Number(val).toFixed(1)}%`,
                   String(name).replace("_refund", ""),
                 ]}
               />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} formatter={(name) => name.replace("_refund", "")} />
-              {activeMetric === "gmv" && targetGMV > 0 && (
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }}
+                formatter={(name) => String(name).replace("_refund", "")} />
+              {chartMetric === "gmv" && targetGMV > 0 && (
                 <ReferenceLine
-                  y={parseFloat((targetGMV / 1_000_000).toFixed(1))}
+                  y={parseFloat((targetGMV / 1e6).toFixed(1))}
                   stroke="#ef4444" strokeDasharray="4 4"
-                  label={{ value: "Target", fill: "#ef4444", fontSize: 11 }}
+                  label={{ value: `Target ${fRp(targetGMV)}`, fill: "#ef4444", fontSize: 10 }}
                 />
               )}
-              {storeNames.map((name, i) => (
-                <Line
-                  key={name}
-                  type="monotone"
-                  dataKey={activeMetric === "gmv" ? name : name + "_refund"}
-                  stroke={STORE_COLORS[i % STORE_COLORS.length]}
-                  strokeWidth={2.5}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6, strokeWidth: 2, stroke: "white" }}
-                  name={name}
+              {chartView === "gabungan" ? (
+                <Line type="monotone"
+                  dataKey={chartMetric === "gmv" ? "Gabungan" : "Gabungan_refund"}
+                  stroke="#1a237e" strokeWidth={3}
+                  dot={{ r: 5, fill: "#1a237e" }}
+                  activeDot={{ r: 7, stroke: "white", strokeWidth: 2 }}
+                  name="Gabungan"
                   connectNulls
                 />
-              ))}
+              ) : (
+                stores.map((store, i) => (
+                  <Line
+                    key={store.id}
+                    type="monotone"
+                    dataKey={chartMetric === "gmv" ? store.name : store.name + "_refund"}
+                    stroke={STORE_COLORS[i % STORE_COLORS.length]}
+                    strokeWidth={2.5}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6, stroke: "white", strokeWidth: 2 }}
+                    name={store.name}
+                    connectNulls
+                  />
+                ))
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {/* ─── BAGIAN 5: 3-COLUMN SECTION ─── */}
+      {/* ═══ ZONA 5: KONTRIBUSI PER TOKO ═══ */}
+      {storeBreakdown.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            🏪 Kontribusi Per Toko — {activePeriod}
+          </h2>
+          <div className={`grid grid-cols-1 ${storeBreakdown.length >= 2 ? "lg:grid-cols-2" : ""} gap-4`}>
+            {storeBreakdown.map((sd, i) => (
+              <div key={sd.store.id} className="bg-white rounded-2xl border border-gray-100 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                      style={{ backgroundColor: STORE_COLORS[i % STORE_COLORS.length] + "20" }}>
+                      {sd.store.avatar || "🏪"}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-gray-900">{sd.store.name}</div>
+                      <div className="text-xs text-gray-400">{activePeriod}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold" style={{ color: STORE_COLORS[i % STORE_COLORS.length] }}>
+                      {fP(sd.share)}
+                    </div>
+                    <div className="text-xs text-gray-400">kontribusi GMV</div>
+                  </div>
+                </div>
+
+                <div className="w-full bg-gray-100 rounded-full h-2 mb-4">
+                  <div className="h-2 rounded-full transition-all"
+                    style={{ width: `${sd.share}%`, backgroundColor: STORE_COLORS[i % STORE_COLORS.length] }} />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {[
+                    { label: "GMV", value: fRp(sd.gmv) },
+                    { label: "Net GMV", value: fRp(sd.netGMV) },
+                    { label: "Orders", value: fN(sd.orders) },
+                    { label: "Kreator Aktif", value: fN(sd.creators) },
+                    { label: "Video", value: fN(sd.videos) },
+                    { label: "LIVE", value: fN(sd.live) },
+                  ].map((item) => (
+                    <div key={item.label} className="text-center p-2 bg-gray-50 rounded-lg">
+                      <div className="text-xs text-gray-400 mb-0.5">{item.label}</div>
+                      <div className="text-sm font-bold text-gray-800">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="text-xs text-gray-400 mb-2">Kontribusi Channel</div>
+                  <div className="space-y-1.5">
+                    {[
+                      { label: "Video", gmv: sd.videoGMV, color: "#1a237e" },
+                      { label: "Product Card", gmv: sd.productCardGMV, color: "#00bcd4" },
+                      { label: "LIVE", gmv: sd.liveGMV, color: "#ff6b35" },
+                    ].filter((ch) => ch.gmv > 0).map((ch) => (
+                      <div key={ch.label} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 w-20 flex-shrink-0">{ch.label}</span>
+                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                          <div className="h-1.5 rounded-full"
+                            style={{ width: `${sd.gmv > 0 ? (ch.gmv / sd.gmv) * 100 : 0}%`, backgroundColor: ch.color }} />
+                        </div>
+                        <span className="text-xs font-medium text-gray-700 w-16 text-right">{fRp(ch.gmv)}</span>
+                        <span className="text-xs text-gray-400 w-10 text-right">
+                          {fP(sd.gmv > 0 ? (ch.gmv / sd.gmv) * 100 : 0)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {sd.refundRate > 15 && (
+                  <div className="mt-3 flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2">
+                    <span>⚠️</span>
+                    <span className="text-xs text-red-600 font-medium">
+                      Refund rate {fP(sd.refundRate)} — di atas batas aman
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ZONA 6: 3-COLUMN SECTION ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Top 5 Kreator */}
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -486,13 +688,13 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             </button>
           </div>
           {top5Creators.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-8">Belum ada data kreator bulan ini</p>
+            <p className="text-xs text-gray-400 text-center py-8">Belum ada data kreator periode ini</p>
           ) : (
             <div className="space-y-3">
               {top5Creators.map((c, i) => {
                 const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
                 return (
-                  <div key={c.creatorUsername} className="flex items-center gap-3">
+                  <div key={c.creatorUsername + i} className="flex items-center gap-3">
                     <span className="text-lg w-7 text-center flex-shrink-0">{medals[i]}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-900 truncate">@{c.creatorUsername}</div>
@@ -522,7 +724,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-gray-900">📊 Kontribusi Channel</h3>
-            <span className="text-xs text-gray-400">Bulan ini</span>
+            <span className="text-xs text-gray-400">{activePeriod}</span>
           </div>
           {channelData.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-8">Belum ada data channel</p>
@@ -576,7 +778,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { emoji: "⭐", label: "Bintang", desc: "GMV tinggi + konten", data: segmentasi.bintang, bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
+              { emoji: "⭐", label: "Bintang", desc: "GMV tinggi + konten aktif", data: segmentasi.bintang, bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
               { emoji: "💎", label: "Efisien", desc: "GMV tinggi, no konten", data: segmentasi.efisien, bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
               { emoji: "🚀", label: "Potensi", desc: "Ada konten, GMV rendah", data: segmentasi.potensi, bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700" },
               { emoji: "🌱", label: "Perlu Dorong", desc: "Dormant / tidak aktif", data: segmentasi.perluDorong, bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-600" },
@@ -594,7 +796,97 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </div>
       </div>
 
-      {/* ─── BAGIAN 6: QUICK ACTIONS ─── */}
+      {/* ═══ ZONA 7: TARGET GMV ═══ */}
+      <div id="target-section" className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              🎯 Target GMV — {activePeriod}
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {targetGMV > 0
+                ? `Target: ${fRp(targetGMV)} | Tercapai: ${fP(targetProgress)}`
+                : "Belum ada target untuk periode ini"}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowTargetForm(!showTargetForm)}
+            className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
+          >
+            {targetGMV > 0 ? "✏️ Edit Target" : "+ Set Target"}
+          </button>
+        </div>
+
+        {targetGMV > 0 && (
+          <div className="mt-4">
+            <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+              <span>Progress</span>
+              <span>{fRp(agg.totalGMV)} dari {fRp(targetGMV)}</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-3">
+              <div
+                className={`h-3 rounded-full transition-all duration-500 ${
+                  targetProgress >= 100 ? "bg-green-500" :
+                  targetProgress >= 70 ? "bg-yellow-500" : "bg-red-500"
+                }`}
+                style={{ width: `${Math.min(100, targetProgress)}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs mt-1">
+              <span className={
+                targetProgress >= 100 ? "text-green-600 font-semibold" :
+                targetProgress >= 70 ? "text-yellow-600" : "text-red-500"
+              }>
+                {targetProgress >= 100
+                  ? `🎉 Tercapai ${fP(targetProgress)}!`
+                  : `${fP(targetProgress)} — butuh ${fRp(targetRemaining)} lagi`}
+              </span>
+              <span className="text-gray-400">
+                ~{fN(Math.ceil(targetRemaining / (agg.aov || 1)))} pesanan lagi
+              </span>
+            </div>
+          </div>
+        )}
+
+        {showTargetForm && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Contoh: 150000000 (= Rp 150Jt)"
+                value={targetInput}
+                onChange={(e) => setTargetInput(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => {
+                  const val = Number(targetInput);
+                  if (val > 0) {
+                    localStorage.setItem(`target_gmv_${activePeriod}`, String(val));
+                    setShowTargetForm(false);
+                    setTargetInput("");
+                    setTargetVersion((v) => v + 1);
+                  }
+                }}
+                className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition"
+              >
+                Simpan
+              </button>
+              <button
+                onClick={() => setShowTargetForm(false)}
+                className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition"
+              >
+                Batal
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              💡 Target disimpan per periode. Ganti periode di atas untuk set target periode lain.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ ZONA 8: QUICK ACTIONS ═══ */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
           Akses Cepat
@@ -615,6 +907,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           ))}
         </div>
       </div>
+
     </div>
   );
 }
