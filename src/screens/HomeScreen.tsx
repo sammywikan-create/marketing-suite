@@ -2,12 +2,12 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
+import { loadAffiliateCreators } from "@/lib/db";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
   PieChart, Pie, Cell,
 } from "recharts";
-// lucide-react icons removed — quick actions use emoji
 
 // ─── HELPERS ──────────────────────────────────────────────
 const fRp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -76,9 +76,15 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     );
   }, [stores, allAffiliateData]);
 
-  // ─── PERIOD SELECTOR ───────────────────────────────────
+  // ─── PERIOD SELECTOR (chronological sort) ─────────────
   const allPeriods = useMemo(
-    () => [...new Set(allAffiliateData.map((d) => d.period))].sort(),
+    () => [...new Set(allAffiliateData.map((d) => d.period))].sort((a, b) => {
+      const pa = a.match(/(\d{4})-(\d{2})/);
+      const pb = b.match(/(\d{4})-(\d{2})/);
+      if (pa && pb) return a.localeCompare(b);
+      // fallback: parse as date
+      return new Date(a + "-01").getTime() - new Date(b + "-01").getTime();
+    }),
     [allAffiliateData]
   );
   const latestPeriod = allPeriods[allPeriods.length - 1] || "";
@@ -147,48 +153,44 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const targetProgress = targetGMV > 0 ? (agg.totalGMV / targetGMV) * 100 : 0;
   const targetRemaining = Math.max(0, targetGMV - agg.totalGMV);
 
-  // ─── CREATORS (robust with fallback) ────────────────────
-  const allLoadedCreators = useMemo(() => {
-    const all: AffiliateCreatorItem[] = [];
-    allAffiliateData.forEach((d) => all.push(...d.creators));
-    return all;
-  }, [allAffiliateData]);
+  // ─── CREATORS (load from Supabase directly) ───────────
+  const [supabaseCreators, setSupabaseCreators] = useState<AffiliateCreatorItem[]>([]);
+  const [creatorsLoading, setCreatorsLoading] = useState(false);
 
   useEffect(() => {
-    if (allLoadedCreators.length > 0) {
-      console.log("=== DEBUG KREATOR ===");
-      console.log("Total kreator loaded:", allLoadedCreators.length);
-      console.log("Periods in data:", [...new Set(allAffiliateData.map((d) => d.period))]);
-      console.log("selectedPeriod:", activePeriod);
-      console.log("periodSummaries count:", periodSummaries.length);
-      const creatorsInPeriod: AffiliateCreatorItem[] = [];
-      periodSummaries.forEach((d) => d.creators.forEach((c) => { if (c.affiliateGMV > 0) creatorsInPeriod.push(c); }));
-      console.log("Creators with GMV in period:", creatorsInPeriod.length);
+    if (!activeStores.length || !activePeriod) return;
+    let cancelled = false;
+    async function fetchAll() {
+      setCreatorsLoading(true);
+      try {
+        const results = await Promise.all(
+          activeStores.map((s) => loadAffiliateCreators(s.id, activePeriod).catch(() => [] as AffiliateCreatorItem[]))
+        );
+        if (!cancelled) {
+          const combined = results.flat();
+          console.log("=== DEBUG KREATOR ===");
+          console.log("Loaded from Supabase:", combined.length, "creators for period", activePeriod);
+          console.log("Stores queried:", activeStores.map((s) => s.name));
+          setSupabaseCreators(combined);
+        }
+      } catch (err) {
+        console.error("Failed to load creators:", err);
+        if (!cancelled) setSupabaseCreators([]);
+      } finally {
+        if (!cancelled) setCreatorsLoading(false);
+      }
     }
-  }, [allLoadedCreators, activePeriod, allAffiliateData, periodSummaries]);
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [activeStores, activePeriod]);
 
   const periodCreators = useMemo(() => {
-    const fromPeriod: AffiliateCreatorItem[] = [];
-    periodSummaries.forEach((d) => {
-      d.creators.forEach((c) => {
-        if ((c.affiliateGMV || 0) > 0) fromPeriod.push(c);
-      });
-    });
-    if (fromPeriod.length > 0) {
-      return fromPeriod.sort((a, b) => b.affiliateGMV - a.affiliateGMV);
-    }
-    console.warn("periodCreators kosong, pakai fallback semua kreator");
-    return allLoadedCreators
+    return supabaseCreators
       .filter((c) => (c.affiliateGMV || 0) > 0)
       .sort((a, b) => b.affiliateGMV - a.affiliateGMV);
-  }, [periodSummaries, allLoadedCreators]);
+  }, [supabaseCreators]);
 
-  const allCreatorsPeriod = useMemo(() => {
-    const all: AffiliateCreatorItem[] = [];
-    periodSummaries.forEach((d) => all.push(...d.creators));
-    if (all.length === 0 && allLoadedCreators.length > 0) return allLoadedCreators;
-    return all;
-  }, [periodSummaries, allLoadedCreators]);
+  const allCreatorsPeriod = supabaseCreators;
 
   const top5Creators = periodCreators.slice(0, 5);
 
