@@ -220,3 +220,13 @@ CREATE TABLE IF NOT EXISTS live_sessions (
 ALTER TABLE live_sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all for anon" ON live_sessions;
 CREATE POLICY "Allow all for anon" ON live_sessions FOR ALL USING (true) WITH CHECK (true);
+
+-- FIX: Ubah kolom yang bisa berisi desimal dari INT/REAL → DECIMAL
+ALTER TABLE live_core_stats ALTER COLUMN gpm TYPE decimal(10,2);
+ALTER TABLE live_core_stats ALTER COLUMN ctr_live TYPE decimal(8,4);
+ALTER TABLE live_core_stats ALTER COLUMN order_per_click TYPE decimal(8,4);
+ALTER TABLE live_core_stats ALTER COLUMN avg_watch_time TYPE decimal(8,2);
+ALTER TABLE live_sessions ALTER COLUMN ctr TYPE decimal(8,4);
+ALTER TABLE live_sessions ALTER COLUMN order_per_click TYPE decimal(8,4);
+ALTER TABLE live_sessions ALTER COLUMN avg_watch_time TYPE decimal(8,2);
+ALTER TABLE live_sessions ALTER COLUMN duration_minutes TYPE decimal(8,2);

@@ -2,7 +2,19 @@
 import * as XLSX from "xlsx";
 import type { LiveCoreStat, LiveSession } from "@/hooks/useLiveAnalytics";
 
-// ─── HELPERS ──────────────────────────────────────────────
+// ─── SAFE TYPE HELPERS ───────────────────────────────────
+function safeInt(val: any): number {
+  if (val === null || val === undefined || val === "" || val === "--" || val === "-") return 0;
+  const n = parseFloat(String(val).replace(/[^0-9.\-]/g, ""));
+  return isNaN(n) ? 0 : Math.round(n);
+}
+
+function safeDecimal(val: any, decimals = 2): number {
+  if (val === null || val === undefined || val === "" || val === "--" || val === "-") return 0;
+  const n = parseFloat(String(val).replace(/[^0-9.\-]/g, ""));
+  return isNaN(n) ? 0 : parseFloat(n.toFixed(decimals));
+}
+
 function parseRp(v: any): number {
   if (!v || v === "--" || v === "-") return 0;
   if (typeof v === "number") return isNaN(v) ? 0 : v;
@@ -24,65 +36,86 @@ function parsePct(v: any): number {
 function parseDuration(v: any): number {
   if (!v) return 0;
   if (typeof v === "number") {
-    // Could be minutes directly, or Excel time serial (fraction of a day)
-    if (v < 1) return Math.round(v * 24 * 60); // Excel serial → minutes
-    if (v > 500) return Math.round(v / 60); // seconds → minutes
-    return v; // already minutes
+    if (v < 1) return safeDecimal(v * 24 * 60); // Excel serial → minutes
+    if (v > 500) return safeDecimal(v / 60);     // seconds → minutes
+    return safeDecimal(v);
   }
   const s = String(v).trim();
-  // "1h 30m" or "1j 30m"
   const hm = s.match(/(\d+)\s*[hj]\s*(\d+)\s*m/i);
   if (hm) return parseInt(hm[1]) * 60 + parseInt(hm[2]);
-  // "01:30:00" (HH:MM:SS)
   const hms = s.match(/(\d+):(\d+):(\d+)/);
   if (hms) return parseInt(hms[1]) * 60 + parseInt(hms[2]) + parseInt(hms[3]) / 60;
-  // "01:30" (HH:MM)
   const hmOnly = s.match(/(\d+):(\d+)/);
   if (hmOnly) return parseInt(hmOnly[1]) * 60 + parseInt(hmOnly[2]);
-  // "90 menit" or "90m"
   const mOnly = s.match(/(\d+)\s*m/i);
   if (mOnly) return parseInt(mOnly[1]);
-  return parseFloat(s) || 0;
+  return safeDecimal(s);
 }
 
 function parseWatchTime(v: any): number {
   if (!v) return 0;
-  if (typeof v === "number") return v;
+  if (typeof v === "number") return safeDecimal(v);
   const s = String(v).trim();
-  // "1m 30s" or "1 menit 30 detik"
   const ms = s.match(/(\d+)\s*m[a-z]*\s*(\d+)\s*[sd]/i);
   if (ms) return parseInt(ms[1]) * 60 + parseInt(ms[2]);
-  // "01:30" (MM:SS)
   const mmss = s.match(/(\d+):(\d+)/);
   if (mmss) return parseInt(mmss[1]) * 60 + parseInt(mmss[2]);
-  // "90s" or "90 detik"
   const sOnly = s.match(/(\d+)\s*[sd]/i);
   if (sOnly) return parseInt(sOnly[1]);
-  return parseFloat(s) || 0;
+  return safeDecimal(s);
 }
 
-function parseDateTime(v: any): string {
+// ─── ROBUST DATE/TIME PARSER ─────────────────────────────
+// Handles: "2026/02/28/ 13:00", "2026/02/28 13:00", "2026-02-28 13:00",
+//          Excel date serial, Date objects, ISO strings
+function parseWaktuLive(v: any): string {
   if (!v) return new Date().toISOString();
+
+  // Date object (from cellDates: true)
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString();
+
   if (typeof v === "number") {
-    // Excel date serial number
     const d = XLSX.SSF.parse_date_code(v);
     return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, d.S || 0).toISOString();
   }
-  const s = String(v).trim();
-  // Try direct parse
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString();
-  // "20/04/2026 14:30" (DD/MM/YYYY HH:mm)
-  const dmyHm = s.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\s+(\d{1,2}):(\d{2})/);
+
+  const raw = String(v).trim();
+
+  // Clean TikTok's weird format: "2026/02/28/ 13:00" (trailing slash)
+  const cleaned = raw
+    .replace(/\/+\s*/g, "/")  // multiple slashes → single
+    .replace(/\/+$/, "")      // trailing slash
+    .trim();
+
+  // Pattern: YYYY/MM/DD HH:mm or YYYY-MM-DD HH:mm
+  const patterns = [
+    /(\d{4})[/\-](\d{2})[/\-](\d{2})[/\s]+(\d{2}):(\d{2})/,
+    /(\d{4})[/\-](\d{2})[/\-](\d{2})/,
+  ];
+  for (const p of patterns) {
+    const m = cleaned.match(p);
+    if (m) {
+      return new Date(
+        parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]),
+        parseInt(m[4] || "0"), parseInt(m[5] || "0"), 0
+      ).toISOString();
+    }
+  }
+
+  // DD/MM/YYYY HH:mm
+  const dmyHm = cleaned.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\s+(\d{1,2}):(\d{2})/);
   if (dmyHm) {
     return new Date(
-      parseInt(dmyHm[3]),
-      parseInt(dmyHm[2]) - 1,
-      parseInt(dmyHm[1]),
-      parseInt(dmyHm[4]),
-      parseInt(dmyHm[5])
+      parseInt(dmyHm[3]), parseInt(dmyHm[2]) - 1, parseInt(dmyHm[1]),
+      parseInt(dmyHm[4]), parseInt(dmyHm[5])
     ).toISOString();
   }
+
+  // Fallback: direct parse
+  const d = new Date(cleaned);
+  if (!isNaN(d.getTime())) return d.toISOString();
+
+  console.warn("[parseWaktuLive] Cannot parse:", raw);
   return new Date().toISOString();
 }
 
@@ -101,6 +134,27 @@ function getVal(row: any[], headers: string[], ...keywords: string[]): any {
   return idx >= 0 ? row[idx] : null;
 }
 
+// ─── HEADER ROW DETECTION ────────────────────────────────
+function findHeaderRow(rows: any[][]): number {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const rowStr = (rows[i] || []).map((h: any) => String(h || "").toLowerCase());
+    const joined = rowStr.join("§");
+
+    // Live Sessions file: must have kreator + waktu/durasi
+    if (
+      (joined.includes("id kreator") || joined.includes("creator id")) &&
+      (joined.includes("waktu live") || joined.includes("waktu") || joined.includes("started"))
+    ) return i;
+
+    // Also detect by durasi + suka/komentar (secondary check)
+    if (
+      rowStr.some((h) => h === "durasi" || h === "duration") &&
+      (joined.includes("suka pada live") || joined.includes("komentar") || joined.includes("penonton"))
+    ) return i;
+  }
+  return -1;
+}
+
 // ─── MAIN PARSER ─────────────────────────────────────────
 export async function parseLiveExcel(
   file: File,
@@ -115,42 +169,37 @@ export async function parseLiveExcel(
     throw new Error("File kosong atau tidak memiliki data.");
   }
 
-  // ── Find actual header row (skip metadata like "Date Range: ..." rows) ──
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const rowStr = (rows[i] || []).map((h: any) => String(h || "").toLowerCase());
-    if (
-      rowStr.some((h) => h.includes("id kreator") || h.includes("creator id")) ||
-      rowStr.some((h) => h.includes("waktu live") || h.includes("live time") || h.includes("started at")) ||
-      rowStr.some((h) => h.includes("durasi") && h.length < 30) // "Durasi" column, not "Date Range: ..."
-    ) {
-      headerIdx = i;
-      break;
-    }
-  }
+  console.log("[LiveParser] Total rows:", rows.length);
+  console.log("[LiveParser] First 4 rows sample:", rows.slice(0, 4).map(r => (r || []).slice(0, 5)));
+
+  const headerIdx = findHeaderRow(rows);
 
   if (headerIdx < 0) {
+    const sampleHeaders = rows.slice(0, 4).flat().filter(Boolean).slice(0, 8).join(", ");
     throw new Error(
-      "File tidak mengandung data LIVE yang valid. Pastikan file berasal dari export TikTok LIVE Analytics."
+      `Format file tidak dikenali.\n\n` +
+      `Header terdeteksi: "${sampleHeaders}"\n\n` +
+      `File yang didukung: Export LIVE dari TikTok Seller Center ` +
+      `(harus ada kolom: ID Kreator, Waktu Live, Durasi, dll).`
     );
   }
 
   const headers = (rows[headerIdx] || []).map((h: any) => String(h || ""));
+  console.log("[LiveParser] Header row index:", headerIdx, "Headers:", headers.slice(0, 8));
 
   const sessions: Omit<LiveSession, "id">[] = [];
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || r.every((c: any) => !c && c !== 0)) continue; // skip empty rows
+    if (!r || r.every((c: any) => !c && c !== 0)) continue;
 
-    const startedAtRaw = getVal(r, headers, "waktu live", "live time", "started at", "waktu mulai");
-    const startedAt = parseDateTime(startedAtRaw);
-    const sessionDate = startedAt.slice(0, 10); // "YYYY-MM-DD"
+    const startedAtRaw = getVal(r, headers, "waktu live", "live time", "started at", "waktu mulai", "waktu");
+    const startedAt = parseWaktuLive(startedAtRaw);
+    const sessionDate = startedAt.slice(0, 10);
 
     const gmv = parseRp(getVal(r, headers, "nilai bruto barang dagangan", "nilai bruto", "gmv dari live", "gmv live", "gross merchandise"));
     const gmvEarned = parseRp(getVal(r, headers, "gmv yang didapat", "gmv earned", "gmv yang diperoleh"));
-    const durationRaw = getVal(r, headers, "durasi", "duration");
-    const durationMinutes = parseDuration(durationRaw);
+    const durationMinutes = parseDuration(getVal(r, headers, "durasi", "duration"));
 
     const session: Omit<LiveSession, "id"> = {
       store_id: storeId,
@@ -159,33 +208,35 @@ export async function parseLiveExcel(
       creator_username: String(getVal(r, headers, "kreator", "creator username", "username") || ""),
       started_at: startedAt,
       session_date: sessionDate,
-      duration_minutes: durationMinutes,
-      gmv: Math.round(gmv),
-      gmv_earned: Math.round(gmvEarned || gmv),
-      avg_order_value: Math.round(parseRp(getVal(r, headers, "harga rata-rata", "avg order", "aov", "rata-rata harga"))),
-      products_added: Math.round(Number(getVal(r, headers, "produk yang ditambahkan", "products added", "produk ditambahkan")) || 0),
-      products_sold: Math.round(Number(getVal(r, headers, "produk terjual", "products sold")) || 0),
-      sku_orders_created: Math.round(Number(getVal(r, headers, "pesanan sku yang dibuat", "sku orders created")) || 0),
-      sku_orders_live: Math.round(Number(getVal(r, headers, "pesanan sku dari live", "sku orders live", "pesanan sku live")) || 0),
-      products_sold_live: Math.round(Number(getVal(r, headers, "produk yang terjual dari live", "products sold live", "produk terjual live")) || 0),
-      unique_buyers: Math.round(Number(getVal(r, headers, "pembeli unik", "unique buyers", "pembeli")) || 0),
-      order_per_click: parsePct(getVal(r, headers, "rasio pesanan per klik", "order per click", "pesanan per klik")),
-      unique_viewers: Math.round(Number(getVal(r, headers, "penonton", "unique viewers", "penonton unik")) || 0),
-      total_views: Math.round(Number(getVal(r, headers, "live stream dilihat", "total views", "stream views", "tayangan")) || 0),
-      product_views: Math.round(Number(getVal(r, headers, "produk dilihat", "product views", "tampilan produk")) || 0),
-      product_clicks: Math.round(Number(getVal(r, headers, "klik produk", "product clicks")) || 0),
-      ctr: parsePct(getVal(r, headers, "ctr")),
-      avg_watch_time: parseWatchTime(getVal(r, headers, "durasi menonton rata-rata", "avg watch time", "rata-rata menonton")),
-      comments: Math.round(Number(getVal(r, headers, "komentar", "comments")) || 0),
-      shares: Math.round(Number(getVal(r, headers, "live dibagikan", "shares", "dibagikan")) || 0),
-      likes: Math.round(Number(getVal(r, headers, "suka pada live", "likes", "suka")) || 0),
-      new_followers: Math.round(Number(getVal(r, headers, "pengikut baru", "new followers", "followers baru")) || 0),
+      duration_minutes: safeDecimal(durationMinutes),
+      gmv: safeInt(gmv),
+      gmv_earned: safeInt(gmvEarned || gmv),
+      avg_order_value: safeInt(parseRp(getVal(r, headers, "harga rata-rata", "avg order", "aov", "rata-rata harga"))),
+      products_added: safeInt(getVal(r, headers, "produk yang ditambahkan", "products added", "produk ditambahkan")),
+      products_sold: safeInt(getVal(r, headers, "produk terjual", "products sold")),
+      sku_orders_created: safeInt(getVal(r, headers, "pesanan sku yang dibuat", "sku orders created")),
+      sku_orders_live: safeInt(getVal(r, headers, "pesanan sku dari live", "sku orders live", "pesanan sku live")),
+      products_sold_live: safeInt(getVal(r, headers, "produk yang terjual dari live", "products sold live", "produk terjual live")),
+      unique_buyers: safeInt(getVal(r, headers, "pembeli unik", "unique buyers", "pembeli")),
+      order_per_click: safeDecimal(parsePct(getVal(r, headers, "rasio pesanan per klik", "order per click", "pesanan per klik")), 4),
+      unique_viewers: safeInt(getVal(r, headers, "penonton", "unique viewers", "penonton unik")),
+      total_views: safeInt(getVal(r, headers, "live stream dilihat", "total views", "stream views", "tayangan")),
+      product_views: safeInt(getVal(r, headers, "produk dilihat", "product views", "tampilan produk")),
+      product_clicks: safeInt(getVal(r, headers, "klik produk", "product clicks")),
+      ctr: safeDecimal(parsePct(getVal(r, headers, "ctr")), 4),
+      avg_watch_time: safeDecimal(parseWatchTime(getVal(r, headers, "durasi menonton rata-rata", "avg watch time", "rata-rata menonton"))),
+      comments: safeInt(getVal(r, headers, "komentar", "comments")),
+      shares: safeInt(getVal(r, headers, "live dibagikan", "shares", "dibagikan")),
+      likes: safeInt(getVal(r, headers, "suka pada live", "likes", "suka")),
+      new_followers: safeInt(getVal(r, headers, "pengikut baru", "new followers", "followers baru")),
       is_valid_session: durationMinutes >= 5,
       has_gmv: gmv > 0,
     };
 
     sessions.push(session);
   }
+
+  console.log("[LiveParser] Parsed sessions:", sessions.length);
 
   // ─── Derive daily core stats from sessions ────────────
   const dailyMap: Record<string, Omit<LiveCoreStat, "id">> = {};
@@ -194,20 +245,11 @@ export async function parseLiveExcel(
     const date = s.session_date;
     if (!dailyMap[date]) {
       dailyMap[date] = {
-        store_id: storeId,
-        date,
-        gmv_live: 0,
-        gmv_earned: 0,
-        gpm: 0,
-        sessions_total: 0,
-        sessions_with_gmv: 0,
-        products_sold: 0,
-        sku_orders: 0,
-        buyers: 0,
-        impressions: 0,
-        ctr_live: 0,
-        order_per_click: 0,
-        avg_watch_time: 0,
+        store_id: storeId, date,
+        gmv_live: 0, gmv_earned: 0, gpm: 0,
+        sessions_total: 0, sessions_with_gmv: 0,
+        products_sold: 0, sku_orders: 0, buyers: 0,
+        impressions: 0, ctr_live: 0, order_per_click: 0, avg_watch_time: 0,
       };
     }
     const d = dailyMap[date];
@@ -221,24 +263,25 @@ export async function parseLiveExcel(
     d.impressions += s.total_views || 0;
   });
 
-  // Compute averages & round all INT fields
+  // Compute averages & ensure correct types for DB
   const coreStats = Object.values(dailyMap).map((d) => {
     const daySessions = sessions.filter((s) => s.session_date === d.date && s.is_valid_session);
     const n = daySessions.length || 1;
-    d.gmv_live = Math.round(d.gmv_live);
-    d.gmv_earned = Math.round(d.gmv_earned);
-    d.products_sold = Math.round(d.products_sold);
-    d.sku_orders = Math.round(d.sku_orders);
-    d.buyers = Math.round(d.buyers);
-    d.impressions = Math.round(d.impressions);
-    d.sessions_total = Math.round(d.sessions_total);
-    d.sessions_with_gmv = Math.round(d.sessions_with_gmv);
-    d.gpm = d.impressions > 0 ? (d.gmv_live / d.impressions) * 1000 : 0;
-    d.ctr_live = daySessions.reduce((a, s) => a + s.ctr, 0) / n;
-    d.order_per_click = daySessions.reduce((a, s) => a + s.order_per_click, 0) / n;
-    d.avg_watch_time = daySessions.reduce((a, s) => a + s.avg_watch_time, 0) / n;
+    // INT fields
+    d.gmv_live = safeInt(d.gmv_live);
+    d.gmv_earned = safeInt(d.gmv_earned);
+    d.products_sold = safeInt(d.products_sold);
+    d.sku_orders = safeInt(d.sku_orders);
+    d.buyers = safeInt(d.buyers);
+    d.impressions = safeInt(d.impressions);
+    // DECIMAL fields
+    d.gpm = safeDecimal(d.impressions > 0 ? (d.gmv_live / d.impressions) * 1000 : 0);
+    d.ctr_live = safeDecimal(daySessions.reduce((a, s) => a + s.ctr, 0) / n, 4);
+    d.order_per_click = safeDecimal(daySessions.reduce((a, s) => a + s.order_per_click, 0) / n, 4);
+    d.avg_watch_time = safeDecimal(daySessions.reduce((a, s) => a + s.avg_watch_time, 0) / n);
     return d;
   });
 
+  console.log("[LiveParser] Core stats days:", coreStats.length);
   return { sessions, coreStats };
 }

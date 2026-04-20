@@ -106,8 +106,8 @@ export default function LiveAnalyticsScreen() {
   }, [activeStore]);
 
   // ─── STATE ──────────────────────────────────────────
-  const [selectedStore, setSelectedStore] = useState<string>("all");
-  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"gabungan" | string>("gabungan");
   const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "harian">("overview");
 
   // Sessions tab state
@@ -129,23 +129,29 @@ export default function LiveAnalyticsScreen() {
 
   // ─── DERIVED: All months ────────────────────────────
   const allMonths = useMemo(() => {
-    const months = [...new Set(coreStats.map((s) => s.date.slice(0, 7)))];
+    const months = [...new Set([
+      ...coreStats.map((s) => s.date.slice(0, 7)),
+      ...sessions.map((s) => s.session_date?.slice(0, 7)).filter(Boolean),
+    ])];
     return months.sort();
-  }, [coreStats]);
+  }, [coreStats, sessions]);
 
   useEffect(() => {
-    if (allMonths.length && !selectedMonth) {
-      setSelectedMonth(allMonths[allMonths.length - 1]);
+    if (allMonths.length && selectedMonth === "all") {
+      // Default to latest month (not "all") on first load if desired
+      // Keep "all" for now since user wanted "Semua" option
     }
   }, [allMonths, selectedMonth]);
 
   // ─── FILTERED DATA ─────────────────────────────────
+  const selectedStore = viewMode === "gabungan" ? "all" : viewMode;
+
   const filteredStats = useMemo(
     () =>
       coreStats.filter(
         (s) =>
           (selectedStore === "all" || s.store_id === selectedStore) &&
-          s.date.startsWith(selectedMonth)
+          (selectedMonth === "all" || s.date.startsWith(selectedMonth))
       ),
     [coreStats, selectedStore, selectedMonth]
   );
@@ -155,7 +161,7 @@ export default function LiveAnalyticsScreen() {
       sessions.filter(
         (s) =>
           (selectedStore === "all" || s.store_id === selectedStore) &&
-          s.session_date?.startsWith(selectedMonth) &&
+          (selectedMonth === "all" || s.session_date?.startsWith(selectedMonth)) &&
           s.is_valid_session
       ),
     [sessions, selectedStore, selectedMonth]
@@ -195,12 +201,13 @@ export default function LiveAnalyticsScreen() {
     const convRate = totalSessions > 0 ? (sessionsWithGMV / totalSessions) * 100 : 0;
     const aov = totalBuyers > 0 ? totalGMV / totalBuyers : 0;
 
-    const prevMonth = getPrevMonth(selectedMonth);
-    const prevStats = coreStats.filter(
+    const latestMonth = selectedMonth !== "all" ? selectedMonth : (allMonths[allMonths.length - 1] || "");
+    const prevMonth = latestMonth ? getPrevMonth(latestMonth) : "";
+    const prevStats = prevMonth ? coreStats.filter(
       (s) =>
         (selectedStore === "all" || s.store_id === selectedStore) &&
         s.date.startsWith(prevMonth)
-    );
+    ) : [];
     const prevGMV = prevStats.reduce((a, s) => a + (s.gmv_live || 0), 0);
     const momGMV = prevGMV > 0 ? ((totalGMV - prevGMV) / prevGMV) * 100 : null;
 
@@ -266,32 +273,34 @@ export default function LiveAnalyticsScreen() {
   );
 
   // ─── CALENDAR DATA ─────────────────────────────────
+  const calendarMonth = selectedMonth !== "all" ? selectedMonth : (allMonths[allMonths.length - 1] || "");
+
   const calendarData = useMemo(() => {
-    if (!selectedMonth) return { days: [] as { day: number; date: string; gmv: number; sessions: number; viewers: number }[], maxGMV: 1, firstDay: 0 };
+    if (!calendarMonth) return { days: [] as { day: number; date: string; gmv: number; sessions: number; viewers: number }[], maxGMV: 1, firstDay: 0 };
     const dailyMap: Record<string, { gmv: number; sessions: number; viewers: number }> = {};
-    filteredStats.forEach((s) => {
+    filteredStats.filter((s) => s.date.startsWith(calendarMonth)).forEach((s) => {
       dailyMap[s.date] = {
         gmv: s.gmv_live || 0,
         sessions: s.sessions_total || 0,
         viewers: 0,
       };
     });
-    filteredSessions.forEach((s) => {
-      if (!dailyMap[s.session_date]) return;
+    filteredSessions.filter((s) => s.session_date?.startsWith(calendarMonth)).forEach((s) => {
+      if (!dailyMap[s.session_date]) dailyMap[s.session_date] = { gmv: 0, sessions: 0, viewers: 0 };
       dailyMap[s.session_date].viewers += s.unique_viewers || 0;
     });
 
-    const [year, month] = selectedMonth.split("-").map(Number);
+    const [year, month] = calendarMonth.split("-").map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const firstDay = new Date(year, month - 1, 1).getDay();
     const days = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = `${selectedMonth}-${String(i + 1).padStart(2, "0")}`;
+      const d = `${calendarMonth}-${String(i + 1).padStart(2, "0")}`;
       return { day: i + 1, date: d, ...(dailyMap[d] || { gmv: 0, sessions: 0, viewers: 0 }) };
     });
     const maxGMV = Math.max(...days.map((d) => d.gmv), 1);
 
     return { days, maxGMV, firstDay };
-  }, [selectedMonth, filteredStats, filteredSessions]);
+  }, [calendarMonth, filteredStats, filteredSessions]);
 
   // ─── TOP 10 SESSIONS ──────────────────────────────
   const top10 = useMemo(
@@ -459,29 +468,62 @@ export default function LiveAnalyticsScreen() {
     <div className="space-y-6">
 
       {/* ═══ HEADER & FILTER ═══ */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            🔴 Live Analytics
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            Performa LIVE streaming per sesi &amp; harian
-          </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              🔴 Live Analytics
+            </h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              Performa LIVE streaming per sesi &amp; harian
+            </p>
+          </div>
+          <label className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition w-fit">
+            {isUploading ? "⏳ Memproses..." : "📤 Upload LIVE"}
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
+          </label>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={selectedStore}
-            onChange={(e) => setSelectedStore(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
-          >
-            <option value="all">Semua Toko</option>
-            {activeStores.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
+        {/* View Mode: Gabungan / per Toko */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+            <button
+              onClick={() => setViewMode("gabungan")}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                viewMode === "gabungan"
+                  ? "bg-red-600 text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              🔀 Gabungan
+            </button>
+            {activeStores.map((store) => (
+              <button
+                key={store.id}
+                onClick={() => setViewMode(store.id)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                  viewMode === store.id
+                    ? "bg-red-600 text-white shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                🏪 {store.name.replace("Fresh Vision Official", "FVO").replace("Freshvision Shop", "FVS")}
+              </button>
             ))}
-          </select>
+          </div>
 
+          {/* Periode: Semua + per bulan */}
           <div className="flex bg-gray-100 rounded-xl p-1 gap-1 flex-wrap">
+            <button
+              onClick={() => setSelectedMonth("all")}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                selectedMonth === "all"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              📊 Semua
+            </button>
             {allMonths.map((m) => (
               <button
                 key={m}
@@ -496,11 +538,6 @@ export default function LiveAnalyticsScreen() {
               </button>
             ))}
           </div>
-
-          <label className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition">
-            {isUploading ? "⏳ Memproses..." : "📤 Upload LIVE"}
-            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} disabled={isUploading || !activeStore} />
-          </label>
         </div>
       </div>
 
@@ -592,6 +629,53 @@ export default function LiveAnalyticsScreen() {
           );
         })}
       </div>
+
+      {/* ═══ STORE CONTRIBUTION (Gabungan mode only) ═══ */}
+      {viewMode === "gabungan" && activeStores.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {activeStores.map((store, i) => {
+            const storeStats = filteredStats.filter((s) => s.store_id === store.id);
+            const storeGMV = storeStats.reduce((a, s) => a + (s.gmv_live || 0), 0);
+            const storeSess = storeStats.reduce((a, s) => a + (s.sessions_total || 0), 0);
+            const storeBuyers = storeStats.reduce((a, s) => a + (s.buyers || 0), 0);
+            const totalGMV = filteredStats.reduce((a, s) => a + (s.gmv_live || 0), 0);
+            const share = totalGMV > 0 ? (storeGMV / totalGMV) * 100 : 0;
+            const COLORS = ["#ef4444", "#f97316"];
+            return (
+              <div key={store.id} className="bg-white rounded-2xl border border-gray-100 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🏪</span>
+                    <div>
+                      <div className="font-semibold text-sm text-gray-900">{store.name}</div>
+                      <div className="text-xs text-gray-400">TikTok Shop</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-bold" style={{ color: COLORS[i] }}>{share.toFixed(1)}%</div>
+                    <div className="text-xs text-gray-400">kontribusi GMV</div>
+                  </div>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2 mb-4">
+                  <div className="h-2 rounded-full" style={{ width: `${share}%`, backgroundColor: COLORS[i] }} />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "GMV LIVE", value: fRp(storeGMV) },
+                    { label: "Total Sesi", value: fN(storeSess) },
+                    { label: "Pembeli", value: fN(storeBuyers) },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-gray-50 rounded-xl p-2.5 text-center">
+                      <div className="text-xs text-gray-400 mb-0.5">{item.label}</div>
+                      <div className="text-sm font-bold text-gray-800">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ═══ TAB NAVIGATION ═══ */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
