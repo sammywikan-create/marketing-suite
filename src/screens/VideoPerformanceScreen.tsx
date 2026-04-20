@@ -70,7 +70,7 @@ export default function VideoPerformanceScreen() {
       });
     });
     return result;
-  }, [stores, activeStoreId]);
+  }, [stores]);
 
   // ─── ALL PERIODS (unique months) ────────────────────
   const allPeriods = useMemo(() => {
@@ -93,6 +93,8 @@ export default function VideoPerformanceScreen() {
         items.push({ ...v, _storeId: storeId, _storeName: storeName, _period: rawPeriod });
       });
     });
+    // Default sort: GMV tertinggi
+    items.sort((a, b) => b.gmv - a.gmv);
     return items;
   }, [allVideoData, viewMode, selectedPeriod]);
 
@@ -575,15 +577,39 @@ function OverviewTab({ videos, allVideoData, viewMode, selectedPeriod }: {
 // ══════════════════════════════════════
 // TAB 2: EVALUASI MINGGUAN
 // ══════════════════════════════════════
+
+// Robust date parser: handles DD/MM/YYYY, YYYY/MM/DD, YYYY-MM-DD, DD-MM-YYYY, etc.
+function parsePostedDate(raw: string): Date | null {
+  if (!raw) return null;
+  const dateStr = raw.split(" ")[0];
+  if (!dateStr) return null;
+
+  // Try YYYY-MM-DD or YYYY/MM/DD first
+  const isoMatch = dateStr.match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$/);
+  if (isoMatch) {
+    const d = new Date(+isoMatch[1], +isoMatch[2] - 1, +isoMatch[3]);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Try DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = dateStr.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
+  if (dmyMatch) {
+    const d = new Date(+dmyMatch[3], +dmyMatch[2] - 1, +dmyMatch[1]);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Fallback: let JS parse
+  const fallback = new Date(dateStr);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
 function WeeklyTab({ videos }: { videos: VidExtended[] }) {
-  // Group videos by week
+  // Group videos by week (Monday start)
   const weeklyData = useMemo(() => {
     const weekMap = new Map<string, VidExtended[]>();
     videos.forEach((v) => {
-      const date = v.postedAt?.split(" ")[0] || "";
-      if (!date) return;
-      const d = new Date(date.replace(/\//g, "-"));
-      if (isNaN(d.getTime())) return;
+      const d = parsePostedDate(v.postedAt);
+      if (!d) return;
       const dayOfWeek = d.getDay();
       const monday = new Date(d);
       monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7));
@@ -591,29 +617,65 @@ function WeeklyTab({ videos }: { videos: VidExtended[] }) {
       if (!weekMap.has(key)) weekMap.set(key, []);
       weekMap.get(key)!.push(v);
     });
-    return [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([weekStart, vids]) => {
+
+    // Sort chronologically for chart (oldest → newest)
+    const sorted = [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+    return sorted.map(([weekStart, vids], idx) => {
       const end = new Date(weekStart);
       end.setDate(end.getDate() + 6);
       const n = vids.length || 1;
       const withSales = vids.filter((v) => v.gmv > 0);
       const nSales = withSales.length || 1;
+
+      const totalGMV = vids.reduce((a, v) => a + v.gmv, 0);
+      const totalVV = vids.reduce((a, v) => a + v.vv, 0);
+      const totalOrders = vids.reduce((a, v) => a + v.videoOrders, 0);
+      const avgGPM = withSales.reduce((a, v) => a + v.gpm, 0) / nSales;
+      const avgCTR = vids.reduce((a, v) => a + v.ctr, 0) / n;
+      const avgCTOR = vids.reduce((a, v) => a + v.ctor, 0) / n;
+      const avgWatch = vids.reduce((a, v) => a + v.watchRate, 0) / n;
+      const topPerformers = vids.filter((v) => v.videoStatus === "🏆 TOP PERFORMER").length;
+      const underperformers = vids.filter((v) => v.videoStatus === "🔴 UNDERPERFORM").length;
+      const pctSales = vids.length > 0 ? (withSales.length / vids.length) * 100 : 0;
+
       return {
-        weekStart,
+        weekStart, idx,
         weekLabel: `${weekStart.slice(5)} ~ ${end.toISOString().slice(5, 10)}`,
         videos: vids.length,
-        totalGMV: vids.reduce((a, v) => a + v.gmv, 0),
-        totalVV: vids.reduce((a, v) => a + v.vv, 0),
-        totalOrders: vids.reduce((a, v) => a + v.videoOrders, 0),
-        avgGPM: withSales.reduce((a, v) => a + v.gpm, 0) / nSales,
-        avgCTR: vids.reduce((a, v) => a + v.ctr, 0) / n,
-        avgCTOR: vids.reduce((a, v) => a + v.ctor, 0) / n,
-        avgWatch: vids.reduce((a, v) => a + v.watchRate, 0) / n,
-        topPerformers: vids.filter((v) => v.videoStatus === "🏆 TOP PERFORMER").length,
-        underperformers: vids.filter((v) => v.videoStatus === "🔴 UNDERPERFORM").length,
+        totalGMV, totalVV, totalOrders,
+        avgGPM, avgCTR, avgCTOR, avgWatch,
+        topPerformers, underperformers, pctSales,
         vids,
       };
     });
   }, [videos]);
+
+  // Week-over-week deltas
+  const weeklyWithDelta = useMemo(() => {
+    return weeklyData.map((w, i) => {
+      const prev = i > 0 ? weeklyData[i - 1] : null;
+      const gmvDelta = prev ? (prev.totalGMV > 0 ? ((w.totalGMV - prev.totalGMV) / prev.totalGMV) * 100 : (w.totalGMV > 0 ? 100 : 0)) : 0;
+      const vvDelta = prev ? (prev.totalVV > 0 ? ((w.totalVV - prev.totalVV) / prev.totalVV) * 100 : (w.totalVV > 0 ? 100 : 0)) : 0;
+      const ctrDelta = prev ? w.avgCTR - prev.avgCTR : 0;
+      const ctorDelta = prev ? w.avgCTOR - prev.avgCTOR : 0;
+
+      // Grade: A/B/C/D based on multiple factors
+      let score = 0;
+      if (w.avgCTR >= 3) score++; else if (w.avgCTR >= 2) score += 0.5;
+      if (w.avgCTOR >= 3) score++; else if (w.avgCTOR >= 2) score += 0.5;
+      if (w.avgWatch >= 10) score++; else if (w.avgWatch >= 5) score += 0.5;
+      if (w.pctSales >= 30) score++; else if (w.pctSales >= 15) score += 0.5;
+      if (gmvDelta > 0) score += 0.5;
+      const grade = score >= 4 ? "A" : score >= 3 ? "B" : score >= 2 ? "C" : "D";
+      const gradeColor = grade === "A" ? "bg-green-100 text-green-700" : grade === "B" ? "bg-blue-100 text-blue-700" : grade === "C" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700";
+
+      return { ...w, gmvDelta, vvDelta, ctrDelta, ctorDelta, grade, gradeColor, hasPrev: !!prev };
+    });
+  }, [weeklyData]);
+
+  // Chart uses chronological order, accordion uses newest-first
+  const accordionData = useMemo(() => [...weeklyWithDelta].reverse(), [weeklyWithDelta]);
 
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
 
@@ -628,14 +690,29 @@ function WeeklyTab({ videos }: { videos: VidExtended[] }) {
     const withSales = videos.filter((v) => v.gmv > 0);
     const pctSales = (withSales.length / n) * 100;
 
+    // Trend-based recommendations
+    if (weeklyWithDelta.length >= 2) {
+      const latest = weeklyWithDelta[weeklyWithDelta.length - 1];
+      if (latest.gmvDelta < -20) tips.push("📉 GMV turun " + Math.abs(latest.gmvDelta).toFixed(0) + "% vs minggu lalu — Evaluasi konten dan jadwal posting. Perlu variasi hook atau format baru.");
+      if (latest.ctrDelta < -1) tips.push("🔻 CTR turun " + Math.abs(latest.ctrDelta).toFixed(1) + "% vs minggu lalu — Thumbnail & hook 3 detik pertama perlu diperbaiki.");
+      if (latest.gmvDelta > 20) tips.push("🚀 GMV naik " + latest.gmvDelta.toFixed(0) + "% vs minggu lalu — Pertahankan strategi konten minggu ini! Identifikasi video top performer dan buat lebih banyak dengan format serupa.");
+    }
+
     if (avgCTR < 3) tips.push("🎯 CTR rendah (<3%) — Perbaiki hook 3 detik pertama & thumbnail. Gunakan teks overlay yang menarik perhatian.");
     if (avgCTOR < 3) tips.push("🛒 CTOR rendah (<3%) — Tingkatkan call-to-action di video. Tampilkan produk lebih jelas dan berikan alasan untuk beli sekarang.");
     if (avgWatch < 10) tips.push("⏱️ Watch Rate rendah (<10%) — Video terlalu panjang atau kurang engaging. Coba durasi 15-30 detik dengan konten padat.");
     if (pctSales < 30) tips.push("📉 Kurang dari 30% video menghasilkan penjualan — Fokus pada konten yang demonstrasikan produk secara langsung.");
-    if (tips.length === 0) tips.push("✅ Performa video sudah bagus! Pertahankan konsistensi konten.");
+    if (tips.length === 0) tips.push("✅ Performa video sudah bagus! Pertahankan konsistensi konten dan lakukan A/B testing untuk terus meningkat.");
 
     return tips;
-  }, [videos]);
+  }, [videos, weeklyWithDelta]);
+
+  // Delta formatter
+  const fmtDelta = (val: number, suffix: string = "%") => {
+    const sign = val >= 0 ? "+" : "";
+    const color = val > 0 ? "text-green-600" : val < 0 ? "text-red-500" : "text-gray-400";
+    return <span className={`text-[10px] font-semibold ${color}`}>{sign}{val.toFixed(1)}{suffix}</span>;
+  };
 
   return (
     <div className="space-y-6">
@@ -655,7 +732,7 @@ function WeeklyTab({ videos }: { videos: VidExtended[] }) {
         </div>
       )}
 
-      {/* Weekly metrics */}
+      {/* Weekly CTR & CTOR trend */}
       {weeklyData.length > 1 && (
         <div className="bg-white rounded-2xl border p-6">
           <h3 className="font-semibold mb-4 text-sm">📈 Tren Mingguan CTR & CTOR</h3>
@@ -673,17 +750,70 @@ function WeeklyTab({ videos }: { videos: VidExtended[] }) {
         </div>
       )}
 
-      {/* Weekly Accordion */}
+      {/* Evaluasi Ringkasan per Minggu */}
+      {weeklyWithDelta.length > 0 && (
+        <div className="bg-white rounded-2xl border p-6">
+          <h3 className="font-semibold mb-4 text-sm">🏅 Evaluasi Ringkasan per Minggu</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-gray-50 text-left">
+                  <th className="p-2.5">Minggu</th>
+                  <th className="p-2.5 text-center">Grade</th>
+                  <th className="p-2.5 text-right">Video</th>
+                  <th className="p-2.5 text-right">GMV</th>
+                  <th className="p-2.5 text-center">Δ GMV</th>
+                  <th className="p-2.5 text-right">Views</th>
+                  <th className="p-2.5 text-center">Δ VV</th>
+                  <th className="p-2.5 text-right">CTR</th>
+                  <th className="p-2.5 text-center">Δ CTR</th>
+                  <th className="p-2.5 text-right">CTOR</th>
+                  <th className="p-2.5 text-center">Δ CTOR</th>
+                  <th className="p-2.5 text-right">% Sales</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accordionData.map((w) => (
+                  <tr key={w.weekStart} className="border-b hover:bg-gray-50">
+                    <td className="p-2.5 font-medium whitespace-nowrap">{w.weekLabel}</td>
+                    <td className="p-2.5 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${w.gradeColor}`}>{w.grade}</span>
+                    </td>
+                    <td className="p-2.5 text-right">{w.videos}</td>
+                    <td className="p-2.5 text-right font-bold text-green-700">{formatRupiah(w.totalGMV)}</td>
+                    <td className="p-2.5 text-center">{w.hasPrev ? fmtDelta(w.gmvDelta) : <span className="text-gray-300">—</span>}</td>
+                    <td className="p-2.5 text-right">{formatNum(w.totalVV)}</td>
+                    <td className="p-2.5 text-center">{w.hasPrev ? fmtDelta(w.vvDelta) : <span className="text-gray-300">—</span>}</td>
+                    <td className="p-2.5 text-right">{fmtDec(w.avgCTR, 2)}%</td>
+                    <td className="p-2.5 text-center">{w.hasPrev ? fmtDelta(w.ctrDelta, "pp") : <span className="text-gray-300">—</span>}</td>
+                    <td className="p-2.5 text-right">{fmtDec(w.avgCTOR, 2)}%</td>
+                    <td className="p-2.5 text-center">{w.hasPrev ? fmtDelta(w.ctorDelta, "pp") : <span className="text-gray-300">—</span>}</td>
+                    <td className="p-2.5 text-right">{fmtDec(w.pctSales, 0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Weekly Accordion (newest first) */}
       <div className="space-y-3">
         <h3 className="font-semibold text-sm">📅 Detail per Minggu</h3>
-        {weeklyData.map((w) => (
+        {accordionData.map((w) => (
           <div key={w.weekStart} className="bg-white rounded-2xl border overflow-hidden">
             <button onClick={() => setExpandedWeek(expandedWeek === w.weekStart ? null : w.weekStart)}
               className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
               <div className="flex items-center gap-3">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${w.gradeColor}`}>{w.grade}</span>
                 <span className="text-sm font-bold text-gray-900">Minggu {w.weekLabel}</span>
                 <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{w.videos} video</span>
                 {w.topPerformers > 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">🏆 {w.topPerformers}</span>}
+                {w.hasPrev && w.gmvDelta !== 0 && (
+                  <span className={`text-[10px] font-bold ${w.gmvDelta > 0 ? "text-green-600" : "text-red-500"}`}>
+                    {w.gmvDelta > 0 ? "▲" : "▼"} {Math.abs(w.gmvDelta).toFixed(0)}%
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm font-bold text-green-700">{formatRupiah(w.totalGMV)}</span>
@@ -694,21 +824,32 @@ function WeeklyTab({ videos }: { videos: VidExtended[] }) {
               <div className="border-t p-4 space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                   {[
-                    ["GMV", formatRupiah(w.totalGMV)], ["Views", formatNum(w.totalVV)],
-                    ["Pesanan", formatNum(w.totalOrders)], ["Avg GPM", formatRupiah(Math.round(w.avgGPM))],
-                    ["Avg CTR", fmtDec(w.avgCTR, 2) + "%"], ["Avg CTOR", fmtDec(w.avgCTOR, 2) + "%"],
-                    ["Watch Rate", fmtDec(w.avgWatch, 2) + "%"], ["Under-perform", String(w.underperformers)],
-                  ].map(([l, val]) => (
-                    <div key={l} className="bg-gray-50 rounded-xl p-3">
-                      <div className="text-gray-400 mb-0.5">{l}</div>
-                      <div className="font-bold text-gray-800">{val}</div>
+                    ["GMV", formatRupiah(w.totalGMV), w.hasPrev ? w.gmvDelta : null],
+                    ["Views", formatNum(w.totalVV), w.hasPrev ? w.vvDelta : null],
+                    ["Pesanan", formatNum(w.totalOrders), null],
+                    ["Avg GPM", formatRupiah(Math.round(w.avgGPM)), null],
+                    ["Avg CTR", fmtDec(w.avgCTR, 2) + "%", w.hasPrev ? w.ctrDelta : null],
+                    ["Avg CTOR", fmtDec(w.avgCTOR, 2) + "%", w.hasPrev ? w.ctorDelta : null],
+                    ["Watch Rate", fmtDec(w.avgWatch, 2) + "%", null],
+                    ["Underperform", String(w.underperformers), null],
+                  ].map(([l, val, delta]) => (
+                    <div key={l as string} className="bg-gray-50 rounded-xl p-3">
+                      <div className="text-gray-400 mb-0.5">{l as string}</div>
+                      <div className="font-bold text-gray-800 flex items-center gap-1">
+                        {val as string}
+                        {delta !== null && delta !== undefined && (
+                          <span className={`text-[9px] font-semibold ${(delta as number) > 0 ? "text-green-600" : (delta as number) < 0 ? "text-red-500" : "text-gray-400"}`}>
+                            {(delta as number) > 0 ? "▲" : (delta as number) < 0 ? "▼" : ""}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
-                {/* Top 3 videos of the week */}
+                {/* Top 3 videos of the week — sorted copy, not mutating original */}
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-2">🏆 Top Video Minggu Ini</p>
-                  {w.vids.sort((a, b) => b.gmv - a.gmv).slice(0, 3).map((v, i) => (
+                  <p className="text-xs font-semibold text-gray-500 mb-2">🏆 Top Video Minggu Ini (by GMV)</p>
+                  {[...w.vids].sort((a, b) => b.gmv - a.gmv).slice(0, 3).map((v, i) => (
                     <div key={v.videoId + i} className="flex items-center gap-2 py-1.5 border-b border-gray-100 last:border-0 text-xs">
                       <span className="font-bold text-gray-400 w-5">{i + 1}.</span>
                       <span className="flex-1 truncate">{v.videoInfo.substring(0, 60)}</span>
@@ -744,7 +885,7 @@ function LeaderboardTab({ videos }: { videos: VideoPerformanceItem[] }) {
   const [creatorFilter, setCreatorFilter] = useState("");
   const [boostFilter, setBoostFilter] = useState("");
   const [diagnosisFilter, setDiagnosisFilter] = useState("");
-  const [sortBy, setSortBy] = useState<string>("score");
+  const [sortBy, setSortBy] = useState<string>("gmv");
   const [minVV, setMinVV] = useState("");
   const [hasSales, setHasSales] = useState("");
   const [page, setPage] = useState(0);
@@ -998,12 +1139,13 @@ function CreatorTab({ videos }: { videos: VideoPerformanceItem[] }) {
   }, [videos]);
 
   const globalAvg = useMemo(() => {
+    const n = videos.length || 1;
     const withSales = videos.filter((v) => v.gmv > 0);
     return {
       gpm: withSales.length ? withSales.reduce((a, v) => a + v.gpm, 0) / withSales.length : 0,
-      ctr: videos.reduce((a, v) => a + v.ctr, 0) / videos.length,
-      ctor: videos.reduce((a, v) => a + v.ctor, 0) / videos.length,
-      watch: videos.reduce((a, v) => a + v.watchRate, 0) / videos.length,
+      ctr: videos.reduce((a, v) => a + v.ctr, 0) / n,
+      ctor: videos.reduce((a, v) => a + v.ctor, 0) / n,
+      watch: videos.reduce((a, v) => a + v.watchRate, 0) / n,
     };
   }, [videos]);
 
