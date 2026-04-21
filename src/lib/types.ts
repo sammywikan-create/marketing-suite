@@ -172,7 +172,8 @@ export type TabKey =
   | "report-builder"
   | "live-analytics"
   | "gmax-overview"
-  | "product-cards";
+  | "product-cards"
+  | "laporan-harian";
 
 export interface TabConfig {
   key: TabKey;

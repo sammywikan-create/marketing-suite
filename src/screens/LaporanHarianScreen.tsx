@@ -18,7 +18,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { RefreshCw, Loader2, ArrowUp, ArrowDown } from "lucide-react";
+import { RefreshCw, Loader2 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────
 interface HarianRow {
@@ -74,9 +74,9 @@ function fN(v: number) {
 }
 
 // ══════════════════════════════════════════════════════════
-// MAIN PAGE
+// MAIN SCREEN
 // ══════════════════════════════════════════════════════════
-export default function LaporanHarianPage() {
+export default function LaporanHarianScreen() {
   const { data, isLoading, mutate } = useSWR<ApiResponse>(
     "/api/laporan-harian",
     fetcher,
@@ -90,7 +90,7 @@ export default function LaporanHarianPage() {
 
   if (isLoading || !data) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <Loader2 size={40} className="animate-spin text-blue-500 mx-auto mb-4" />
           <p className="text-gray-500">Memuat data dari Google Sheets...</p>
@@ -102,27 +102,24 @@ export default function LaporanHarianPage() {
   const { summary, harian, evaluasi_per_brand } = data;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* ═══ HEADER ═══ */}
-        <Header lastUpdate={lastUpdate} onRefresh={() => mutate()} />
+    <div className="space-y-6">
+      {/* ═══ HEADER ═══ */}
+      <Header lastUpdate={lastUpdate} onRefresh={() => mutate()} />
 
-        {/* ═══ KPI CARDS ═══ */}
-        <KpiCards summary={summary} />
+      {/* ═══ KPI CARDS ═══ */}
+      <KpiCards summary={summary} />
 
-        {/* ═══ CHART 1: Omzet & Botol Harian ═══ */}
-        <OmzetBotolChart harian={harian} />
+      {/* ═══ CHART 1: Omzet & Botol Harian ═══ */}
+      <OmzetBotolChart harian={harian} />
 
-        {/* ═══ CHART 2: Donut Brand ═══ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <BrandDonutChart evaluasi={evaluasi_per_brand} />
-          {/* ═══ CHART 3: Upsell & CAC Trend ═══ */}
-          <UpsellCacChart harian={harian} />
-        </div>
-
-        {/* ═══ TABEL HARIAN ═══ */}
-        <HarianTable harian={harian} summary={summary} />
+      {/* ═══ CHART 2 & 3 ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BrandDonutChart evaluasi={evaluasi_per_brand} />
+        <UpsellCacChart harian={harian} />
       </div>
+
+      {/* ═══ TABEL HARIAN ═══ */}
+      <HarianTable harian={harian} summary={summary} />
     </div>
   );
 }
@@ -165,8 +162,7 @@ function Header({ lastUpdate, onRefresh }: { lastUpdate: Date | null; onRefresh:
 function KpiCards({ summary }: { summary: Summary }) {
   const TARGET_OMZET = 350_000_000;
   const pctTarget = Math.min((summary.total_omzet / TARGET_OMZET) * 100, 100);
-  const harianCount = summary.total_closing > 0 ? Math.round(summary.total_botol / (summary.total_botol / summary.rata_upsell > 0 ? summary.total_closing : 1)) : 0;
-  const avgBotolPerDay = summary.total_botol > 0 ? Math.round(summary.total_botol / 20) : 0; // ~20 hari kerja
+  const avgBotolPerDay = summary.total_botol > 0 ? Math.round(summary.total_botol / 20) : 0;
   const nilaiPerTxn = summary.total_closing > 0 ? summary.total_omzet / summary.total_closing : 0;
   const avgClosingPerDay = summary.total_closing > 0 ? Math.round(summary.total_closing / 20) : 0;
 
@@ -266,15 +262,9 @@ function KpiCards({ summary }: { summary: Summary }) {
           <svg width="60" height="60" viewBox="0 0 36 36">
             <circle cx="18" cy="18" r="14" fill="none" stroke="#e5e7eb" strokeWidth="4" />
             <circle
-              cx="18"
-              cy="18"
-              r="14"
-              fill="none"
-              stroke="#3b82f6"
-              strokeWidth="4"
+              cx="18" cy="18" r="14" fill="none" stroke="#3b82f6" strokeWidth="4"
               strokeDasharray={`${summary.pct_kontribusi_fv * 0.88} ${88 - summary.pct_kontribusi_fv * 0.88}`}
-              strokeDashoffset="22"
-              strokeLinecap="round"
+              strokeDashoffset="22" strokeLinecap="round"
             />
             <text x="18" y="20" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#1f2937">
               {summary.pct_kontribusi_fv}%
@@ -350,13 +340,12 @@ const BRAND_COLORS: Record<string, string> = {
 
 function BrandDonutChart({ evaluasi }: { evaluasi: EvaluasiPerBrand }) {
   const pieData = useMemo(() => {
-    const items = [
+    return [
       { name: "FreshVision", value: evaluasi.freshvision },
       { name: "Etawaku", value: evaluasi.etawaku },
       { name: "Freshmag", value: evaluasi.freshmag },
       { name: "Nutriflakes", value: evaluasi.nutriflakes },
     ].filter((d) => d.value > 0);
-    return items;
   }, [evaluasi]);
 
   return (
@@ -367,30 +356,23 @@ function BrandDonutChart({ evaluasi }: { evaluasi: EvaluasiPerBrand }) {
           <PieChart>
             <Pie
               data={pieData}
-              cx="50%"
-              cy="50%"
-              innerRadius={70}
-              outerRadius={110}
-              paddingAngle={3}
-              dataKey="value"
+              cx="50%" cy="50%"
+              innerRadius={70} outerRadius={110}
+              paddingAngle={3} dataKey="value"
               label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(1)}%`}
             >
               {pieData.map((entry) => (
                 <Cell key={entry.name} fill={BRAND_COLORS[entry.name] || "#94a3b8"} />
               ))}
             </Pie>
-            <Tooltip
-              formatter={(value) => fR(Number(value))}
-            />
+            <Tooltip formatter={(value) => fR(Number(value))} />
           </PieChart>
         </ResponsiveContainer>
       </div>
-      {/* Center text overlay */}
       <div className="text-center -mt-4">
         <div className="text-xs text-gray-400">Total</div>
         <div className="text-lg font-bold text-gray-900">{fR(evaluasi.total)}</div>
       </div>
-      {/* Legend */}
       <div className="flex flex-wrap justify-center gap-4 mt-3">
         {pieData.map((d) => (
           <div key={d.name} className="flex items-center gap-1.5 text-xs">
@@ -461,7 +443,6 @@ function HarianTable({ harian, summary }: { harian: HarianRow[]; summary: Summar
 
     return [...harian]
       .sort((a, b) => {
-        // Sort by tanggal descending (newest first)
         const numA = parseInt(a.tanggal) || 0;
         const numB = parseInt(b.tanggal) || 0;
         return numB - numA;
@@ -516,13 +497,10 @@ function HarianTable({ harian, summary }: { harian: HarianRow[]; summary: Summar
                 <td className={`p-2.5 text-right ${upsellColor(r.upsell)}`}>{r.upsell.toFixed(2)}x</td>
                 <td className={`p-2.5 text-right ${cacColor(r.cac_total)}`}>{r.cac_total.toFixed(1)}%</td>
                 <td className="p-2.5 text-right">{r.pct_kontribusi_fv.toFixed(1)}%</td>
-                <td className="p-2.5 text-center" title={r.statusLabel}>
-                  {r.status}
-                </td>
+                <td className="p-2.5 text-center" title={r.statusLabel}>{r.status}</td>
               </tr>
             ))}
           </tbody>
-          {/* Sticky footer TOTAL */}
           <tfoot className="sticky bottom-0">
             <tr className="bg-blue-50 border-t-2 border-blue-200 font-bold">
               <td className="p-2.5">TOTAL</td>

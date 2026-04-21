@@ -72,6 +72,7 @@ const tabGroups: TabGroup[] = [
     title: "Laporan",
     items: [
       { key: "report-builder", label: "📄 Report Builder", icon: <FileText size={18} /> },
+      { key: "laporan-harian", label: "📊 Laporan Harian", icon: <BarChart3 size={18} /> },
     ],
   },
   {
