@@ -1,14 +1,31 @@
 import { google } from 'googleapis';
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID;
 const SHEET_FRESHVISION = 'ADV SAEFUL- FRESHVISION(SHOP)';
 const SHEET_EVALUASI = 'TOTAL EVALUASI PRODUK (TIKTOKSH';
 
+function getSpreadsheetId(): string {
+  const id = process.env.GOOGLE_SHEETS_ID;
+  if (!id) {
+    console.error('[GoogleSheets] ENV vars present:', {
+      GOOGLE_SHEETS_ID: !!process.env.GOOGLE_SHEETS_ID,
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      GOOGLE_PRIVATE_KEY: !!process.env.GOOGLE_PRIVATE_KEY,
+    });
+    throw new Error('GOOGLE_SHEETS_ID belum diset di environment variables. Buka Vercel → Settings → Environment Variables → tambahkan GOOGLE_SHEETS_ID');
+  }
+  return id;
+}
+
 function getAuth() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const key = process.env.GOOGLE_PRIVATE_KEY;
+  if (!email || !key) {
+    throw new Error(`Google credentials belum lengkap. GOOGLE_SERVICE_ACCOUNT_EMAIL: ${email ? '✅' : '❌'}, GOOGLE_PRIVATE_KEY: ${key ? '✅' : '❌'}`);
+  }
   return new google.auth.GoogleAuth({
     credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      client_email: email,
+      private_key: key.replace(/\\n/g, '\n'),
     },
     scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
   });
@@ -22,7 +39,7 @@ export async function getFreshVisionHarian() {
   const sheets = google.sheets({ version: 'v4', auth });
 
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID!,
+    spreadsheetId: getSpreadsheetId(),
     range: `'${SHEET_FRESHVISION}'!A4:Q35`,
   });
 
@@ -49,7 +66,7 @@ export async function getEvaluasiHarian() {
   const sheets = google.sheets({ version: 'v4', auth });
 
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID!,
+    spreadsheetId: getSpreadsheetId(),
     range: `'${SHEET_EVALUASI}'!A4:NZ35`,
   });
 
