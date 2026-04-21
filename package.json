@@ -12,6 +12,8 @@
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.103.3",
     "axios": "^1.15.0",
+    "google-auth-library": "^10.6.2",
+    "googleapis": "^171.4.0",
     "idb-keyval": "^6.2.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
