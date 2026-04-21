@@ -3,6 +3,46 @@ import { google } from 'googleapis';
 const SHEET_FRESHVISION = 'ADV SAEFUL- FRESHVISION(SHOP)';
 const SHEET_EVALUASI = 'TOTAL EVALUASI PRODUK (TIKTOKSHOP)';
 
+// "Rp20.309.480,00" → 20309480
+// "172" → 172
+function cleanRp(val: unknown): number {
+  if (!val) return 0;
+  const s = String(val).replace(/Rp/gi, '').replace(/\./g, '').replace(',', '.').trim();
+  return parseFloat(s) || 0;
+}
+
+// "24,96%" → 24.96
+function cleanPct(val: unknown): number {
+  if (!val) return 0;
+  const s = String(val).replace('%', '').replace(',', '.').trim();
+  return parseFloat(s) || 0;
+}
+
+// "1,8" or "1.8" → 1.8
+function cleanDecimal(val: unknown): number {
+  if (!val) return 0;
+  const s = String(val).replace(',', '.').trim();
+  return parseFloat(s) || 0;
+}
+
+// "Rabu, April 1, 2026" → "1 Apr"
+function cleanDate(val: unknown): string {
+  if (!val) return '';
+  const s = String(val).trim();
+  // Format: "Hari, Bulan Tanggal, Tahun" e.g. "Rabu, April 1, 2026"
+  const match = s.match(/(\w+)\s+(\d+),\s*(\d{4})$/);
+  if (match) {
+    const bulanMap: Record<string, string> = {
+      January: 'Jan', February: 'Feb', March: 'Mar', April: 'Apr',
+      May: 'Mei', June: 'Jun', July: 'Jul', August: 'Agu',
+      September: 'Sep', October: 'Okt', November: 'Nov', December: 'Des',
+    };
+    const bulan = bulanMap[match[1]] || match[1].slice(0, 3);
+    return `${match[2]} ${bulan}`;
+  }
+  return s;
+}
+
 function getSpreadsheetId(): string {
   const id = process.env.GOOGLE_SHEETS_ID;
   if (!id) {
@@ -48,14 +88,14 @@ export async function getFreshVisionHarian() {
   return rows
     .filter(r => r[0] && r[13])
     .map(r => ({
-      tanggal:       r[0],
+      tanggal:       cleanDate(r[0]),
       closing:       parseInt(r[10]) || 0,
-      botol:         parseFloat(r[11]) || 0,
-      nilai_per_txn: parseFloat(r[12]) || 0,
-      omzet:         parseFloat(r[13]) || 0,
-      cac_ads:       parseFloat(r[14]) || 0,
-      cac_total:     parseFloat(r[15]) || 0,
-      upsell:        parseFloat(r[16]) || 0,
+      botol:         parseInt(r[11]) || 0,
+      nilai_per_txn: cleanRp(r[12]),
+      omzet:         cleanRp(r[13]),
+      cac_ads:       cleanPct(r[14]),
+      cac_total:     cleanPct(r[15]),
+      upsell:        cleanDecimal(r[16]),
     }))
     .filter(r => r.omzet > 0);
 }
@@ -75,12 +115,12 @@ export async function getEvaluasiHarian() {
   return rows
     .filter(r => r[0])
     .map(r => ({
-      tanggal:           r[0],
-      omzet_freshvision: parseFloat(r[322]) || 0,
-      omzet_nutriflakes: parseFloat(r[273]) || 0,
-      omzet_freshmag:    parseFloat(r[256]) || 0,
-      omzet_etawaku:     parseFloat(r[175]) || 0,
-      omzet_total:       parseFloat(r[339]) || 0,
+      tanggal:           cleanDate(r[0]),
+      omzet_freshvision: cleanRp(r[322]),
+      omzet_nutriflakes: cleanRp(r[273]),
+      omzet_freshmag:    cleanRp(r[256]),
+      omzet_etawaku:     cleanRp(r[175]),
+      omzet_total:       cleanRp(r[339]),
     }))
     .filter(r => r.omzet_total > 0);
 }
