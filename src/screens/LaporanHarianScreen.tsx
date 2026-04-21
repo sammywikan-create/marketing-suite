@@ -11,7 +11,10 @@ import {
   RefreshCw, Loader2, TrendingUp, TrendingDown, Settings, X, Save,
   ShoppingBag, Video, Radio, Store, Users, AlertTriangle, CheckCircle2,
   Target, DollarSign, Zap, BarChart3, ArrowUpRight, ArrowDownRight,
+  FileDown, Presentation, Download,
 } from "lucide-react";
+import { generatePdf } from "@/lib/exportPdf";
+import { generatePpt } from "@/lib/exportPpt";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -116,6 +119,15 @@ export default function LaporanHarianScreen() {
 
   const { summary: s, harian, weekly, channels, channel_data, evaluasi_per_brand, highlights } = data;
   const health = healthScore(s, target);
+
+  const handleExport = (type: "pdf" | "ppt") => {
+    const exportData = {
+      summary: s, harian, channels, weekly, evaluasi_per_brand, highlights,
+      target, healthScore: health.score, healthLabel: health.label,
+    };
+    if (type === "pdf") generatePdf(exportData);
+    else generatePpt(exportData);
+  };
   const tabs = [
     { key: "overview", label: "Overview", icon: <BarChart3 size={14} /> },
     { key: "cost", label: "Cost Analysis", icon: <DollarSign size={14} /> },
@@ -145,9 +157,15 @@ export default function LaporanHarianScreen() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setShowSettings(true)} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 text-sm transition">
-              <Settings size={14} /> Target & Setting
+              <Settings size={14} /> Setting
+            </button>
+            <button onClick={() => handleExport("pdf")} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 text-sm transition">
+              <FileDown size={14} /> PDF
+            </button>
+            <button onClick={() => handleExport("ppt")} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 text-sm transition">
+              <Presentation size={14} /> PPT
             </button>
             <button onClick={() => mutate()} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition">
               <RefreshCw size={14} /> Refresh
@@ -184,10 +202,57 @@ export default function LaporanHarianScreen() {
 // ═══════════════════════════════════════════════════════════
 // LOADING & ERROR STATES
 // ═══════════════════════════════════════════════════════════
+function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`bg-gray-200 rounded-lg animate-pulse ${className}`} />;
+}
 function LoadingState() {
   return (
-    <div className="flex items-center justify-center py-24">
-      <div className="text-center"><Loader2 size={36} className="animate-spin text-blue-500 mx-auto mb-3" /><p className="text-sm text-gray-400">Memuat data Google Sheets…</p></div>
+    <div className="space-y-5 pb-10">
+      {/* Header skeleton */}
+      <div className="bg-white rounded-2xl border p-5">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-64" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-20 rounded-lg" />
+            <Skeleton className="h-9 w-16 rounded-lg" />
+            <Skeleton className="h-9 w-16 rounded-lg" />
+            <Skeleton className="h-9 w-24 rounded-lg" />
+          </div>
+        </div>
+      </div>
+      {/* Executive summary skeleton */}
+      <div className="bg-white rounded-2xl border p-5 space-y-4">
+        <div className="space-y-2">
+          <div className="flex justify-between"><Skeleton className="h-4 w-48" /><Skeleton className="h-4 w-16" /></div>
+          <Skeleton className="h-3 w-full rounded-full" />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="text-center space-y-1.5">
+              <Skeleton className="h-3 w-12 mx-auto" />
+              <Skeleton className="h-5 w-20 mx-auto" />
+              <Skeleton className="h-3 w-14 mx-auto" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-8 w-full rounded-lg" />
+      </div>
+      {/* Tabs skeleton */}
+      <div className="flex gap-1"><Skeleton className="h-9 w-28 rounded-lg" /><Skeleton className="h-9 w-28 rounded-lg" /><Skeleton className="h-9 w-28 rounded-lg" /><Skeleton className="h-9 w-36 rounded-lg" /></div>
+      {/* Chart skeleton */}
+      <div className="bg-white rounded-2xl border p-5 space-y-3">
+        <Skeleton className="h-5 w-44" />
+        <Skeleton className="h-[300px] w-full rounded-xl" />
+      </div>
+      {/* Two-col skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl border p-5 space-y-3"><Skeleton className="h-5 w-36" /><Skeleton className="h-[260px] w-full rounded-xl" /></div>
+        <div className="bg-white rounded-2xl border p-5 space-y-3"><Skeleton className="h-5 w-36" /><Skeleton className="h-[260px] w-full rounded-xl" /></div>
+      </div>
+      <div className="text-center text-xs text-gray-400 animate-pulse">Memuat data dari Google Sheets…</div>
     </div>
   );
 }
@@ -326,6 +391,10 @@ function MiniKpi({ label, value, sub }: { label: string; value: string; sub: str
 function OverviewTab({ s, target, harian, evaluasi }: { s: Summary; target: number; harian: HarianRow[]; evaluasi: EvaluasiPerBrand }) {
   return (
     <div className="space-y-5">
+      {/* Executive Report */}
+      <ExecutiveReport s={s} target={target} harian={harian} />
+      {/* Heatmap Calendar */}
+      <HeatmapCalendar harian={harian} target={target} />
       {/* Omzet & Botol Chart */}
       <OmzetBotolChart harian={harian} avgTarget={target / 30} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -333,6 +402,99 @@ function OverviewTab({ s, target, harian, evaluasi }: { s: Summary; target: numb
         <UpsellCacChart harian={harian} />
       </div>
       <HarianTable harian={harian} s={s} />
+    </div>
+  );
+}
+
+function ExecutiveReport({ s, target, harian }: { s: Summary; target: number; harian: HarianRow[] }) {
+  const report = useMemo(() => {
+    const pctTarget = (s.total_omzet / target) * 100;
+    const projected = s.avg_omzet_harian * 30;
+    const sisaHari = Math.max(1, 30 - s.hari);
+    const sisaTarget = Math.max(0, target - s.total_omzet);
+    const needPerDay = sisaTarget / sisaHari;
+
+    // Trend: compare last 7 days avg vs first 7 days avg
+    const first7 = harian.slice(0, Math.min(7, harian.length));
+    const last7 = harian.slice(-Math.min(7, harian.length));
+    const avgFirst7 = first7.reduce((a, r) => a + r.omzet, 0) / first7.length;
+    const avgLast7 = last7.reduce((a, r) => a + r.omzet, 0) / last7.length;
+    const trendPct = avgFirst7 > 0 ? ((avgLast7 - avgFirst7) / avgFirst7) * 100 : 0;
+    const trendDir = trendPct > 5 ? "naik" : trendPct < -5 ? "turun" : "stabil";
+
+    const lines: string[] = [];
+    lines.push(`Dalam ${s.hari} hari operasional, FreshVision mencatatkan total omzet ${fR(s.total_omzet)} dari target bulanan ${fR(target)} (${pctTarget.toFixed(1)}%). Rata-rata omzet harian ${fR(s.avg_omzet_harian)} dengan ${fN(s.avg_closing_harian)} closing per hari.`);
+
+    if (pctTarget >= 100) {
+      lines.push(`🎉 Target bulanan sudah tercapai! Proyeksi akhir bulan ${fR(Math.round(projected))}.`);
+    } else if (projected >= target) {
+      lines.push(`Dengan pace saat ini, proyeksi akhir bulan ${fR(Math.round(projected))} — on track untuk mencapai target. Sisa ${fR(sisaTarget)} dalam ${sisaHari} hari.`);
+    } else {
+      lines.push(`⚠️ Proyeksi akhir bulan ${fR(Math.round(projected))} — masih di bawah target. Dibutuhkan rata-rata ${fR(Math.round(needPerDay))}/hari di ${sisaHari} hari tersisa.`);
+    }
+
+    lines.push(`Tren omzet 7 hari terakhir ${trendDir} ${Math.abs(trendPct).toFixed(0)}% dibanding 7 hari pertama. Upsell rata-rata ${s.rata_upsell.toFixed(2)}x ${s.rata_upsell >= 1.3 ? "(baik)" : s.rata_upsell >= 1.1 ? "(perlu ditingkatkan)" : "(kritis)"}, CAC total ${s.rata_cac.toFixed(1)}% ${s.rata_cac <= 50 ? "(efisien)" : s.rata_cac <= 60 ? "(normal)" : "(tinggi)"}, ROAS ${s.roas.toFixed(1)}x ${s.roas >= 4 ? "(excellent)" : s.roas >= 3 ? "(cukup)" : "(rendah)"}.`);
+
+    const recs: string[] = [];
+    if (s.rata_upsell < 1.2) recs.push("Tingkatkan upsell melalui bundling dan promo beli 2");
+    if (s.rata_cac > 55) recs.push("Evaluasi efisiensi iklan, kurangi audience yang tidak perform");
+    if (s.roas < 3) recs.push("Fokus budget iklan ke produk dan audience dengan ROAS tertinggi");
+    if (trendDir === "turun") recs.push("Tren menurun — perlu campaign boost atau promo flash sale");
+    if (recs.length > 0) lines.push(`Rekomendasi: ${recs.join("; ")}.`);
+
+    return lines;
+  }, [s, target, harian]);
+
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-blue-900 flex items-center gap-1.5">📝 Executive Report</h3>
+        <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+          {expanded ? "Sembunyikan" : "Selengkapnya"}
+        </button>
+      </div>
+      <div className="text-xs text-gray-700 leading-relaxed space-y-2">
+        <p>{report[0]}</p>
+        {(expanded ? report.slice(1) : report.slice(1, 2)).map((line, i) => (
+          <p key={i}>{line}</p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeatmapCalendar({ harian, target }: { harian: HarianRow[]; target: number }) {
+  const dailyTarget = target / 30;
+  const maxOmzet = Math.max(...harian.map((r) => r.omzet));
+
+  const getColor = (omzet: number): string => {
+    if (omzet >= dailyTarget * 1.2) return "bg-green-500 text-white";
+    if (omzet >= dailyTarget) return "bg-green-300 text-green-900";
+    if (omzet >= dailyTarget * 0.7) return "bg-yellow-300 text-yellow-900";
+    if (omzet > 0) return "bg-red-300 text-red-900";
+    return "bg-gray-100 text-gray-400";
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border p-5">
+      <h3 className="text-sm font-semibold mb-3">📅 Heatmap Omzet Harian</h3>
+      <div className="grid grid-cols-7 sm:grid-cols-10 lg:grid-cols-15 gap-1.5">
+        {harian.map((r, i) => (
+          <div key={i} className={`rounded-lg p-1.5 text-center cursor-default transition hover:scale-105 ${getColor(r.omzet)} ${r.omzet === maxOmzet ? "ring-2 ring-blue-500" : ""}`}
+            title={`${r.tanggal}: ${fR(r.omzet)}`}>
+            <div className="text-[9px] font-bold leading-tight">{r.tanggal}</div>
+            <div className="text-[8px] leading-tight mt-0.5">{fR(r.omzet)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 mt-3 text-[10px] text-gray-500">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> &gt;120% target</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-300 inline-block" /> On target</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-300 inline-block" /> 70-99%</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-300 inline-block" /> &lt;70%</span>
+      </div>
     </div>
   );
 }
@@ -669,15 +831,20 @@ function DailyEvalTable({ harian, avgTarget }: { harian: HarianRow[]; avgTarget:
 function OmzetBotolChart({ harian, avgTarget }: { harian: HarianRow[]; avgTarget: number }) {
   const chartData = useMemo(() => {
     const maxOmzet = Math.max(...harian.map((r) => r.omzet));
-    return harian.map((r) => ({
-      tgl: r.tanggal, omzet: r.omzet, botol: r.botol,
-      closing: r.closing, upsell: r.upsell, cac: r.cac_total, isBest: r.omzet === maxOmzet,
-    }));
+    return harian.map((r, i) => {
+      // 7-day moving average
+      const window = harian.slice(Math.max(0, i - 6), i + 1);
+      const ma7 = Math.round(window.reduce((s, d) => s + d.omzet, 0) / window.length);
+      return {
+        tgl: r.tanggal, omzet: r.omzet, botol: r.botol, ma7,
+        closing: r.closing, upsell: r.upsell, cac: r.cac_total, isBest: r.omzet === maxOmzet,
+      };
+    });
   }, [harian]);
 
   return (
     <div className="bg-white rounded-2xl border p-5">
-      <h3 className="text-sm font-semibold mb-3">Omzet & Botol Harian</h3>
+      <h3 className="text-sm font-semibold mb-3">Omzet & Botol Harian <span className="text-gray-400 font-normal text-xs ml-1">(garis oranye = 7-day MA)</span></h3>
       <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -691,7 +858,8 @@ function OmzetBotolChart({ harian, avgTarget }: { harian: HarianRow[]; avgTarget
               <div className="bg-white border rounded-xl shadow-lg p-3 text-xs space-y-1">
                 <div className="font-bold">{d.tgl}</div>
                 <div>💰 {fR(d.omzet)} {d.isBest ? "⭐" : ""}</div>
-                <div>📦 {d.botol} botol · 🏷️ {d.closing} closing</div>
+                <div>� MA-7: {fR(d.ma7)}</div>
+                <div>�📦 {d.botol} botol · 🏷️ {d.closing} closing</div>
                 <div>📈 {d.upsell?.toFixed(2)}x · 💸 {d.cac?.toFixed(1)}%</div>
               </div>
             );
@@ -699,6 +867,7 @@ function OmzetBotolChart({ harian, avgTarget }: { harian: HarianRow[]; avgTarget
           <Legend />
           <ReferenceLine yAxisId="left" y={avgTarget} stroke="#10b981" strokeDasharray="6 3" label={{ value: `Target ${fR(avgTarget)}`, fontSize: 9, fill: "#10b981" }} />
           <Bar yAxisId="left" dataKey="omzet" name="Omzet" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+          <Line yAxisId="left" type="monotone" dataKey="ma7" name="MA-7" stroke="#f97316" strokeWidth={2.5} dot={false} strokeDasharray="5 3" />
           <Line yAxisId="right" type="monotone" dataKey="botol" name="Botol" stroke="#10b981" strokeWidth={2} dot={{ r: 2.5 }} />
         </ComposedChart>
       </ResponsiveContainer>
