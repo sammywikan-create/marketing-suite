@@ -77,7 +77,7 @@ function fN(v: number) {
 // MAIN SCREEN
 // ══════════════════════════════════════════════════════════
 export default function LaporanHarianScreen() {
-  const { data, isLoading, mutate } = useSWR<ApiResponse>(
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse>(
     "/api/laporan-harian",
     fetcher,
     { refreshInterval: 5 * 60 * 1000 }
@@ -85,15 +85,41 @@ export default function LaporanHarianScreen() {
 
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   useEffect(() => {
-    if (data) setLastUpdate(new Date());
+    if (data?.summary) setLastUpdate(new Date());
   }, [data]);
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <Loader2 size={40} className="animate-spin text-blue-500 mx-auto mb-4" />
           <p className="text-gray-500">Memuat data dari Google Sheets...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data?.summary) {
+    const errMsg = error?.message || (data as unknown as { error?: string })?.error || "Gagal memuat data dari Google Sheets";
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center max-w-md space-y-4">
+          <div className="text-4xl">⚠️</div>
+          <h2 className="text-lg font-bold text-gray-900">Gagal Memuat Data</h2>
+          <p className="text-sm text-gray-500">{errMsg}</p>
+          <p className="text-xs text-gray-400">
+            Pastikan environment variables Google Sheets sudah dikonfigurasi di Vercel:
+            <br />
+            <code className="bg-gray-100 px-1 rounded">GOOGLE_SHEETS_ID</code>,{" "}
+            <code className="bg-gray-100 px-1 rounded">GOOGLE_SERVICE_ACCOUNT_EMAIL</code>,{" "}
+            <code className="bg-gray-100 px-1 rounded">GOOGLE_PRIVATE_KEY</code>
+          </p>
+          <button
+            onClick={() => mutate()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition inline-flex items-center gap-2"
+          >
+            <RefreshCw size={14} /> Coba Lagi
+          </button>
         </div>
       </div>
     );
