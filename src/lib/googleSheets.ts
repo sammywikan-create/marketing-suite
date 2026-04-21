@@ -124,70 +124,73 @@ export async function getFreshVisionShop(): Promise<FVShopRow[]> {
 }
 
 // ═══ FETCHER 2: FreshVision VIDEO ═══
-// Same column layout as SHOP (verified: same spreadsheet template)
+// Kolom TOTAL: D=biaya_iklan, E=closing, F=botol, G=nilai, H=omzet, I=cac, J=upsell
 export async function getFreshVisionVideo(): Promise<FVChannelRow[]> {
-  const rows = await fetchRange(SHEETS.FV_VIDEO, 'A4:Q50');
+  const rows = await fetchRange(SHEETS.FV_VIDEO, 'A4:J50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:  cleanDate(r[0]),
-      omzet:    cleanRp(r[13]),
-      closing:  cleanInt(r[10]),
-      botol:    cleanInt(r[11]),
-      upsell:   cleanDecimal(r[16]),
-      cac_ads:  cleanPct(r[14]),
-      cac_total: cleanPct(r[15]),
+      tanggal:   cleanDate(r[0]),
+      omzet:     cleanRp(r[7]),    // H
+      closing:   cleanInt(r[4]),   // E
+      botol:     cleanInt(r[5]),   // F
+      upsell:    cleanDecimal(r[9]), // J
+      cac_ads:   cleanPct(r[8]),   // I (only one CAC column)
+      cac_total:  cleanPct(r[8]),  // I
     }))
     .filter(r => r.omzet > 0);
 }
 
 // ═══ FETCHER 3: FreshVision LIVE STREAMING ═══
+// Kolom TOTAL: D=biaya_iklan, E=closing, F=botol, G=nilai, H=omzet, I=cac, J=upsell
 export async function getFreshVisionLive(): Promise<FVChannelRow[]> {
-  const rows = await fetchRange(SHEETS.FV_LIVE, 'A4:Q50');
+  const rows = await fetchRange(SHEETS.FV_LIVE, 'A4:J50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:  cleanDate(r[0]),
-      omzet:    cleanRp(r[13]),
-      closing:  cleanInt(r[10]),
-      botol:    cleanInt(r[11]),
-      upsell:   cleanDecimal(r[16]),
-      cac_ads:  cleanPct(r[14]),
-      cac_total: cleanPct(r[15]),
+      tanggal:   cleanDate(r[0]),
+      omzet:     cleanRp(r[7]),    // H
+      closing:   cleanInt(r[4]),   // E
+      botol:     cleanInt(r[5]),   // F
+      upsell:    cleanDecimal(r[9]), // J
+      cac_ads:   cleanPct(r[8]),   // I
+      cac_total:  cleanPct(r[8]),  // I
     }))
     .filter(r => r.omzet > 0);
 }
 
 // ═══ FETCHER 4: FreshVision SHOP TAB ═══
+// Kolom TOTAL: D=biaya_iklan, E=closing, F=botol, G=nilai, H=omzet, I=cac, J=upsell
 export async function getFreshVisionShopTab(): Promise<FVChannelRow[]> {
-  const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:Q50');
+  const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:J50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:  cleanDate(r[0]),
-      omzet:    cleanRp(r[13]),
-      closing:  cleanInt(r[10]),
-      botol:    cleanInt(r[11]),
-      upsell:   cleanDecimal(r[16]),
-      cac_ads:  cleanPct(r[14]),
-      cac_total: cleanPct(r[15]),
+      tanggal:   cleanDate(r[0]),
+      omzet:     cleanRp(r[7]),    // H
+      closing:   cleanInt(r[4]),   // E
+      botol:     cleanInt(r[5]),   // F
+      upsell:    cleanDecimal(r[9]), // J
+      cac_ads:   cleanPct(r[8]),   // I
+      cac_total:  cleanPct(r[8]),  // I
     }))
     .filter(r => r.omzet > 0);
 }
 
 // ═══ FETCHER 5: FreshVision AFFILIATE ═══
+// Kolom TOTAL: B=komisi_aff, C=closing, D=botol, E=nilai, F=omzet, G=cac, H=upsell
 export async function getFreshVisionAffiliate(): Promise<FVChannelRow[]> {
-  const rows = await fetchRange(SHEETS.FV_AFFILIATE, 'A4:Q50');
+  const rows = await fetchRange(SHEETS.FV_AFFILIATE, 'A4:H50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:  cleanDate(r[0]),
-      omzet:    cleanRp(r[13]),
-      closing:  cleanInt(r[10]),
-      botol:    cleanInt(r[11]),
-      upsell:   cleanDecimal(r[16]),
-      cac_ads:  cleanPct(r[14]),
-      cac_total: cleanPct(r[15]),
+      tanggal:   cleanDate(r[0]),
+      omzet:     cleanRp(r[5]),    // F
+      closing:   cleanInt(r[2]),   // C
+      botol:     cleanInt(r[3]),   // D
+      upsell:    cleanDecimal(r[7]), // H
+      cac_ads:   cleanPct(r[6]),   // G
+      cac_total:  cleanPct(r[6]),  // G
     }))
     .filter(r => r.omzet > 0);
 }

@@ -343,9 +343,9 @@ function OverviewTab({ s, target, harian, evaluasi }: { s: Summary; target: numb
 function CostTab({ s, harian }: { s: Summary; harian: HarianRow[] }) {
   const costData = useMemo(() => harian.map((r) => ({
     tgl: r.tanggal,
-    iklan_jt: +(r.biaya_iklan / 1_000_000).toFixed(2),
-    aff_jt: +(r.komisi_affiliate / 1_000_000).toFixed(2),
-    omzet_jt: +(r.omzet / 1_000_000).toFixed(2),
+    biaya_iklan: r.biaya_iklan,
+    komisi_aff: r.komisi_affiliate,
+    omzet: r.omzet,
     cac: r.cac_total,
   })), [harian]);
 
@@ -368,24 +368,24 @@ function CostTab({ s, harian }: { s: Summary; harian: HarianRow[] }) {
           <ComposedChart data={costData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="tgl" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} unit=" Jt" />
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fR(v)} />
             <Tooltip content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const d = payload[0]?.payload;
               return (
                 <div className="bg-white border rounded-xl shadow-lg p-3 text-xs space-y-1">
                   <div className="font-bold">{d.tgl}</div>
-                  <div>💰 Omzet: <strong>Rp{d.omzet_jt}Jt</strong></div>
-                  <div>📣 Iklan: <strong>Rp{d.iklan_jt}Jt</strong></div>
-                  <div>🤝 Affiliate: <strong>Rp{d.aff_jt}Jt</strong></div>
+                  <div>💰 Omzet: <strong>{fR(d.omzet)}</strong></div>
+                  <div>📣 Iklan: <strong>{fR(d.biaya_iklan)}</strong></div>
+                  <div>🤝 Affiliate: <strong>{fR(d.komisi_aff)}</strong></div>
                   <div>💸 CAC: <strong>{d.cac.toFixed(1)}%</strong></div>
                 </div>
               );
             }} />
             <Legend />
-            <Bar dataKey="iklan_jt" name="Biaya Iklan" fill="#f97316" radius={[3, 3, 0, 0]} stackId="cost" />
-            <Bar dataKey="aff_jt" name="Komisi Affiliate" fill="#8b5cf6" radius={[3, 3, 0, 0]} stackId="cost" />
-            <Line type="monotone" dataKey="omzet_jt" name="Omzet" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} />
+            <Bar dataKey="biaya_iklan" name="Biaya Iklan" fill="#f97316" radius={[3, 3, 0, 0]} stackId="cost" />
+            <Bar dataKey="komisi_aff" name="Komisi Affiliate" fill="#8b5cf6" radius={[3, 3, 0, 0]} stackId="cost" />
+            <Line type="monotone" dataKey="omzet" name="Omzet" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -435,7 +435,7 @@ function ChannelsTab({ channels, channelData }: { channels: Record<string, Chann
   const totalAll = Object.values(channels).reduce((s, c) => s + c.total_omzet, 0);
   const barData = Object.entries(channels).map(([k, c]) => ({
     channel: CH_META[k]?.label || k,
-    omzet_jt: +(c.total_omzet / 1_000_000).toFixed(2),
+    omzet: c.total_omzet,
     closing: c.total_closing,
     fill: CH_META[k]?.color || "#94a3b8",
   }));
@@ -471,9 +471,9 @@ function ChannelsTab({ channels, channelData }: { channels: Record<string, Chann
           <BarChart data={barData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 10 }} unit=" Jt" />
-            <Tooltip formatter={(v) => `Rp${v}Jt`} />
-            <Bar dataKey="omzet_jt" name="Omzet" radius={[6, 6, 0, 0]}>
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fR(Number(v))} />
+            <Tooltip formatter={(v) => fR(Number(v))} />
+            <Bar dataKey="omzet" name="Omzet" radius={[6, 6, 0, 0]}>
               {barData.map((d, i) => <Cell key={i} fill={d.fill} />)}
             </Bar>
           </BarChart>
@@ -570,13 +570,13 @@ function WeeklyTab({ weekly, s, target, harian }: { weekly: WeeklyRow[]; s: Summ
       <div className="bg-white rounded-2xl border p-5">
         <h3 className="text-sm font-semibold mb-3">Omzet Per Minggu</h3>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={weekly.map((w) => ({ ...w, omzet_jt: +(w.total_omzet / 1e6).toFixed(2), target_jt: +(weeklyTarget / 1e6).toFixed(2) }))}>
+          <BarChart data={weekly}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 10 }} unit=" Jt" />
-            <Tooltip formatter={(v) => `Rp${v}Jt`} />
-            <ReferenceLine y={+(weeklyTarget / 1e6).toFixed(0)} stroke="#ef4444" strokeDasharray="6 3" label={{ value: "Target", fontSize: 10, fill: "#ef4444" }} />
-            <Bar dataKey="omzet_jt" name="Omzet" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fR(Number(v))} />
+            <Tooltip formatter={(v) => fR(Number(v))} />
+            <ReferenceLine y={weeklyTarget} stroke="#ef4444" strokeDasharray="6 3" label={{ value: `Target ${fR(weeklyTarget)}`, fontSize: 9, fill: "#ef4444" }} />
+            <Bar dataKey="total_omzet" name="Omzet" fill="#3b82f6" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -670,7 +670,7 @@ function OmzetBotolChart({ harian, avgTarget }: { harian: HarianRow[]; avgTarget
   const chartData = useMemo(() => {
     const maxOmzet = Math.max(...harian.map((r) => r.omzet));
     return harian.map((r) => ({
-      tgl: r.tanggal, omzet_jt: +(r.omzet / 1e6).toFixed(2), botol: r.botol,
+      tgl: r.tanggal, omzet: r.omzet, botol: r.botol,
       closing: r.closing, upsell: r.upsell, cac: r.cac_total, isBest: r.omzet === maxOmzet,
     }));
   }, [harian]);
@@ -682,7 +682,7 @@ function OmzetBotolChart({ harian, avgTarget }: { harian: HarianRow[]; avgTarget
         <ComposedChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="tgl" tick={{ fontSize: 10 }} />
-          <YAxis yAxisId="left" tick={{ fontSize: 10 }} unit=" Jt" />
+          <YAxis yAxisId="left" tick={{ fontSize: 9 }} tickFormatter={(v) => fR(Number(v))} />
           <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} unit=" btl" />
           <Tooltip content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
@@ -690,15 +690,15 @@ function OmzetBotolChart({ harian, avgTarget }: { harian: HarianRow[]; avgTarget
             return (
               <div className="bg-white border rounded-xl shadow-lg p-3 text-xs space-y-1">
                 <div className="font-bold">{d.tgl}</div>
-                <div>💰 Rp{d.omzet_jt}Jt {d.isBest ? "⭐" : ""}</div>
+                <div>💰 {fR(d.omzet)} {d.isBest ? "⭐" : ""}</div>
                 <div>📦 {d.botol} botol · 🏷️ {d.closing} closing</div>
                 <div>📈 {d.upsell?.toFixed(2)}x · 💸 {d.cac?.toFixed(1)}%</div>
               </div>
             );
           }} />
           <Legend />
-          <ReferenceLine yAxisId="left" y={+(avgTarget / 1e6).toFixed(1)} stroke="#10b981" strokeDasharray="6 3" label={{ value: "Target/hari", fontSize: 9, fill: "#10b981" }} />
-          <Bar yAxisId="left" dataKey="omzet_jt" name="Omzet (Jt)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+          <ReferenceLine yAxisId="left" y={avgTarget} stroke="#10b981" strokeDasharray="6 3" label={{ value: `Target ${fR(avgTarget)}`, fontSize: 9, fill: "#10b981" }} />
+          <Bar yAxisId="left" dataKey="omzet" name="Omzet" fill="#3b82f6" radius={[4, 4, 0, 0]} />
           <Line yAxisId="right" type="monotone" dataKey="botol" name="Botol" stroke="#10b981" strokeWidth={2} dot={{ r: 2.5 }} />
         </ComposedChart>
       </ResponsiveContainer>
