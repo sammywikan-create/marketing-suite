@@ -63,10 +63,7 @@ interface ApiResponse {
 // ═══════════════════════════════════════════════════════════
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 function fR(v: number) {
-  if (v >= 1_000_000_000) return `Rp${(v / 1_000_000_000).toFixed(1)}M`;
-  if (v >= 1_000_000) return `Rp${(v / 1_000_000).toFixed(1)}Jt`;
-  if (v >= 1_000) return `Rp${(v / 1_000).toFixed(0)}Rb`;
-  return `Rp${v.toLocaleString("id-ID")}`;
+  return `Rp${Math.round(v).toLocaleString("id-ID")}`;
 }
 function fN(v: number) { return v.toLocaleString("id-ID"); }
 
