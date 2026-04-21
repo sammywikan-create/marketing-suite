@@ -25,10 +25,11 @@ export async function GET(request: Request) {
     const meta = await sheets.spreadsheets.get({ spreadsheetId });
     const sheetNames = meta.data.sheets?.map(s => s.properties?.title) || [];
 
-    // Then get raw data from requested sheet (first 5 rows for debugging)
+    const range = searchParams.get('range') || 'A1:Z10';
+    // Get raw data from requested sheet
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${sheet}'!A1:Z10`,
+      range: `'${sheet}'!${range}`,
     });
 
     const rows = response.data.values || [];
