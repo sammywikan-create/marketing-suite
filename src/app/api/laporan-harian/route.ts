@@ -9,47 +9,55 @@ import {
 } from '@/lib/googleSheets';
 import type { FVShopRow, FVChannelRow } from '@/lib/googleSheets';
 
-function sumField<T>(arr: T[], fn: (r: T) => number) { return arr.reduce((s, r) => s + fn(r), 0); }
-function avgField<T>(arr: T[], fn: (r: T) => number) { return arr.length > 0 ? sumField(arr, fn) / arr.length : 0; }
+// ─── Utility ───
+function sum<T>(a: T[], fn: (r: T) => number) { return a.reduce((s, r) => s + fn(r), 0); }
+function avg<T>(a: T[], fn: (r: T) => number) { return a.length ? sum(a, fn) / a.length : 0; }
+function pct(part: number, total: number) { return total > 0 ? parseFloat((part / total * 100).toFixed(2)) : 0; }
 
-function channelSummary(rows: FVChannelRow[] | FVShopRow[]) {
-  const n = rows.length || 1;
+function channelSummary(rows: (FVChannelRow | FVShopRow)[]) {
   return {
-    total_omzet:   sumField(rows, r => r.omzet),
-    total_closing: sumField(rows, r => r.closing),
-    total_botol:   sumField(rows, r => r.botol),
-    rata_upsell:   avgField(rows, r => r.upsell),
-    rata_cac:      avgField(rows, r => r.cac_total),
+    total_omzet:   sum(rows, r => r.omzet),
+    total_closing: sum(rows, r => r.closing),
+    total_botol:   sum(rows, r => r.botol),
+    rata_upsell:   avg(rows, r => r.upsell),
+    rata_cac:      avg(rows, r => r.cac_total),
     hari:          rows.length,
   };
 }
 
-// Weekly grouping helper
-function groupByWeek<T extends { tanggal: string; omzet: number; closing: number; botol: number; upsell: number; cac_total: number }>(rows: T[]) {
+function groupByWeek<T extends { omzet: number; closing: number; botol: number; upsell: number; cac_total: number }>(rows: T[]) {
   const weeks: Record<string, T[]> = {};
   rows.forEach((r, i) => {
-    const weekNum = Math.floor(i / 7) + 1;
-    const key = `Minggu ${weekNum}`;
+    const key = `Minggu ${Math.floor(i / 7) + 1}`;
     if (!weeks[key]) weeks[key] = [];
     weeks[key].push(r);
   });
-  return Object.entries(weeks).map(([label, data]) => ({
-    label,
-    hari: data.length,
-    total_omzet:   sumField(data, r => r.omzet),
-    total_closing: sumField(data, r => r.closing),
-    total_botol:   sumField(data, r => r.botol),
-    rata_upsell:   avgField(data, r => r.upsell),
-    rata_cac:      avgField(data, r => r.cac_total),
-    rata_omzet_harian: sumField(data, r => r.omzet) / (data.length || 1),
-  }));
+  return Object.entries(weeks).map(([label, data], idx, arr) => {
+    const s = {
+      label,
+      hari: data.length,
+      total_omzet:       sum(data, r => r.omzet),
+      total_closing:     sum(data, r => r.closing),
+      total_botol:       sum(data, r => r.botol),
+      rata_upsell:       avg(data, r => r.upsell),
+      rata_cac:          avg(data, r => r.cac_total),
+      rata_omzet_harian: sum(data, r => r.omzet) / (data.length || 1),
+      // WoW comparison (vs previous week)
+      wow_omzet: 0,
+      wow_closing: 0,
+    };
+    if (idx > 0) {
+      const prev = arr[idx - 1][1];
+      const prevOmzet = sum(prev, r => r.omzet);
+      const prevClosing = sum(prev, r => r.closing);
+      s.wow_omzet = prevOmzet > 0 ? parseFloat(((s.total_omzet - prevOmzet) / prevOmzet * 100).toFixed(1)) : 0;
+      s.wow_closing = prevClosing > 0 ? parseFloat(((s.total_closing - prevClosing) / prevClosing * 100).toFixed(1)) : 0;
+    }
+    return s;
+  });
 }
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const bulan = searchParams.get('bulan') || 'april-2026';
-  const TARGET_OMZET = parseInt(searchParams.get('target') || '350000000');
-
+export async function GET() {
   try {
     const [shop, video, live, shopTab, affiliate, evaluasi] = await Promise.all([
       getFreshVisionShop(),
@@ -60,42 +68,78 @@ export async function GET(request: Request) {
       getEvaluasiHarian(),
     ]);
 
-    // Merge shop with evaluasi kontribusi %
+    // ─── Merge shop with evaluasi kontribusi % ───
     const shopMerged = shop.map(row => {
       const evalRow = evaluasi.find(e => e.tanggal === row.tanggal);
-      const pctFV = evalRow && evalRow.omzet_total > 0
-        ? (row.omzet / evalRow.omzet_total) * 100 : 0;
       return {
         ...row,
         omzet_total_brand: evalRow?.omzet_total || 0,
-        pct_kontribusi_fv: parseFloat(pctFV.toFixed(2)),
+        pct_kontribusi_fv: pct(row.omzet, evalRow?.omzet_total || 0),
       };
     });
 
-    // Summary (SHOP = main channel)
-    const total_omzet_all = evaluasi.reduce((s, r) => s + r.omzet_total, 0);
-    const total_omzet_fv = evaluasi.reduce((s, r) => s + r.omzet_freshvision, 0);
+    // ─── Totals ───
+    const totalOmzet     = sum(shop, r => r.omzet);
+    const totalBotol     = sum(shop, r => r.botol);
+    const totalClosing   = sum(shop, r => r.closing);
+    const totalBiayaIklan = sum(shop, r => r.biaya_iklan);
+    const totalKomisiAff = sum(shop, r => r.komisi_affiliate);
+    const totalCost      = totalBiayaIklan + totalKomisiAff;
+    const totalOmzetAll  = sum(evaluasi, r => r.omzet_total);
+    const totalOmzetFV   = sum(evaluasi, r => r.omzet_freshvision);
+    const hari           = shop.length;
+
+    // ─── ROAS & Cost Analysis ───
+    const roas = totalBiayaIklan > 0 ? parseFloat((totalOmzet / totalBiayaIklan).toFixed(2)) : 0;
+    const costPerClosing = totalClosing > 0 ? Math.round(totalCost / totalClosing) : 0;
+    const costPerBotol   = totalBotol > 0 ? Math.round(totalCost / totalBotol) : 0;
+    const marginAfterCost = totalOmzet > 0 ? parseFloat(((totalOmzet - totalCost) / totalOmzet * 100).toFixed(1)) : 0;
+
+    // ─── Best / Worst Day ───
+    const sorted = [...shop].sort((a, b) => b.omzet - a.omzet);
+    const bestDay  = sorted[0] || null;
+    const worstDay = sorted[sorted.length - 1] || null;
+
+    // ─── Anomalies ───
+    const avgOmzet = avg(shop, r => r.omzet);
+    const stdDev   = Math.sqrt(avg(shop, r => Math.pow(r.omzet - avgOmzet, 2)));
+    const anomalies = shop
+      .filter(r => Math.abs(r.omzet - avgOmzet) > 1.5 * stdDev)
+      .map(r => ({
+        tanggal: r.tanggal,
+        omzet: r.omzet,
+        type: r.omzet > avgOmzet ? 'spike' as const : 'drop' as const,
+        deviation: parseFloat(((r.omzet - avgOmzet) / avgOmzet * 100).toFixed(1)),
+      }));
 
     const summary = {
-      bulan,
-      target_omzet: TARGET_OMZET,
-      total_omzet:     sumField(shop, r => r.omzet),
-      total_botol:     sumField(shop, r => r.botol),
-      total_closing:   sumField(shop, r => r.closing),
-      rata_upsell:     avgField(shop, r => r.upsell),
-      rata_cac:        avgField(shop, r => r.cac_total),
-      total_biaya_iklan: sumField(shop, r => r.biaya_iklan),
-      total_komisi_aff:  sumField(shop, r => r.komisi_affiliate),
-      total_omzet_all,
-      total_omzet_fv,
-      pct_kontribusi_fv: total_omzet_all > 0
-        ? parseFloat((total_omzet_fv / total_omzet_all * 100).toFixed(2)) : 0,
+      total_omzet: totalOmzet,
+      total_botol: totalBotol,
+      total_closing: totalClosing,
+      rata_upsell: avg(shop, r => r.upsell),
+      rata_cac: avg(shop, r => r.cac_total),
+      rata_cac_ads: avg(shop, r => r.cac_ads),
+      total_biaya_iklan: totalBiayaIklan,
+      total_komisi_aff: totalKomisiAff,
+      total_cost: totalCost,
+      roas,
+      cost_per_closing: costPerClosing,
+      cost_per_botol: costPerBotol,
+      margin_after_cost: marginAfterCost,
+      total_omzet_all: totalOmzetAll,
+      total_omzet_fv: totalOmzetFV,
+      pct_kontribusi_fv: pct(totalOmzetFV, totalOmzetAll),
+      hari,
+      avg_omzet_harian: hari > 0 ? Math.round(totalOmzet / hari) : 0,
+      avg_closing_harian: hari > 0 ? Math.round(totalClosing / hari) : 0,
+      avg_botol_harian: hari > 0 ? Math.round(totalBotol / hari) : 0,
+      nilai_per_txn: totalClosing > 0 ? Math.round(totalOmzet / totalClosing) : 0,
     };
 
-    // Weekly evaluation (SHOP)
+    // ─── Weekly ───
     const weekly = groupByWeek(shop);
 
-    // Per-channel summaries
+    // ─── Per-channel summaries ───
     const channels = {
       shop:      channelSummary(shop),
       video:     channelSummary(video),
@@ -109,18 +153,18 @@ export async function GET(request: Request) {
       harian: shopMerged,
       weekly,
       channels,
-      channel_data: {
-        video,
-        live,
-        shop_tab: shopTab,
-        affiliate,
-      },
+      channel_data: { video, live, shop_tab: shopTab, affiliate },
       evaluasi_per_brand: {
-        freshvision: total_omzet_fv,
-        nutriflakes: evaluasi.reduce((s, r) => s + r.omzet_nutriflakes, 0),
-        freshmag:    evaluasi.reduce((s, r) => s + r.omzet_freshmag, 0),
-        etawaku:     evaluasi.reduce((s, r) => s + r.omzet_etawaku, 0),
-        total:       total_omzet_all,
+        freshvision: totalOmzetFV,
+        nutriflakes: sum(evaluasi, r => r.omzet_nutriflakes),
+        freshmag:    sum(evaluasi, r => r.omzet_freshmag),
+        etawaku:     sum(evaluasi, r => r.omzet_etawaku),
+        total:       totalOmzetAll,
+      },
+      highlights: {
+        best_day:  bestDay  ? { tanggal: bestDay.tanggal, omzet: bestDay.omzet } : null,
+        worst_day: worstDay ? { tanggal: worstDay.tanggal, omzet: worstDay.omzet } : null,
+        anomalies,
       },
     });
   } catch (err) {
