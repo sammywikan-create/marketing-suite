@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 
 const SHEET_FRESHVISION = 'ADV SAEFUL- FRESHVISION(SHOP)';
-const SHEET_EVALUASI = 'TOTAL EVALUASI PRODUK (TIKTOKSH';
+const SHEET_EVALUASI = 'TOTAL EVALUASI PRODUK (TIKTOKSHOP)';
 
 function getSpreadsheetId(): string {
   const id = process.env.GOOGLE_SHEETS_ID;
