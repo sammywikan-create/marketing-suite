@@ -38,6 +38,7 @@ import GmaxOverviewScreen from "@/screens/GmaxOverviewScreen";
 import ProductCardsScreen from "@/screens/ProductCardsScreen";
 import LaporanHarianScreen from "@/screens/LaporanHarianScreen";
 import SKUTrackingScreen from "@/screens/SKUTrackingScreen";
+import GmaxEvaluasiScreen from "@/screens/GmaxEvaluasiScreen";
 import StoreSelector from "@/components/StoreSelector";
 import { useGMVStore } from "@/lib/gmvStore";
 import { useStoreManager } from "@/store/useStoreManager";
@@ -189,6 +190,7 @@ export default function Home() {
       case "product-cards": return <ProductCardsScreen />;
       case "laporan-harian": return <LaporanHarianScreen />;
       case "sku-tracking": return <SKUTrackingScreen />;
+      case "gmax-evaluasi": return <GmaxEvaluasiScreen />;
       default: return <DashboardScreen />;
     }
   };

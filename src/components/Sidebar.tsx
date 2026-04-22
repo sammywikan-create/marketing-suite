@@ -4,7 +4,7 @@ import {
   LayoutDashboard, BookOpen, FileText, Megaphone, Users, Lightbulb,
   Target, Filter, DollarSign, Layers, CalendarCheck, CalendarDays, BarChart3,
   ChevronLeft, ChevronRight, Upload, PieChart, Package, Sparkles, Award,
-  ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode
+  ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode, ClipboardList
 } from "lucide-react";
 import { useState } from "react";
 
@@ -61,6 +61,7 @@ const tabGroups: TabGroup[] = [
     title: "GMV Maximizer",
     items: [
       { key: "gmax-overview", label: "🚀 GMAX Overview", icon: <DollarSign size={18} /> },
+      { key: "gmax-evaluasi", label: "GMAX Evaluasi", icon: <ClipboardList size={16} /> },
     ],
   },
   {

@@ -197,7 +197,8 @@ export type TabKey =
   | "gmax-overview"
   | "product-cards"
   | "laporan-harian"
-  | "sku-tracking";
+  | "sku-tracking"
+  | "gmax-evaluasi";
 
 export interface TabConfig {
   key: TabKey;
@@ -641,6 +642,101 @@ export interface ReportConfig {
   template: ReportTemplate;
   createdAt: string;
   lastGenerated?: string;
+}
+
+// --- GMAX Evaluasi Types ---
+export interface SKUGmaxItem {
+  no: number;
+  namaProduk: string;
+  skuId: string;
+  klasifikasiStatus: "SUPER HERO SKU" | "HERO SKU" | "GROWING STAR" | "STAR SKU" | "";
+  gmv: number;
+  produkTerjual: number;
+  pesanan: number;
+  gmvPerHari: number;
+  terjualPerHari: number;
+  pesananPerHari: number;
+}
+
+export interface CampaignEtalaseItem {
+  no: number;
+  namaCampaign: string;
+  etalase: string;
+  skuId: string;
+  namaProduk: string;
+}
+
+export interface CampaignOverviewItem {
+  namaCampaign: string;
+  setAnggaran: number;
+  setROI: number;
+  totalAnggaran: number;
+  totalGmv: number;
+  roi: number;
+  cac: number;
+  absorbAnggaran: string;
+  achieveROI: string;
+  anggaran7Hari: number;
+  gmv7Hari: number;
+  anggaran3Hari: number;
+  gmv3Hari: number;
+}
+
+export interface FunnelKontenItem {
+  jenisKonten: string;
+  funnel: "UPPER" | "MIDDLE" | "LOWER";
+  subKonten: string;
+}
+
+export interface KonseptorItem {
+  no: number;
+  jenis: string;
+  contentPillar: string;
+  konseptor1: string;
+  jumlah1: number;
+  konseptor2: string;
+  jumlah2: number;
+}
+
+export interface ViewFunnelStage {
+  label: string;
+  jumlah: number;
+  penurunan: number;
+}
+
+export interface PenilaianPenempatan {
+  jangkauan: number;
+  cpm: number;
+  impresi: number;
+  frekuensi: number;
+  statusCpm: "✅" | "❌";
+  statusFrekuensi: "✅" | "❌";
+}
+
+export interface EvalVideoItem {
+  namaIklan: string;
+  status: string;
+  biaya: number;
+  impresi: number;
+  cpm: number;
+  jangkauan: number;
+  frekuensi: number;
+  viewFunnel: ViewFunnelStage[];
+  ctr: string;
+  penilaianPenempatan: PenilaianPenempatan;
+  sheetType: "UPPER" | "LOWER";
+}
+
+export interface GmaxEvaluasiData {
+  skuList: SKUGmaxItem[];
+  campaignEtalase: CampaignEtalaseItem[];
+  campaignOverview: CampaignOverviewItem[];
+  funnelKonten: FunnelKontenItem[];
+  konseptorPembagian: KonseptorItem[];
+  evalUpper: EvalVideoItem[];
+  evalLower: EvalVideoItem[];
+  periode: string;
+  namaFile: string;
 }
 
 export interface SavedReport {
