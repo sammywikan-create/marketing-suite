@@ -389,3 +389,17 @@ ALTER TABLE live_sessions ALTER COLUMN ctr TYPE decimal(8,4);
 ALTER TABLE live_sessions ALTER COLUMN order_per_click TYPE decimal(8,4);
 ALTER TABLE live_sessions ALTER COLUMN avg_watch_time TYPE decimal(8,2);
 ALTER TABLE live_sessions ALTER COLUMN duration_minutes TYPE decimal(8,2);
+
+-- SKU PHOTOS (for SKU Tracking screen)
+CREATE TABLE IF NOT EXISTS sku_photos (
+  sku_id TEXT PRIMARY KEY,
+  photo_url TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE sku_photos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON sku_photos;
+CREATE POLICY "Allow all for anon" ON sku_photos FOR ALL USING (true) WITH CHECK (true);
+
+-- Storage bucket: sku-photos (create via Supabase Dashboard > Storage > New bucket)
+-- Name: sku-photos, Public: true

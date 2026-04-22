@@ -1,10 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { TargetBulananItem } from "@/lib/types";
 import { getItems, SEEDS, addItem, updateItem, deleteItem } from "@/lib/store";
 import PageHeader from "@/components/PageHeader";
 import Modal, { FormField, inputClass, btnPrimary, btnSecondary } from "@/components/Modal";
 import { CalendarCheck, Eye, Pencil, Trash2, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend,
+} from "recharts";
 
 const STORE_KEY = "targetBulanan";
 
@@ -20,6 +24,27 @@ export default function TargetROIBulananScreen() {
   useEffect(() => { setItems(getItems(STORE_KEY, SEEDS.targetBulanan)); }, []);
 
   const filtered = items.filter(i => i.bulan.toLowerCase().includes(search.toLowerCase()));
+
+  const agg = useMemo(() => {
+    const totalTarget = items.reduce((s, i) => s + i.targetRevenue, 0);
+    const totalAktual = items.reduce((s, i) => s + i.aktualRevenue, 0);
+    const totalBudget = items.reduce((s, i) => s + i.budgetBulan, 0);
+    const totalLeads = items.reduce((s, i) => s + i.leads, 0);
+    const totalKonversi = items.reduce((s, i) => s + i.konversi, 0);
+    const avgROI = items.length > 0 ? items.reduce((s, i) => s + i.roi, 0) / items.length : 0;
+    const overallPct = totalTarget > 0 ? (totalAktual / totalTarget * 100) : 0;
+
+    const trendData = items.map(i => ({
+      bulan: i.bulan.length > 8 ? i.bulan.slice(0, 8) : i.bulan,
+      Target: i.targetRevenue, Aktual: i.aktualRevenue,
+    }));
+    const roiData = items.map(i => ({
+      bulan: i.bulan.length > 8 ? i.bulan.slice(0, 8) : i.bulan,
+      ROI: i.roi, Budget: i.budgetBulan,
+    }));
+
+    return { totalTarget, totalAktual, totalBudget, totalLeads, totalKonversi, avgROI, overallPct, trendData, roiData };
+  }, [items]);
 
   function openAdd() {
     setForm({ bulan: "", targetRevenue: 0, aktualRevenue: 0, budgetBulan: 0, roi: 0, leads: 0, konversi: 0, catatan: "" });
@@ -38,8 +63,50 @@ export default function TargetROIBulananScreen() {
   function handleDelete(id: string) { if (confirm("Hapus data ini?")) setItems(deleteItem(STORE_KEY, items, id)); }
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader title="Target & ROI Bulanan" icon={<CalendarCheck size={20} />} count={items.length} onAdd={openAdd} addLabel="Tambah Bulan" search={search} onSearch={setSearch} />
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white rounded-xl border p-4"><div className="text-xs text-gray-400">Total Target</div><div className="text-lg font-bold text-gray-900 mt-1">{fmtRp(agg.totalTarget)}</div></div>
+        <div className="bg-white rounded-xl border p-4"><div className="text-xs text-gray-400">Total Aktual</div><div className="text-lg font-bold text-green-600 mt-1">{fmtRp(agg.totalAktual)}</div><div className="text-xs text-gray-400">{agg.overallPct.toFixed(0)}% achieved</div></div>
+        <div className="bg-white rounded-xl border p-4"><div className="text-xs text-gray-400">Total Budget</div><div className="text-lg font-bold text-blue-600 mt-1">{fmtRp(agg.totalBudget)}</div></div>
+        <div className="bg-white rounded-xl border p-4"><div className="text-xs text-gray-400">Avg ROI</div><div className={`text-lg font-bold mt-1 ${agg.avgROI > 0 ? "text-green-600" : "text-red-500"}`}>{agg.avgROI.toFixed(0)}%</div></div>
+        <div className="bg-white rounded-xl border p-4"><div className="text-xs text-gray-400">Total Leads</div><div className="text-lg font-bold text-purple-600 mt-1">{agg.totalLeads.toLocaleString()}</div></div>
+        <div className="bg-white rounded-xl border p-4"><div className="text-xs text-gray-400">Total Konversi</div><div className="text-lg font-bold text-orange-600 mt-1">{agg.totalKonversi.toLocaleString()}</div></div>
+      </div>
+
+      {/* Charts */}
+      {items.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold mb-3">Target vs Aktual Revenue (Bulanan)</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={agg.trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="bulan" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fmtRp(v)} />
+                <Tooltip formatter={(v) => fmtRp(Number(v))} />
+                <Legend />
+                <Line type="monotone" dataKey="Target" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="Aktual" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold mb-3">ROI Bulanan</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={agg.roiData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="bulan" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} />
+                <Tooltip />
+                <Bar dataKey="ROI" name="ROI %" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.map(item => {

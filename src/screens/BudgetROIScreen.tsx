@@ -1,13 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { BudgetROIItem } from "@/lib/types";
 import { getItems, SEEDS, addItem, updateItem, deleteItem } from "@/lib/store";
 import PageHeader from "@/components/PageHeader";
 import Modal, { FormField, inputClass, selectClass, btnPrimary, btnSecondary } from "@/components/Modal";
 import { DollarSign, Eye, Pencil, Trash2 } from "lucide-react";
+import {
+  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend,
+} from "recharts";
 
 const STORE_KEY = "budgetRoi";
 const KATEGORI = ["Social Media Ads", "KOL Marketing", "Content Production", "Email Marketing", "SEO", "Events", "Tools & Software", "Team"];
+const CAT_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"];
 
 function fmtRp(n: number) { return "Rp " + n.toLocaleString("id-ID"); }
 
@@ -30,6 +35,23 @@ export default function BudgetROIScreen() {
   const totalRevenue = items.reduce((s, b) => s + b.revenue, 0);
   const overallROI = totalTerpakai > 0 ? ((totalRevenue - totalTerpakai) / totalTerpakai * 100) : 0;
 
+  const charts = useMemo(() => {
+    const catMap = new Map<string, { alokasi: number; terpakai: number; revenue: number }>();
+    items.forEach(i => {
+      const c = catMap.get(i.kategori) || { alokasi: 0, terpakai: 0, revenue: 0 };
+      c.alokasi += i.budgetAlokasi; c.terpakai += i.budgetTerpakai; c.revenue += i.revenue;
+      catMap.set(i.kategori, c);
+    });
+    const pieData = Array.from(catMap.entries()).map(([name, d], i) => ({ name, value: d.alokasi, color: CAT_COLORS[i % CAT_COLORS.length] })).filter(d => d.value > 0);
+    const barData = Array.from(catMap.entries()).map(([name, d], i) => ({
+      name: name.length > 12 ? name.slice(0, 12) + "…" : name,
+      Terpakai: d.terpakai, Revenue: d.revenue,
+      roi: d.terpakai > 0 ? Math.round((d.revenue - d.terpakai) / d.terpakai * 100) : 0,
+      fill: CAT_COLORS[i % CAT_COLORS.length],
+    }));
+    return { pieData, barData };
+  }, [items]);
+
   function openAdd() {
     setForm({ kategori: "Social Media Ads", deskripsi: "", budgetAlokasi: 0, budgetTerpakai: 0, revenue: 0, roi: 0, periode: "", catatan: "" });
     setModal("add");
@@ -47,11 +69,11 @@ export default function BudgetROIScreen() {
   function handleDelete(id: string) { if (confirm("Hapus item ini?")) setItems(deleteItem(STORE_KEY, items, id)); }
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader title="Budget & ROI" icon={<DollarSign size={20} />} count={items.length} onAdd={openAdd} addLabel="Tambah Budget" search={search} onSearch={setSearch} />
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
           <p className="text-xs text-muted mb-1">Budget Alokasi</p>
           <p className="text-xl font-bold text-foreground">{fmtRp(totalAlokasi)}</p>
@@ -72,6 +94,51 @@ export default function BudgetROIScreen() {
           <p className={`text-xl font-bold ${overallROI > 0 ? "text-green-600" : "text-red-600"}`}>{Math.round(overallROI)}%</p>
         </div>
       </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold mb-3">Alokasi Budget Per Kategori</h3>
+          {charts.pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart><Pie data={charts.pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} innerRadius={45} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={9}>
+                {charts.pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
+              </Pie><Tooltip formatter={(v) => fmtRp(Number(v))} /></PieChart>
+            </ResponsiveContainer>
+          ) : <div className="text-sm text-gray-400 text-center py-10">Belum ada data</div>}
+        </div>
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold mb-3">Spending vs Revenue Per Kategori</h3>
+          {charts.barData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={charts.barData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fmtRp(v)} />
+                <Tooltip formatter={(v) => fmtRp(Number(v))} />
+                <Legend />
+                <Bar dataKey="Terpakai" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div className="text-sm text-gray-400 text-center py-10">Belum ada data</div>}
+        </div>
+      </div>
+
+      {/* ROI Ranking */}
+      {charts.barData.length > 0 && (
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold mb-3">ROI Per Kategori</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            {charts.barData.sort((a, b) => b.roi - a.roi).map((d, i) => (
+              <div key={i} className="text-center p-3 bg-gray-50 rounded-lg">
+                <div className={`text-lg font-bold ${d.roi > 0 ? "text-green-600" : "text-red-500"}`}>{d.roi}%</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">{d.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">

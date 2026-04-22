@@ -1,15 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { AnalisisTMBItem } from "@/lib/types";
 import { getItems, SEEDS, addItem, updateItem, deleteItem } from "@/lib/store";
 import PageHeader from "@/components/PageHeader";
 import Modal, { FormField, inputClass, selectClass, btnPrimary, btnSecondary } from "@/components/Modal";
 import StatusBadge from "@/components/StatusBadge";
-import { BarChart3, Eye, Pencil, Trash2 } from "lucide-react";
+import { BarChart3 as BarChart3Icon, Eye, Pencil, Trash2 } from "lucide-react";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell,
+} from "recharts";
 
 const STORE_KEY = "analisisTmb";
 const STAGES: AnalisisTMBItem["stage"][] = ["TOFU", "MOFU", "BOFU"];
 const CHANNELS = ["TikTok Ads", "Instagram", "Facebook", "YouTube", "Google Ads", "Email", "Retargeting", "SEO"];
+const STAGE_HEX: Record<string, string> = { TOFU: "#3b82f6", MOFU: "#8b5cf6", BOFU: "#f97316" };
+const CH_COLORS = ["#3b82f6", "#E1306C", "#1877F2", "#FF0000", "#4285F4", "#10b981", "#f59e0b", "#6366f1"];
 
 function fmtRp(n: number) { return "Rp " + n.toLocaleString("id-ID"); }
 function fmt(n: number): string {
@@ -47,6 +52,29 @@ export default function AnalisisTMBScreen() {
     };
   });
 
+  const charts = useMemo(() => {
+    // ROAS by channel
+    const channelMap = new Map<string, { roas: number; revenue: number; count: number }>();
+    items.forEach(i => {
+      const c = channelMap.get(i.channel) || { roas: 0, revenue: 0, count: 0 };
+      c.roas += i.roas; c.revenue += i.revenue; c.count++;
+      channelMap.set(i.channel, c);
+    });
+    const roasData = Array.from(channelMap.entries()).map(([ch, d], i) => ({
+      name: ch.length > 10 ? ch.slice(0, 10) + "…" : ch,
+      ROAS: d.count > 0 ? +(d.roas / d.count).toFixed(1) : 0,
+      Revenue: d.revenue,
+      fill: CH_COLORS[i % CH_COLORS.length],
+    })).sort((a, b) => b.ROAS - a.ROAS);
+
+    // Revenue by stage
+    const stageRevData = stageAgg.map(d => ({
+      name: d.stage, Revenue: d.revenue, fill: STAGE_HEX[d.stage],
+    }));
+
+    return { roasData, stageRevData };
+  }, [items, stageAgg]);
+
   function openAdd() {
     setForm({ periode: "", stage: "TOFU", channel: "TikTok Ads", impressions: 0, clicks: 0, leads: 0, konversi: 0, revenue: 0, cpa: 0, roas: 0, catatan: "" });
     setModal("add");
@@ -62,11 +90,45 @@ export default function AnalisisTMBScreen() {
   function handleDelete(id: string) { if (confirm("Hapus data ini?")) setItems(deleteItem(STORE_KEY, items, id)); }
 
   return (
-    <div>
-      <PageHeader title="Analisis TMB" icon={<BarChart3 size={20} />} count={items.length} onAdd={openAdd} addLabel="Tambah Analisis" search={search} onSearch={setSearch} />
+    <div className="space-y-5">
+      <PageHeader title="Analisis TMB" icon={<BarChart3Icon size={20} />} count={items.length} onAdd={openAdd} addLabel="Tambah Analisis" search={search} onSearch={setSearch} />
+
+      {/* Charts */}
+      {items.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold mb-3">ROAS Per Channel</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={charts.roasData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="ROAS" name="Avg ROAS" radius={[4, 4, 0, 0]}>
+                  {charts.roasData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold mb-3">Revenue Per Stage</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={charts.stageRevData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fmtRp(v)} />
+                <Tooltip formatter={(v) => fmtRp(Number(v))} />
+                <Bar dataKey="Revenue" name="Revenue" radius={[4, 4, 0, 0]}>
+                  {charts.stageRevData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Stage Summary Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {stageAgg.map(agg => (
           <div key={agg.stage} className="bg-white rounded-xl p-5 shadow-sm border border-border">
             <div className="flex items-center justify-between mb-3">

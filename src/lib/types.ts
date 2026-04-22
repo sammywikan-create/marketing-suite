@@ -139,6 +139,29 @@ export interface PanduanItem {
   updatedAt: string;
 }
 
+export interface SKUItem {
+  skuId: string;
+  productId: string;
+  productName: string;
+  status: "Active" | "Inactive";
+  gmv: number;
+  orders: number;
+  sold: number;
+  gmvTabToko?: number;
+  gmvLive?: number;
+  gmvVideo?: number;
+  gmvKartuProduk?: number;
+  ctrTabToko?: string;
+  konversiTabToko?: string;
+  ctrLive?: string;
+  konversiLive?: string;
+  ctrVideo?: string;
+  konversiVideo?: string;
+  ctrKartu?: string;
+  konversiKartu?: string;
+  photoUrl?: string;
+}
+
 export type TabKey =
   | "home"
   | "dashboard"
@@ -173,7 +196,8 @@ export type TabKey =
   | "live-analytics"
   | "gmax-overview"
   | "product-cards"
-  | "laporan-harian";
+  | "laporan-harian"
+  | "sku-tracking";
 
 export interface TabConfig {
   key: TabKey;

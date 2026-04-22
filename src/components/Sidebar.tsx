@@ -4,7 +4,7 @@ import {
   LayoutDashboard, BookOpen, FileText, Megaphone, Users, Lightbulb,
   Target, Filter, DollarSign, Layers, CalendarCheck, CalendarDays, BarChart3,
   ChevronLeft, ChevronRight, Upload, PieChart, Package, Sparkles, Award,
-  ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings
+  ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode
 } from "lucide-react";
 import { useState } from "react";
 
@@ -54,6 +54,7 @@ const tabGroups: TabGroup[] = [
       { key: "gmv-optimasi", label: "Optimasi Kreatif", icon: <Wrench size={18} /> },
       { key: "gmv-kalkulator", label: "ROI Calculator", icon: <Calculator size={18} /> },
       { key: "product-cards", label: "📦 Kartu Produk", icon: <Package size={18} /> },
+      { key: "sku-tracking", label: "SKU Tracking", icon: <ScanBarcode size={18} /> },
     ],
   },
   {

@@ -347,9 +347,10 @@ export const useStoreManager = create<StoreManagerState>()(
             }),
           }))
         } catch (err: any) {
-          if (err?.message !== '__SUPABASE_NOT_CONFIGURED__') {
-            console.error('Failed to load affiliate summaries:', err)
-          }
+          if (err?.message === '__SUPABASE_NOT_CONFIGURED__') return
+          const msg = err?.message || err?.details || ''
+          if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('42P01')) return
+          console.warn('Failed to load affiliate summaries:', msg || err)
         }
       },
 

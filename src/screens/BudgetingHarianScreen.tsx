@@ -1,13 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { BudgetHarianItem } from "@/lib/types";
 import { getItems, SEEDS, addItem, updateItem, deleteItem } from "@/lib/store";
 import PageHeader from "@/components/PageHeader";
 import Modal, { FormField, inputClass, selectClass, btnPrimary, btnSecondary } from "@/components/Modal";
 import { CalendarDays, Eye, Pencil, Trash2 } from "lucide-react";
+import {
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, Cell,
+} from "recharts";
 
 const STORE_KEY = "budgetHarian";
 const PLATFORMS = ["TikTok", "Instagram", "Facebook", "Google", "YouTube", "Twitter/X", "LinkedIn"];
+const PLAT_COLORS: Record<string, string> = { TikTok: "#000", Instagram: "#E1306C", Facebook: "#1877F2", Google: "#4285F4", YouTube: "#FF0000", "Twitter/X": "#1DA1F2", LinkedIn: "#0077B5" };
 
 function fmtRp(n: number) { return "Rp " + n.toLocaleString("id-ID"); }
 function fmt(n: number): string {
@@ -36,6 +41,29 @@ export default function BudgetingHarianScreen() {
   const totalImpressions = items.reduce((s, i) => s + i.impressions, 0);
   const totalClicks = items.reduce((s, i) => s + i.clicks, 0);
   const totalKonversi = items.reduce((s, i) => s + i.konversi, 0);
+  const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
+  const cpc = totalClicks > 0 ? totalSpent / totalClicks : 0;
+
+  const charts = useMemo(() => {
+    // Daily spend trend
+    const dateMap = new Map<string, { budget: number; spent: number; clicks: number; konversi: number }>();
+    items.forEach(i => {
+      const d = dateMap.get(i.tanggal) || { budget: 0, spent: 0, clicks: 0, konversi: 0 };
+      d.budget += i.budget; d.spent += i.spent; d.clicks += i.clicks; d.konversi += i.konversi;
+      dateMap.set(i.tanggal, d);
+    });
+    const dailyData = Array.from(dateMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([date, d]) => ({
+      date: date.slice(5), Budget: d.budget, Spent: d.spent,
+    }));
+
+    // Platform breakdown
+    const platData = PLATFORMS.map(p => {
+      const pi = items.filter(i => i.platform === p);
+      return { name: p, spent: pi.reduce((s, i) => s + i.spent, 0), clicks: pi.reduce((s, i) => s + i.clicks, 0), konversi: pi.reduce((s, i) => s + i.konversi, 0), color: PLAT_COLORS[p] || "#94a3b8" };
+    }).filter(d => d.spent > 0).sort((a, b) => b.spent - a.spent);
+
+    return { dailyData, platData };
+  }, [items]);
 
   function openAdd() {
     setForm({ tanggal: new Date().toISOString().slice(0, 10), platform: "TikTok", campaign: "", budget: 0, spent: 0, impressions: 0, clicks: 0, konversi: 0, catatan: "" });
@@ -52,11 +80,11 @@ export default function BudgetingHarianScreen() {
   function handleDelete(id: string) { if (confirm("Hapus data ini?")) setItems(deleteItem(STORE_KEY, items, id)); }
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader title="Budgeting Harian" icon={<CalendarDays size={20} />} count={items.length} onAdd={openAdd} addLabel="Tambah Data" search={search} onSearch={setSearch} />
 
       {/* Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
           <p className="text-xs text-muted mb-1">Total Budget</p>
           <p className="text-lg font-bold">{fmtRp(totalBudget)}</p>
@@ -77,7 +105,49 @@ export default function BudgetingHarianScreen() {
           <p className="text-xs text-muted mb-1">Konversi</p>
           <p className="text-lg font-bold">{totalKonversi.toLocaleString()}</p>
         </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
+          <p className="text-xs text-muted mb-1">CTR</p>
+          <p className="text-lg font-bold text-blue-600">{ctr.toFixed(2)}%</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
+          <p className="text-xs text-muted mb-1">Avg CPC</p>
+          <p className="text-lg font-bold text-purple-600">{fmtRp(cpc)}</p>
+        </div>
       </div>
+
+      {/* Charts */}
+      {items.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold mb-3">Tren Harian: Budget vs Spent</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={charts.dailyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fmtRp(v)} />
+                <Tooltip formatter={(v) => fmtRp(Number(v))} />
+                <Legend />
+                <Line type="monotone" dataKey="Budget" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />
+                <Line type="monotone" dataKey="Spent" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold mb-3">Spending Per Platform</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={charts.platData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" tick={{ fontSize: 9 }} tickFormatter={(v) => fmtRp(v)} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
+                <Tooltip formatter={(v) => fmtRp(Number(v))} />
+                <Bar dataKey="spent" name="Spent" radius={[0, 4, 4, 0]}>
+                  {charts.platData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">

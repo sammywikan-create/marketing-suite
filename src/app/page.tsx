@@ -37,6 +37,7 @@ import StoreSettingsScreen from "@/screens/StoreSettingsScreen";
 import GmaxOverviewScreen from "@/screens/GmaxOverviewScreen";
 import ProductCardsScreen from "@/screens/ProductCardsScreen";
 import LaporanHarianScreen from "@/screens/LaporanHarianScreen";
+import SKUTrackingScreen from "@/screens/SKUTrackingScreen";
 import StoreSelector from "@/components/StoreSelector";
 import { useGMVStore } from "@/lib/gmvStore";
 import { useStoreManager } from "@/store/useStoreManager";
@@ -187,6 +188,7 @@ export default function Home() {
       case "gmax-overview": return <GmaxOverviewScreen />;
       case "product-cards": return <ProductCardsScreen />;
       case "laporan-harian": return <LaporanHarianScreen />;
+      case "sku-tracking": return <SKUTrackingScreen />;
       default: return <DashboardScreen />;
     }
   };
