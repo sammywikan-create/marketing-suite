@@ -237,15 +237,17 @@ function cleanDate(val: unknown): { dateStr: string; period: string } {
 }
 
 // ─── Sheet name patterns to match exported Google Sheets tabs ───
-// Includes actual Google Sheets names (ADV SAEFUL-...) and common variations
+// Exact Google Sheets names first, then common variations (most specific → least specific)
 const SHEET_PATTERNS = {
-  SHOP:      ["freshvision(shop)", "freshvision (shop)", "fv shop", "adv saeful- freshvision(shop)", "adv saeful - freshvision(shop)"],
-  VIDEO:     ["freshvision(video)", "freshvision (video)", "fv video", "adv saeful - freshvision(video)", "adv saeful- freshvision(video)"],
-  LIVE:      ["freshvision(live", "freshvision (live", "live streaming", "adv saeful - freshvision(live", "adv saeful- freshvision(live"],
-  SHOP_TAB:  ["freshvision(shop tab)", "freshvision (shop tab)", "adv saeful - freshvision(shop tab)", "adv saeful- freshvision(shop tab)", "shop tab"],
-  AFFILIATE: ["freshvision(affiliate)", "freshvision (affiliate)", "adv saeful - freshvision(affiliate)", "adv saeful- freshvision(affiliate)", "affiliate"],
-  EVALUASI:  ["evaluasi produk", "total evaluasi produk", "tiktokshop", "evaluasi"],
-  PROPORSI:  ["proporsi total omset", "proporsi", "freshvision(proporsi"],
+  SHOP:       ["adv saeful- freshvision(shop)", "adv saeful - freshvision(shop)", "freshvision(shop)", "freshvision (shop)", "fv shop"],
+  SHOP_200ML: ["freshvision 200 ml(shop)", "freshvision 200ml(shop)", "200 ml(shop)", "200ml(shop)"],
+  SHOP_130ML: ["freshvision 130ml- (shop)", "freshvision 130ml(shop)", "freshvision 130 ml(shop)", "130ml(shop)", "130 ml(shop)"],
+  VIDEO:      ["adv saeful - freshvision(video)", "adv saeful- freshvision(video)", "freshvision(video)", "freshvision (video)", "fv video"],
+  LIVE:       ["adv saeful - freshvision(live streaming)", "adv saeful- freshvision(live streaming)", "adv saeful - freshvision(live", "freshvision(live", "live streaming"],
+  SHOP_TAB:   ["adv saeful - freshvision(shop tab)", "adv saeful- freshvision(shop tab)", "freshvision(shop tab)", "freshvision (shop tab)", "shop tab"],
+  AFFILIATE:  ["adv saeful - freshvision(affiliate)", "adv saeful- freshvision(affiliate)", "freshvision(affiliate)", "freshvision (affiliate)", "affiliate"],
+  EVALUASI:   ["total evaluasi produk (tiktokshop)", "total evaluasi produk", "evaluasi produk", "tiktokshop", "evaluasi"],
+  PROPORSI:   ["adv saeful - freshvision(proporsi total omset)", "proporsi total omset", "freshvision(proporsi", "proporsi"],
 };
 
 function findSheet(wb: XLSX.WorkBook, patterns: string[], exclude?: string[]): { rows: any[][]; name: string } | null {
@@ -570,15 +572,20 @@ function parseEvaluasiSheet(rows: any[][]): EvalRow[] {
     }
   }
 
-  // Strategy 2: Scan ALL header rows for brand names
+  // Strategy 2: Look for "TOTAL FRESH VISION" or brand section headers
+  // The EVALUASI sheet groups data by store/brand — look for specific section headers
   const brandCols: Record<string, number> = {};
   const brandKW: [string, string[]][] = [
-    ["freshvision", ["freshvision", "fresh vision", "fv"]],
-    ["nutriflakes", ["nutriflakes", "nutri flakes"]],
-    ["freshmag", ["freshmag", "fresh mag"]],
-    ["etawaku", ["etawaku", "eta waku"]],
+    ["freshvision", ["total fresh vision", "total freshvision", "freshvision", "fresh vision"]],
+    ["nutriflakes", ["total nutriflakes", "nutriflakes", "nutri flakes"]],
+    ["freshmag", ["total freshmag", "freshmag", "fresh mag"]],
+    ["etawaku", ["total etawaku", "etawaku", "eta waku"]],
   ];
-  for (let i = 0; i < dataStart; i++) {
+
+  // Scan ALL rows (headers AND data area) for brand section headers
+  // In EVALUASI sheets, brand names often appear as section headers spanning multiple rows
+  const scanLimit = Math.min(rows.length, dataStart + 5);
+  for (let i = 0; i < scanLimit; i++) {
     const row = rows[i] || [];
     for (let j = 0; j < row.length; j++) {
       const cell = String(row[j] ?? "").toLowerCase().trim();
@@ -629,6 +636,73 @@ function parseEvaluasiSheet(rows: any[][]): EvalRow[] {
   }
   if (result.length > 0) console.log("[Excel Import] EVALUASI first row:", result[0]);
   else console.warn("[Excel Import] EVALUASI: no valid rows found!");
+  return result;
+}
+
+// ─── Parse PROPORSI sheet (simpler brand contribution source) ───
+// PROPORSI TOTAL OMSET sheet typically has: date + brand omzet columns + total
+function parseProporsiSheet(rows: any[][]): EvalRow[] {
+  const { dataRows, dataStart } = getDateRows(rows);
+  if (!dataRows.length) {
+    console.log("[Excel Import] PROPORSI: no date rows found");
+    return [];
+  }
+
+  // Scan headers for brand column names
+  const brandCols: Record<string, number> = {};
+  const brandKW: [string, string[]][] = [
+    ["freshvision", ["freshvision", "fresh vision", "fv"]],
+    ["nutriflakes", ["nutriflakes", "nutri flakes"]],
+    ["freshmag", ["freshmag", "fresh mag"]],
+    ["etawaku", ["etawaku", "eta waku"]],
+  ];
+
+  for (let i = 0; i < dataStart; i++) {
+    const row = rows[i] || [];
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j] ?? "").toLowerCase().trim();
+      if (!cell) continue;
+      for (const [brand, kws] of brandKW) {
+        if (!(brand in brandCols) && kws.some((k) => cell.includes(k))) brandCols[brand] = j;
+      }
+      if (!("total" in brandCols) && (cell === "total" || cell.includes("total omset") || cell.includes("total omzet"))) {
+        brandCols["total"] = j;
+      }
+    }
+  }
+
+  // Log header rows for debugging
+  for (let i = 0; i < Math.min(dataStart, 4); i++) {
+    const r = rows[i] || [];
+    const cells = r.slice(0, 15).map((c: any, j: number) => `[${j}]=${c ?? ""}`).join(" | ");
+    console.log(`[Excel Import] PROPORSI header row ${i}: ${cells}`);
+  }
+  console.log("[Excel Import] PROPORSI brand columns:", brandCols);
+
+  const iFV = brandCols.freshvision ?? -1;
+  const iNF = brandCols.nutriflakes ?? -1;
+  const iFM = brandCols.freshmag ?? -1;
+  const iET = brandCols.etawaku ?? -1;
+  const iTotal = brandCols.total ?? -1;
+
+  const result: EvalRow[] = [];
+  for (const r of dataRows) {
+    const { dateStr } = cleanDate(r[0]);
+    if (!dateStr) continue;
+    const omzet_freshvision = iFV >= 0 ? cleanRp(r[iFV]) : 0;
+    const omzet_nutriflakes = iNF >= 0 ? cleanRp(r[iNF]) : 0;
+    const omzet_freshmag = iFM >= 0 ? cleanRp(r[iFM]) : 0;
+    const omzet_etawaku = iET >= 0 ? cleanRp(r[iET]) : 0;
+    let omzet_total = iTotal >= 0 ? cleanRp(r[iTotal]) : 0;
+    if (omzet_total <= 0) {
+      omzet_total = omzet_freshvision + omzet_nutriflakes + omzet_freshmag + omzet_etawaku;
+    }
+    if (omzet_total > 0) {
+      result.push({ tanggal: dateStr, omzet_freshvision, omzet_nutriflakes, omzet_freshmag, omzet_etawaku, omzet_total });
+    }
+  }
+  if (result.length > 0) console.log("[Excel Import] PROPORSI first row:", result[0]);
+  else console.warn("[Excel Import] PROPORSI: no valid rows found!");
   return result;
 }
 
@@ -780,13 +854,15 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
 
         console.log("[Excel Import] Sheets found:", wb.SheetNames);
 
-        // ─── Find each sheet — SHOP excludes "shop tab" to avoid false match ───
-        const shopMatch = findSheet(wb, SHEET_PATTERNS.SHOP, ["shop tab"]);
+        // ─── Find each sheet ───
+        // SHOP excludes "shop tab", "200 ml", "130ml" to avoid false match with sub-product sheets
+        const shopMatch = findSheet(wb, SHEET_PATTERNS.SHOP, ["shop tab", "200 ml", "200ml", "130ml", "130 ml"]);
         const videoMatch = findSheet(wb, SHEET_PATTERNS.VIDEO);
         const liveMatch = findSheet(wb, SHEET_PATTERNS.LIVE);
         const shopTabMatch = findSheet(wb, SHEET_PATTERNS.SHOP_TAB);
         const affiliateMatch = findSheet(wb, SHEET_PATTERNS.AFFILIATE);
         const evaluasiMatch = findSheet(wb, SHEET_PATTERNS.EVALUASI);
+        const proporsiMatch = findSheet(wb, SHEET_PATTERNS.PROPORSI);
 
         console.log("[Excel Import] Matched sheets:", {
           shop: shopMatch?.name ?? "NOT FOUND",
@@ -795,6 +871,7 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
           shopTab: shopTabMatch?.name ?? "NOT FOUND",
           affiliate: affiliateMatch?.name ?? "NOT FOUND",
           evaluasi: evaluasiMatch?.name ?? "NOT FOUND",
+          proporsi: proporsiMatch?.name ?? "NOT FOUND",
         });
 
         // Parse SHOP (required) — try named sheet first, else try first/largest sheet
@@ -832,7 +909,17 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
         let live = liveMatch ? parseChannelSheet(liveMatch.rows, "LIVE", videoLiveShopTabFixed) : [];
         let shopTab = shopTabMatch ? parseChannelSheet(shopTabMatch.rows, "SHOP_TAB", videoLiveShopTabFixed) : [];
         let affiliate = affiliateMatch ? parseChannelSheet(affiliateMatch.rows, "AFFILIATE", affiliateFixed) : [];
-        const evaluasi = evaluasiMatch ? parseEvaluasiSheet(evaluasiMatch.rows) : [];
+
+        // Brand/evaluasi data: try PROPORSI first (simpler layout), then EVALUASI
+        let evaluasi: EvalRow[] = [];
+        if (proporsiMatch) {
+          evaluasi = parseProporsiSheet(proporsiMatch.rows);
+          console.log(`[Excel Import] PROPORSI → ${evaluasi.length} rows`);
+        }
+        if (evaluasi.length === 0 && evaluasiMatch) {
+          evaluasi = parseEvaluasiSheet(evaluasiMatch.rows);
+          console.log(`[Excel Import] EVALUASI fallback → ${evaluasi.length} rows`);
+        }
 
         // ─── Sanity check: channel omzet should not wildly exceed shop ───
         const shopTotalOmzet = shopResult.shop.reduce((a, r) => a + r.omzet, 0);
@@ -876,6 +963,13 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
           evaluasiRows: evaluasi.length,
           brandFV: response.evaluasi_per_brand.freshvision,
           brandTotal: response.evaluasi_per_brand.total,
+          channels: {
+            shop: response.channels.shop?.total_omzet,
+            video: response.channels.video?.total_omzet,
+            live: response.channels.live?.total_omzet,
+            shop_tab: response.channels.shop_tab?.total_omzet,
+            affiliate: response.channels.affiliate?.total_omzet,
+          },
         });
 
         resolve({ response, period });
