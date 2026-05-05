@@ -160,21 +160,23 @@ export async function getFreshVisionLive(): Promise<FVChannelRow[]> {
 }
 
 // ═══ FETCHER 4: FreshVision SHOP TAB ═══
-// Kolom: A=tanggal, B=biaya_iklan, C=closing, D=botol, E=nilai_per_txn,
-//        F=omzet, G=cac, H=upsell
-// BERBEDA dengan VIDEO/LIVE — kolom lebih sedikit, mulai dari B bukan D
+// Layout TOTAL FRESH VISION SHOP TAB (cols B-J):
+//   B=komponen biaya, C=biaya GMV MAX, D=biaya total,
+//   E=closing, F=botol, G=nilai_per_txn, H=omzet, I=cac, J=upsell
+// Sheet juga punya sub-sections FRESH VISION SHOP (K-S) & FRESH VISION OFC (T-AB)
+// tapi kita hanya butuh TOTAL di kolom E-J.
 export async function getFreshVisionShopTab(): Promise<FVChannelRow[]> {
-  const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:H50');
+  const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:J50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
       tanggal:   cleanDate(r[0]),
-      omzet:     cleanRp(r[5]),      // F
-      closing:   cleanInt(r[2]),     // C
-      botol:     cleanInt(r[3]),     // D
-      upsell:    cleanDecimal(r[7]), // H
-      cac_ads:   cleanPct(r[6]),     // G
-      cac_total: cleanPct(r[6]),     // G
+      omzet:     cleanRp(r[7]),      // H
+      closing:   cleanInt(r[4]),     // E
+      botol:     cleanInt(r[5]),     // F
+      upsell:    cleanDecimal(r[9]), // J
+      cac_ads:   cleanPct(r[8]),     // I
+      cac_total: cleanPct(r[8]),     // I
     }))
     .filter(r => r.omzet > 0);
 }
