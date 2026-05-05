@@ -526,6 +526,125 @@ export async function loadVideoPerformanceDb(
   return data || []
 }
 
+// ─── LAPORAN HARIAN DATA ─────────────────────────────────
+// Uses localStorage as primary storage (works without migration).
+// Falls back to Supabase if the table exists.
+const LH_STORAGE_KEY = 'ms_laporan_harian_'
+
+function lhLocalSave(period: string, dataJson: any) {
+  if (typeof window === 'undefined') return
+  const index = JSON.parse(localStorage.getItem(LH_STORAGE_KEY + '_index') || '{}')
+  index[period] = new Date().toISOString()
+  localStorage.setItem(LH_STORAGE_KEY + '_index', JSON.stringify(index))
+  localStorage.setItem(LH_STORAGE_KEY + period, JSON.stringify(dataJson))
+}
+
+function lhLocalLoad(period: string): any | null {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(LH_STORAGE_KEY + period)
+  if (!raw) return null
+  const index = JSON.parse(localStorage.getItem(LH_STORAGE_KEY + '_index') || '{}')
+  const parsed = JSON.parse(raw)
+  return { ...parsed, _saved_at: index[period] || null }
+}
+
+function lhLocalList(): { period: string; saved_at: string }[] {
+  if (typeof window === 'undefined') return []
+  const index = JSON.parse(localStorage.getItem(LH_STORAGE_KEY + '_index') || '{}')
+  return Object.entries(index)
+    .map(([period, saved_at]) => ({ period, saved_at: saved_at as string }))
+    .sort((a, b) => b.period.localeCompare(a.period))
+}
+
+function lhLocalDelete(period: string) {
+  if (typeof window === 'undefined') return
+  const index = JSON.parse(localStorage.getItem(LH_STORAGE_KEY + '_index') || '{}')
+  delete index[period]
+  localStorage.setItem(LH_STORAGE_KEY + '_index', JSON.stringify(index))
+  localStorage.removeItem(LH_STORAGE_KEY + period)
+}
+
+export async function saveLaporanHarianData(
+  period: string,
+  dataJson: any,
+) {
+  // Always save to localStorage (instant, no migration needed)
+  lhLocalSave(period, dataJson)
+
+  // Also try Supabase if configured
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase
+        .from('laporan_harian_data')
+        .upsert(
+          { period, data_json: dataJson, saved_at: new Date().toISOString() },
+          { onConflict: 'period' },
+        )
+      if (error) console.warn('[laporan-harian] Supabase save skipped:', error.message)
+    } catch (e) {
+      console.warn('[laporan-harian] Supabase save skipped:', e)
+    }
+  }
+}
+
+export async function loadLaporanHarianData(
+  period: string,
+): Promise<any | null> {
+  // Try Supabase first
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('laporan_harian_data')
+        .select('data_json, saved_at')
+        .eq('period', period)
+        .single()
+      if (!error && data) return { ...data.data_json, _saved_at: data.saved_at }
+    } catch {}
+  }
+  // Fallback to localStorage
+  return lhLocalLoad(period)
+}
+
+export async function listLaporanHarianPeriods(): Promise<
+  { period: string; saved_at: string }[]
+> {
+  const localList = lhLocalList()
+
+  // Try Supabase
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('laporan_harian_data')
+        .select('period, saved_at')
+        .order('period', { ascending: false })
+      if (!error && data && data.length > 0) {
+        // Merge: Supabase + local-only periods
+        const supaSet = new Set(data.map((d: any) => d.period))
+        const merged = [...data]
+        for (const l of localList) {
+          if (!supaSet.has(l.period)) merged.push(l)
+        }
+        return merged.sort((a, b) => b.period.localeCompare(a.period))
+      }
+    } catch {}
+  }
+  return localList
+}
+
+export async function deleteLaporanHarianData(period: string) {
+  lhLocalDelete(period)
+
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase
+        .from('laporan_harian_data')
+        .delete()
+        .eq('period', period)
+      if (error) console.warn('[laporan-harian] Supabase delete skipped:', error.message)
+    } catch {}
+  }
+}
+
 // ─── LIVE ANALYTICS ──────────────────────────────────────
 export async function saveLiveCoreStats(
   rows: Omit<import('@/hooks/useLiveAnalytics').LiveCoreStat, 'id'>[],

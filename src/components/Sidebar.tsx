@@ -4,9 +4,10 @@ import {
   LayoutDashboard, BookOpen, FileText, Megaphone, Users, Lightbulb,
   Target, Filter, DollarSign, Layers, CalendarCheck, CalendarDays, BarChart3,
   ChevronLeft, ChevronRight, Upload, PieChart, Package, Sparkles, Award,
-  ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode, ClipboardList
+  ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode, ClipboardList,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface TabGroup {
   title: string;
@@ -87,32 +88,60 @@ const tabGroups: TabGroup[] = [
   },
 ];
 
-export default function Sidebar({ active, onSelect }: { active: TabKey; onSelect: (t: TabKey) => void }) {
+interface SidebarProps {
+  active: TabKey;
+  onSelect: (t: TabKey) => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export default function Sidebar({ active, onSelect, mobileOpen = false, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
-  return (
-    <aside className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300 bg-sidebar text-white flex flex-col h-screen sticky top-0 shrink-0`}>
+  // Close mobile sidebar on Escape key
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onMobileClose?.(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOpen, onMobileClose]);
+
+  // Lock body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
+
+  const sidebarContent = (isMobile: boolean) => (
+    <>
       <div className="flex items-center gap-2 px-4 py-4 border-b border-white/10">
-        {!collapsed && (
+        {(!collapsed || isMobile) && (
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="text-2xl">📊</span>
             <span className="font-bold text-lg whitespace-nowrap">Marketing Suite</span>
           </div>
         )}
-        {collapsed && <span className="text-2xl mx-auto">📊</span>}
-        <button onClick={() => setCollapsed(!collapsed)} className="p-1 rounded hover:bg-white/10 shrink-0">
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
+        {collapsed && !isMobile && <span className="text-2xl mx-auto">📊</span>}
+        {isMobile ? (
+          <button onClick={onMobileClose} className="p-1 rounded hover:bg-white/10 shrink-0" aria-label="Close menu">
+            <X size={20} />
+          </button>
+        ) : (
+          <button onClick={() => setCollapsed(!collapsed)} className="p-1 rounded hover:bg-white/10 shrink-0">
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+        )}
       </div>
       <nav className="flex-1 overflow-y-auto py-1">
         {tabGroups.map((group) => (
           <div key={group.title}>
-            {!collapsed && (
+            {(!collapsed || isMobile) && (
               <div className="px-4 pt-4 pb-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">{group.title}</span>
               </div>
             )}
-            {collapsed && <div className="border-t border-white/10 my-1" />}
+            {collapsed && !isMobile && <div className="border-t border-white/10 my-1" />}
             {group.items.map((tab) => (
               <button
                 key={tab.key}
@@ -121,21 +150,41 @@ export default function Sidebar({ active, onSelect }: { active: TabKey; onSelect
                   active === tab.key
                     ? "bg-white/20 text-white font-semibold border-r-3 border-white"
                     : "text-white/70 hover:bg-sidebar-hover hover:text-white"
-                } ${collapsed ? "justify-center px-2" : ""}`}
+                } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
                 title={tab.label}
+                aria-label={tab.label}
               >
                 {tab.icon}
-                {!collapsed && <span className="truncate">{tab.label}</span>}
+                {(!collapsed || isMobile) && <span className="truncate">{tab.label}</span>}
               </button>
             ))}
           </div>
         ))}
       </nav>
-      {!collapsed && (
+      {(!collapsed || isMobile) && (
         <div className="px-4 py-3 text-xs text-white/40 border-t border-white/10">
           © 2026 Marketing Suite
         </div>
       )}
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300 bg-sidebar text-white hidden md:flex flex-col h-screen sticky top-0 shrink-0`}>
+        {sidebarContent(false)}
+      </aside>
+
+      {/* Mobile overlay sidebar */}
+      {mobileOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onMobileClose} />
+          <aside className="fixed inset-y-0 left-0 w-72 bg-sidebar text-white flex flex-col z-50 md:hidden animate-slide-in">
+            {sidebarContent(true)}
+          </aside>
+        </>
+      )}
+    </>
   );
 }

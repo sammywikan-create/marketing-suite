@@ -403,3 +403,16 @@ CREATE POLICY "Allow all for anon" ON sku_photos FOR ALL USING (true) WITH CHECK
 
 -- Storage bucket: sku-photos (create via Supabase Dashboard > Storage > New bucket)
 -- Name: sku-photos, Public: true
+
+-- 10. LAPORAN HARIAN DATA (per-month saved snapshots)
+CREATE TABLE IF NOT EXISTS laporan_harian_data (
+  id BIGSERIAL PRIMARY KEY,
+  period TEXT NOT NULL,                   -- "2026-01", "2026-02", etc.
+  data_json JSONB NOT NULL,              -- full ApiResponse snapshot
+  saved_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(period)
+);
+
+ALTER TABLE laporan_harian_data ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for anon" ON laporan_harian_data;
+CREATE POLICY "Allow all for anon" ON laporan_harian_data FOR ALL USING (true) WITH CHECK (true);

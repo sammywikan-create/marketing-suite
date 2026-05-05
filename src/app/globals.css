@@ -26,14 +26,43 @@
 body {
   background: var(--color-background);
   color: var(--color-foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   margin: 0;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* ─── Dark Mode ─── */
+.dark body,
+html.dark body {
+  --color-background: #0f172a;
+  --color-foreground: #e2e8f0;
+  --color-card: #1e293b;
+  --color-border: #334155;
+  --color-muted: #94a3b8;
+  --color-sidebar: #0f172a;
+  --color-sidebar-hover: #1e293b;
+  background: var(--color-background);
+  color: var(--color-foreground);
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #f1f5f9; }
 ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+/* ─── Mobile sidebar slide animation ─── */
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in-left 0.2s ease-out;
+}
+
+/* ─── Responsive table wrapper ─── */
+.table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 @media print {
   body { background: white !important; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import useSWR from "swr";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, LineChart, BarChart,
@@ -11,10 +11,19 @@ import {
   RefreshCw, Loader2, TrendingUp, TrendingDown, Settings, X, Save,
   ShoppingBag, Video, Radio, Store, Users, AlertTriangle, CheckCircle2,
   Target, DollarSign, Zap, BarChart3, ArrowUpRight, ArrowDownRight,
-  FileDown, Presentation, Download,
+  FileDown, Presentation, Download, Upload, Calendar, ChevronLeft, ChevronRight,
+  Trash2, Database, Check,
 } from "lucide-react";
 import { generatePdf } from "@/lib/exportPdf";
 import { generatePpt } from "@/lib/exportPpt";
+import {
+  saveLaporanHarianData,
+  loadLaporanHarianData,
+  listLaporanHarianPeriods,
+  deleteLaporanHarianData,
+} from "@/lib/db";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -70,6 +79,44 @@ function fR(v: number) {
 }
 function fN(v: number) { return v.toLocaleString("id-ID"); }
 
+const BULAN_ID = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+function formatPeriod(period: string): string {
+  if (/^\d{4}-\d{2}$/.test(period)) {
+    const [year, month] = period.split("-");
+    return `${BULAN_ID[parseInt(month) - 1]} ${year}`;
+  }
+  return period;
+}
+
+function getCurrentPeriod(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function detectPeriodFromData(data: ApiResponse | null | undefined): string {
+  if (!data?.harian?.length) return getCurrentPeriod();
+  // Try to extract month from first harian date like "1 Apr", "15 Jan"
+  const BULAN_TO_NUM: Record<string, string> = {
+    jan: "01", feb: "02", mar: "03", apr: "04", mei: "05", jun: "06",
+    jul: "07", agu: "08", sep: "09", okt: "10", nov: "11", des: "12",
+  };
+  for (const row of data.harian) {
+    const m = row.tanggal?.match(/(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)/i);
+    if (m) {
+      const mon = BULAN_TO_NUM[m[1].toLowerCase()];
+      if (mon) {
+        const year = new Date().getFullYear();
+        return `${year}-${mon}`;
+      }
+    }
+  }
+  return getCurrentPeriod();
+}
+
 function useTarget() {
   const [target, setTargetState] = useState(350_000_000);
   useEffect(() => {
@@ -81,6 +128,505 @@ function useTarget() {
     localStorage.setItem("fv_target_omzet", String(v));
   }, []);
   return { target, setTarget };
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXCEL IMPORT PARSER
+// Uses the EXACT same column mapping & cleaners as googleSheets.ts
+// ═══════════════════════════════════════════════════════════
+
+// Same cleaners as googleSheets.ts
+function cleanRp(val: unknown): number {
+  if (!val) return 0;
+  if (typeof val === "number") return val;
+  const s = String(val).replace(/Rp/gi, "").replace(/\./g, "").replace(",", ".").trim();
+  return parseFloat(s) || 0;
+}
+function cleanPct(val: unknown): number {
+  if (!val) return 0;
+  if (typeof val === "number") return val > 1 ? val : val * 100;
+  const s = String(val).replace("%", "").replace(",", ".").trim();
+  return parseFloat(s) || 0;
+}
+function cleanDecimal(val: unknown): number {
+  if (!val) return 0;
+  if (typeof val === "number") return val;
+  return parseFloat(String(val).replace(",", ".").trim()) || 0;
+}
+function cleanInt(val: unknown): number {
+  if (!val) return 0;
+  if (typeof val === "number") return Math.round(val);
+  return parseInt(String(val).replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+// Same date check as googleSheets.ts: "Rabu, April 1, 2026"
+function isDateRow(val: unknown): boolean {
+  if (!val) return false;
+  if (typeof val === "number" && val > 30000 && val < 60000) return true;
+  const s = String(val).trim();
+  if (/\w+,\s+\w+\s+\d+,\s*\d{4}/.test(s)) return true;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return true;
+  if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}/.test(s)) return true;
+  if (/\d+\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des|May|Aug|Oct|Dec)/i.test(s)) return true;
+  return false;
+}
+
+// Same date formatter as googleSheets.ts: "Rabu, April 1, 2026" → "1 Apr" + period
+const BULAN_SHORT = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+const MONTH_MAP: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  januari: 1, februari: 2, maret: 3, mei: 5, juni: 6, juli: 7,
+  agustus: 8, oktober: 10, desember: 12,
+  jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, agu: 8, sep: 9, okt: 10, nov: 11, des: 12,
+  aug: 8, oct: 10, dec: 12,
+};
+
+function cleanDate(val: unknown): { dateStr: string; period: string } {
+  if (!val) return { dateStr: "", period: "" };
+  let dateStr = "";
+  let period = "";
+
+  if (typeof val === "number" && val > 30000 && val < 60000) {
+    const d = XLSX.SSF.parse_date_code(val);
+    if (d) {
+      dateStr = `${d.d} ${BULAN_SHORT[d.m - 1]}`;
+      period = `${d.y}-${String(d.m).padStart(2, "0")}`;
+    }
+    return { dateStr, period };
+  }
+
+  const s = String(val).trim();
+  // "Rabu, April 1, 2026" or "April 1, 2026" (same regex as googleSheets.ts)
+  const m1 = s.match(/(\w+)\s+(\d+),\s*(\d{4})$/);
+  if (m1) {
+    const mon = MONTH_MAP[m1[1].toLowerCase()];
+    if (mon) {
+      dateStr = `${m1[2]} ${BULAN_SHORT[mon - 1]}`;
+      period = `${m1[3]}-${String(mon).padStart(2, "0")}`;
+      return { dateStr, period };
+    }
+  }
+  // ISO
+  const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) {
+    dateStr = `${parseInt(m2[3])} ${BULAN_SHORT[parseInt(m2[2]) - 1]}`;
+    period = `${m2[1]}-${m2[2]}`;
+    return { dateStr, period };
+  }
+  // dd/mm/yyyy
+  const m3 = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+  if (m3) {
+    const year = m3[3].length === 2 ? 2000 + parseInt(m3[3]) : parseInt(m3[3]);
+    dateStr = `${parseInt(m3[1])} ${BULAN_SHORT[parseInt(m3[2]) - 1]}`;
+    period = `${year}-${String(parseInt(m3[2])).padStart(2, "0")}`;
+    return { dateStr, period };
+  }
+  // "1 Apr"
+  const m4 = s.match(/^(\d{1,2})\s+(\w+)/);
+  if (m4) {
+    const mon = MONTH_MAP[m4[2].toLowerCase()];
+    if (mon) return { dateStr: `${m4[1]} ${BULAN_SHORT[mon - 1]}`, period };
+  }
+  return { dateStr: s, period };
+}
+
+// ─── Sheet name patterns to match exported Google Sheets tabs ───
+const SHEET_PATTERNS = {
+  SHOP:      ["freshvision(shop)", "freshvision (shop)", "fv shop", "shop"],
+  VIDEO:     ["freshvision(video)", "freshvision (video)", "fv video", "video"],
+  LIVE:      ["freshvision(live", "freshvision (live", "live streaming", "live"],
+  SHOP_TAB:  ["freshvision(shop tab)", "freshvision (shop tab)", "shop tab"],
+  AFFILIATE: ["freshvision(affiliate)", "freshvision (affiliate)", "affiliate"],
+  EVALUASI:  ["evaluasi produk", "evaluasi", "tiktokshop"],
+};
+
+function findSheet(wb: XLSX.WorkBook, patterns: string[]): any[][] | null {
+  for (const pat of patterns) {
+    const found = wb.SheetNames.find((n) => n.toLowerCase().includes(pat));
+    if (found) {
+      const ws = wb.Sheets[found];
+      return XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+    }
+  }
+  return null;
+}
+
+// Get rows that have dates, filtering TOTAL/RATA rows
+function getDateRows(rows: any[][]): { dataRows: any[][]; dataStart: number } {
+  let dataStart = -1;
+  for (let i = 0; i < Math.min(20, rows.length); i++) {
+    if (rows[i] && isDateRow(rows[i][0])) { dataStart = i; break; }
+  }
+  if (dataStart < 0) return { dataRows: [], dataStart: -1 };
+  const dataRows = rows.slice(dataStart).filter((r) => {
+    if (!r || !r[0]) return false;
+    const s = String(r[0] ?? "").toLowerCase();
+    if (s.includes("total") || s.includes("rata") || s.includes("average")) return false;
+    return isDateRow(r[0]);
+  });
+  return { dataRows, dataStart };
+}
+
+// Scan header rows for column keywords (bottom-up priority)
+function buildColFinder(rows: any[][], dataStart: number) {
+  const headerTexts: string[][] = [];
+  for (let i = 0; i < dataStart; i++) {
+    const r = rows[i] || [];
+    headerTexts.push(r.map((c: any) => String(c ?? "").toLowerCase().trim()));
+  }
+  return (keywords: string[]): number => {
+    for (let i = headerTexts.length - 1; i >= 0; i--) {
+      const row = headerTexts[i];
+      const idx = row.findIndex((h) => h && keywords.some((k) => h.includes(k)));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+}
+
+// ─── Parse SHOP sheet (main) — same as getFreshVisionShop ───
+function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
+  const { dataRows, dataStart } = getDateRows(rows);
+  if (!dataRows.length) return { shop: [], period: "" };
+
+  const findCol = buildColFinder(rows, dataStart);
+  const iOmzet = findCol(["omzet", "omset"]);
+  const iClosing = findCol(["closing"]);
+  const iBotol = findCol(["botol", "bottle", "qty"]);
+  const iNilaiTxn = findCol(["nilai", "per txn", "aov"]);
+  const iCacAds = findCol(["cac ads", "cac_ads"]);
+  let iCacTotal = findCol(["cac total", "cac_total"]);
+  if (iCacTotal === -1) iCacTotal = findCol(["cac"]);
+  const iUpsell = findCol(["upsell", "up sell"]);
+  let iBiayaIklan = findCol(["biaya iklan", "biaya_iklan"]);
+  if (iBiayaIklan === -1) iBiayaIklan = findCol(["biaya", "iklan", "ad spend"]);
+  const iKomisiAff = findCol(["komisi", "affiliate"]);
+
+  // Auto-detect omzet column if not found by header
+  let omzetCol = iOmzet;
+  if (omzetCol === -1) {
+    const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
+    let best = -1, bestSum = 0;
+    for (let c = 1; c < maxC; c++) {
+      let s = 0;
+      for (const r of dataRows.slice(0, 10)) { if (r?.[c]) s += Math.abs(cleanRp(r[c])); }
+      if (s > bestSum) { bestSum = s; best = c; }
+    }
+    omzetCol = best;
+  }
+  if (omzetCol === -1) return { shop: [], period: "" };
+
+  let period = "";
+  const shop: HarianRow[] = [];
+  for (const r of dataRows) {
+    const { dateStr, period: p } = cleanDate(r[0]);
+    if (!dateStr) continue;
+    if (p && !period) period = p;
+    const omzet = cleanRp(r[omzetCol]);
+    if (omzet <= 0) continue;
+    shop.push({
+      tanggal: dateStr,
+      biaya_iklan: iBiayaIklan >= 0 ? cleanRp(r[iBiayaIklan]) : 0,
+      komisi_affiliate: iKomisiAff >= 0 ? cleanRp(r[iKomisiAff]) : 0,
+      closing: iClosing >= 0 ? cleanInt(r[iClosing]) : 0,
+      botol: iBotol >= 0 ? cleanInt(r[iBotol]) : 0,
+      nilai_per_txn: iNilaiTxn >= 0 ? cleanRp(r[iNilaiTxn]) : 0,
+      omzet,
+      cac_ads: iCacAds >= 0 ? cleanPct(r[iCacAds]) : 0,
+      cac_total: iCacTotal >= 0 ? cleanPct(r[iCacTotal]) : 0,
+      upsell: iUpsell >= 0 ? cleanDecimal(r[iUpsell]) : 1,
+      omzet_total_brand: 0,
+      pct_kontribusi_fv: 0,
+    });
+  }
+  return { shop, period };
+}
+
+// ─── Parse channel sheet (VIDEO, LIVE, SHOP TAB, AFFILIATE) ───
+function parseChannelSheet(rows: any[][]): ChannelRow[] {
+  const { dataRows, dataStart } = getDateRows(rows);
+  if (!dataRows.length) return [];
+
+  const findCol = buildColFinder(rows, dataStart);
+  let iOmzet = findCol(["omzet", "omset"]);
+  const iClosing = findCol(["closing"]);
+  const iBotol = findCol(["botol", "bottle", "qty"]);
+  let iCacAds = findCol(["cac ads", "cac_ads"]);
+  if (iCacAds === -1) iCacAds = findCol(["cac"]);
+  const iUpsell = findCol(["upsell", "up sell"]);
+
+  if (iOmzet === -1) {
+    const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
+    let best = -1, bestSum = 0;
+    for (let c = 1; c < maxC; c++) {
+      let s = 0;
+      for (const r of dataRows.slice(0, 10)) { if (r?.[c]) s += Math.abs(cleanRp(r[c])); }
+      if (s > bestSum) { bestSum = s; best = c; }
+    }
+    iOmzet = best;
+  }
+  if (iOmzet === -1) return [];
+
+  const result: ChannelRow[] = [];
+  for (const r of dataRows) {
+    const { dateStr } = cleanDate(r[0]);
+    if (!dateStr) continue;
+    const omzet = cleanRp(r[iOmzet]);
+    if (omzet <= 0) continue;
+    result.push({
+      tanggal: dateStr,
+      omzet,
+      closing: iClosing >= 0 ? cleanInt(r[iClosing]) : 0,
+      botol: iBotol >= 0 ? cleanInt(r[iBotol]) : 0,
+      upsell: iUpsell >= 0 ? cleanDecimal(r[iUpsell]) : 1,
+      cac_ads: iCacAds >= 0 ? cleanPct(r[iCacAds]) : 0,
+      cac_total: iCacAds >= 0 ? cleanPct(r[iCacAds]) : 0,
+    });
+  }
+  return result;
+}
+
+// ─── Parse EVALUASI sheet ───
+interface EvalRow {
+  tanggal: string; omzet_freshvision: number; omzet_nutriflakes: number;
+  omzet_freshmag: number; omzet_etawaku: number; omzet_total: number;
+}
+function parseEvaluasiSheet(rows: any[][]): EvalRow[] {
+  const { dataRows, dataStart } = getDateRows(rows);
+  if (!dataRows.length) return [];
+
+  // Scan headers for brand columns
+  const findCol = buildColFinder(rows, dataStart);
+  const iFV = findCol(["freshvision", "fresh vision"]);
+  const iNF = findCol(["nutriflakes", "nutri flakes"]);
+  const iFM = findCol(["freshmag", "fresh mag"]);
+  const iET = findCol(["etawaku", "eta waku"]);
+  const iTotal = findCol(["total", "grand total"]);
+
+  // If no headers found, try to use high column indices (like the Google Sheet)
+  // Google Sheet has: col 175=etawaku, 256=freshmag, 273=nutriflakes, 322=freshvision, 339=total
+  const result: EvalRow[] = [];
+  for (const r of dataRows) {
+    const { dateStr } = cleanDate(r[0]);
+    if (!dateStr) continue;
+
+    let omzet_freshvision = iFV >= 0 ? cleanRp(r[iFV]) : 0;
+    let omzet_nutriflakes = iNF >= 0 ? cleanRp(r[iNF]) : 0;
+    let omzet_freshmag = iFM >= 0 ? cleanRp(r[iFM]) : 0;
+    let omzet_etawaku = iET >= 0 ? cleanRp(r[iET]) : 0;
+    let omzet_total = iTotal >= 0 ? cleanRp(r[iTotal]) : 0;
+
+    // Fallback: try the fixed Google Sheets column indices
+    if (omzet_total <= 0 && r.length > 339) {
+      omzet_freshvision = cleanRp(r[322]);
+      omzet_nutriflakes = cleanRp(r[273]);
+      omzet_freshmag = cleanRp(r[256]);
+      omzet_etawaku = cleanRp(r[175]);
+      omzet_total = cleanRp(r[339]);
+    }
+
+    if (omzet_total > 0) {
+      result.push({ tanggal: dateStr, omzet_freshvision, omzet_nutriflakes, omzet_freshmag, omzet_etawaku, omzet_total });
+    }
+  }
+  return result;
+}
+
+// ─── Build full ApiResponse — identical to API route ───
+function buildFullApiResponse(
+  shop: HarianRow[],
+  video: ChannelRow[],
+  live: ChannelRow[],
+  shopTab: ChannelRow[],
+  affiliate: ChannelRow[],
+  evaluasi: EvalRow[],
+): ApiResponse {
+  const sum = <T,>(a: T[], fn: (r: T) => number) => a.reduce((s, r) => s + fn(r), 0);
+  const avg = <T,>(a: T[], fn: (r: T) => number) => a.length ? sum(a, fn) / a.length : 0;
+  const pct = (part: number, total: number) => total > 0 ? parseFloat((part / total * 100).toFixed(2)) : 0;
+
+  // Merge shop with evaluasi kontribusi %
+  const shopMerged = shop.map((row) => {
+    const evalRow = evaluasi.find((e) => e.tanggal === row.tanggal);
+    return {
+      ...row,
+      omzet_total_brand: evalRow?.omzet_total || 0,
+      pct_kontribusi_fv: pct(row.omzet, evalRow?.omzet_total || 0),
+    };
+  });
+
+  const totalOmzet = sum(shop, (r) => r.omzet);
+  const totalBotol = sum(shop, (r) => r.botol);
+  const totalClosing = sum(shop, (r) => r.closing);
+  const totalBiayaIklan = sum(shop, (r) => r.biaya_iklan);
+  const totalKomisiAff = sum(shop, (r) => r.komisi_affiliate);
+  const totalCost = totalBiayaIklan + totalKomisiAff;
+  const totalOmzetAll = evaluasi.length > 0 ? sum(evaluasi, (r) => r.omzet_total) : totalOmzet;
+  const totalOmzetFV = evaluasi.length > 0 ? sum(evaluasi, (r) => r.omzet_freshvision) : totalOmzet;
+  const hari = shop.length;
+
+  const roas = totalBiayaIklan > 0 ? parseFloat((totalOmzet / totalBiayaIklan).toFixed(2)) : 0;
+  const costPerClosing = totalClosing > 0 ? Math.round(totalCost / totalClosing) : 0;
+  const costPerBotol = totalBotol > 0 ? Math.round(totalCost / totalBotol) : 0;
+  const marginAfterCost = totalOmzet > 0 ? parseFloat(((totalOmzet - totalCost) / totalOmzet * 100).toFixed(1)) : 0;
+
+  const summary: Summary = {
+    total_omzet: totalOmzet,
+    total_botol: totalBotol,
+    total_closing: totalClosing,
+    rata_upsell: avg(shop, (r) => r.upsell),
+    rata_cac: avg(shop, (r) => r.cac_total),
+    rata_cac_ads: avg(shop, (r) => r.cac_ads),
+    total_biaya_iklan: totalBiayaIklan,
+    total_komisi_aff: totalKomisiAff,
+    total_cost: totalCost,
+    roas,
+    cost_per_closing: costPerClosing,
+    cost_per_botol: costPerBotol,
+    margin_after_cost: marginAfterCost,
+    total_omzet_all: totalOmzetAll,
+    total_omzet_fv: totalOmzetFV,
+    pct_kontribusi_fv: pct(totalOmzetFV, totalOmzetAll),
+    hari,
+    avg_omzet_harian: hari > 0 ? Math.round(totalOmzet / hari) : 0,
+    avg_closing_harian: hari > 0 ? Math.round(totalClosing / hari) : 0,
+    avg_botol_harian: hari > 0 ? Math.round(totalBotol / hari) : 0,
+    nilai_per_txn: totalClosing > 0 ? Math.round(totalOmzet / totalClosing) : 0,
+  };
+
+  // Weekly grouping
+  const weekly: WeeklyRow[] = [];
+  for (let i = 0; i < shopMerged.length; i += 7) {
+    const chunk = shopMerged.slice(i, i + 7);
+    const wOmzet = chunk.reduce((a, r) => a + r.omzet, 0);
+    const wClosing = chunk.reduce((a, r) => a + r.closing, 0);
+    const wBotol = chunk.reduce((a, r) => a + r.botol, 0);
+    const prev = weekly[weekly.length - 1];
+    weekly.push({
+      label: `Minggu ${weekly.length + 1}`,
+      hari: chunk.length,
+      total_omzet: wOmzet,
+      total_closing: wClosing,
+      total_botol: wBotol,
+      rata_upsell: chunk.reduce((a, r) => a + r.upsell, 0) / chunk.length,
+      rata_cac: chunk.reduce((a, r) => a + r.cac_total, 0) / chunk.length,
+      rata_omzet_harian: wOmzet / chunk.length,
+      wow_omzet: prev && prev.total_omzet > 0 ? parseFloat(((wOmzet - prev.total_omzet) / prev.total_omzet * 100).toFixed(1)) : 0,
+      wow_closing: prev && prev.total_closing > 0 ? parseFloat(((wClosing - prev.total_closing) / prev.total_closing * 100).toFixed(1)) : 0,
+    });
+  }
+
+  // Channel summaries
+  const chanSum = (rows: (ChannelRow | HarianRow)[]): ChannelSummary => ({
+    total_omzet: sum(rows, (r) => r.omzet),
+    total_closing: sum(rows, (r) => r.closing),
+    total_botol: sum(rows, (r) => r.botol),
+    rata_upsell: avg(rows, (r) => r.upsell),
+    rata_cac: avg(rows, (r) => r.cac_total),
+    hari: rows.length,
+  });
+
+  // Highlights
+  const sorted = [...shop].sort((a, b) => b.omzet - a.omzet);
+  const avgOmzet = hari > 0 ? totalOmzet / hari : 0;
+  const stdDev = Math.sqrt(shop.reduce((a, r) => a + Math.pow(r.omzet - avgOmzet, 2), 0) / (hari || 1));
+  const anomalies = shop
+    .filter((r) => Math.abs(r.omzet - avgOmzet) > 1.5 * stdDev)
+    .map((r) => ({
+      tanggal: r.tanggal, omzet: r.omzet,
+      type: (r.omzet > avgOmzet ? "spike" : "drop") as "spike" | "drop",
+      deviation: parseFloat(((r.omzet - avgOmzet) / avgOmzet * 100).toFixed(1)),
+    }));
+
+  return {
+    summary,
+    harian: shopMerged,
+    weekly,
+    channels: {
+      shop: chanSum(shop),
+      video: chanSum(video),
+      live: chanSum(live),
+      shop_tab: chanSum(shopTab),
+      affiliate: chanSum(affiliate),
+    },
+    channel_data: { video, live, shop_tab: shopTab, affiliate },
+    evaluasi_per_brand: {
+      freshvision: totalOmzetFV,
+      nutriflakes: evaluasi.length > 0 ? sum(evaluasi, (r) => r.omzet_nutriflakes) : 0,
+      freshmag: evaluasi.length > 0 ? sum(evaluasi, (r) => r.omzet_freshmag) : 0,
+      etawaku: evaluasi.length > 0 ? sum(evaluasi, (r) => r.omzet_etawaku) : 0,
+      total: totalOmzetAll,
+    },
+    highlights: {
+      best_day: sorted[0] ? { tanggal: sorted[0].tanggal, omzet: sorted[0].omzet } : null,
+      worst_day: sorted[sorted.length - 1] ? { tanggal: sorted[sorted.length - 1].tanggal, omzet: sorted[sorted.length - 1].omzet } : null,
+      anomalies,
+    },
+  };
+}
+
+interface ImportResult {
+  response: ApiResponse;
+  period: string;
+}
+
+function parseImportedExcel(file: File): Promise<ImportResult> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: "array" });
+
+        // ─── Find & parse each sheet like the live API ───
+        const shopRows = findSheet(wb, SHEET_PATTERNS.SHOP);
+        const videoRows = findSheet(wb, SHEET_PATTERNS.VIDEO);
+        const liveRows = findSheet(wb, SHEET_PATTERNS.LIVE);
+        const shopTabRows = findSheet(wb, SHEET_PATTERNS.SHOP_TAB);
+        const affiliateRows = findSheet(wb, SHEET_PATTERNS.AFFILIATE);
+        const evaluasiRows = findSheet(wb, SHEET_PATTERNS.EVALUASI);
+
+        // Parse SHOP (required) — try named sheet first, else try first/largest sheet
+        let shopResult: { shop: HarianRow[]; period: string };
+        if (shopRows) {
+          shopResult = parseShopSheet(shopRows);
+        } else {
+          // Fallback: try all sheets, pick the one with most data
+          let best: { shop: HarianRow[]; period: string } = { shop: [], period: "" };
+          for (const sheetName of wb.SheetNames) {
+            const ws = wb.Sheets[sheetName];
+            const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            if (!rows || rows.length < 3) continue;
+            const r = parseShopSheet(rows);
+            if (r.shop.length > best.shop.length) best = r;
+          }
+          shopResult = best;
+        }
+
+        if (!shopResult.shop.length) {
+          reject(new Error("Tidak ada data SHOP valid ditemukan di file Excel."));
+          return;
+        }
+
+        // Parse channels
+        const video = videoRows ? parseChannelSheet(videoRows) : [];
+        const live = liveRows ? parseChannelSheet(liveRows) : [];
+        const shopTab = shopTabRows ? parseChannelSheet(shopTabRows) : [];
+        const affiliate = affiliateRows ? parseChannelSheet(affiliateRows) : [];
+        const evaluasi = evaluasiRows ? parseEvaluasiSheet(evaluasiRows) : [];
+
+        // Build full response — same as API route
+        const response = buildFullApiResponse(shopResult.shop, video, live, shopTab, affiliate, evaluasi);
+
+        resolve({ response, period: shopResult.period });
+      } catch (err: any) {
+        reject(new Error("Gagal parse Excel: " + (err?.message || err)));
+      }
+    };
+    reader.onerror = () => reject(new Error("Gagal membaca file."));
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 function healthScore(s: Summary, target: number): { score: number; label: string; color: string } {
@@ -106,17 +652,199 @@ function healthScore(s: Summary, target: number): { score: number; label: string
 // MAIN SCREEN
 // ═══════════════════════════════════════════════════════════
 export default function LaporanHarianScreen() {
-  const { data, error, isLoading, mutate } = useSWR<ApiResponse>("/api/laporan-harian", fetcher, { refreshInterval: 5 * 60 * 1000 });
+  // ─── Live data from Google Sheets (current month) ───
+  const { data: liveData, error, isLoading, mutate } = useSWR<ApiResponse>("/api/laporan-harian", fetcher, { refreshInterval: 5 * 60 * 1000 });
+
+  // ─── Month & data management ───
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("live");
+  const [savedPeriods, setSavedPeriods] = useState<{ period: string; saved_at: string }[]>([]);
+  const [savedData, setSavedData] = useState<ApiResponse | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const prevPeriodRef = useRef<string>("live");
+
+  // ─── Import state ───
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPeriod, setImportPeriod] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // ─── UI state ───
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [showSettings, setShowSettings] = useState(false);
   const { target, setTarget } = useTarget();
 
-  useEffect(() => { if (data?.summary) setLastUpdate(new Date()); }, [data]);
+  // ─── Load saved periods list ───
+  useEffect(() => {
+    listLaporanHarianPeriods()
+      .then(setSavedPeriods)
+      .catch(() => {});
+  }, []);
 
-  if (isLoading) return <LoadingState />;
-  if (error || !data?.summary) return <ErrorState error={error} data={data} onRetry={() => mutate()} />;
+  // ─── Auto-save live data when it arrives ───
+  const autoSaveRef = useRef(false);
+  useEffect(() => {
+    if (!liveData?.summary || autoSaveRef.current) return;
+    autoSaveRef.current = true;
+    const period = detectPeriodFromData(liveData);
+    saveLaporanHarianData(period, liveData)
+      .then(() => {
+        listLaporanHarianPeriods().then(setSavedPeriods).catch(() => {});
+      })
+      .catch(() => {});
+  }, [liveData]);
 
+  useEffect(() => { if (liveData?.summary) setLastUpdate(new Date()); }, [liveData]);
+
+  // ─── Save current data before switching months ───
+  const saveCurrentBeforeSwitch = useCallback(async (currentPeriod: string, dataToSave: ApiResponse | null) => {
+    if (!dataToSave?.summary) return;
+    const period = currentPeriod === "live" ? detectPeriodFromData(dataToSave) : currentPeriod;
+    try {
+      await saveLaporanHarianData(period, dataToSave);
+      const periods = await listLaporanHarianPeriods();
+      setSavedPeriods(periods);
+    } catch {}
+  }, []);
+
+  // ─── Switch month handler ───
+  const handlePeriodChange = useCallback(async (newPeriod: string) => {
+    const oldPeriod = prevPeriodRef.current;
+    const oldData = oldPeriod === "live" ? liveData : savedData;
+
+    // Auto-save old month before switching
+    if (oldPeriod !== newPeriod) {
+      await saveCurrentBeforeSwitch(oldPeriod, oldData || null);
+    }
+
+    setSelectedPeriod(newPeriod);
+    prevPeriodRef.current = newPeriod;
+    setSaveMsg(null);
+    setImportMsg(null);
+
+    if (newPeriod === "live") {
+      setSavedData(null);
+      return;
+    }
+
+    // Load saved data for selected month
+    setIsLoadingSaved(true);
+    try {
+      const loaded = await loadLaporanHarianData(newPeriod);
+      setSavedData(loaded);
+    } catch (err: any) {
+      setSaveMsg({ type: "err", text: "Gagal memuat data: " + (err?.message || err) });
+      setSavedData(null);
+    } finally {
+      setIsLoadingSaved(false);
+    }
+  }, [liveData, savedData, saveCurrentBeforeSwitch]);
+
+  // ─── Manual save handler ───
+  const handleManualSave = useCallback(async () => {
+    const currentData = selectedPeriod === "live" ? liveData : savedData;
+    if (!currentData?.summary) return;
+    const period = selectedPeriod === "live" ? detectPeriodFromData(currentData) : selectedPeriod;
+    setIsSaving(true);
+    setSaveMsg(null);
+    try {
+      await saveLaporanHarianData(period, currentData);
+      const periods = await listLaporanHarianPeriods();
+      setSavedPeriods(periods);
+      setSaveMsg({ type: "ok", text: `Data ${formatPeriod(period)} berhasil disimpan!` });
+    } catch (err: any) {
+      setSaveMsg({ type: "err", text: "Gagal menyimpan: " + (err?.message || err) });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [selectedPeriod, liveData, savedData]);
+
+  // ─── Import Excel handler ───
+  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.match(/\.xlsx?$/i) && !file.name.match(/\.csv$/i)) {
+      setImportMsg({ type: "err", text: "Hanya file .xlsx, .xls, atau .csv yang diterima." });
+      return;
+    }
+    setIsImporting(true);
+    setImportMsg(null);
+    try {
+      const { response, period: detectedPeriod } = await parseImportedExcel(file);
+      const period = importPeriod || detectedPeriod || getCurrentPeriod();
+
+      await saveLaporanHarianData(period, response);
+      const periods = await listLaporanHarianPeriods();
+      setSavedPeriods(periods);
+
+      setSavedData(response);
+      setSelectedPeriod(period);
+      prevPeriodRef.current = period;
+      const chCount = [response.channel_data.video, response.channel_data.live, response.channel_data.shop_tab, response.channel_data.affiliate].filter(c => c.length > 0).length;
+      setImportMsg({ type: "ok", text: `Berhasil import ${response.harian.length} hari data + ${chCount} channel untuk ${formatPeriod(period)}!` });
+      setShowImportModal(false);
+    } catch (err: any) {
+      setImportMsg({ type: "err", text: err?.message || "Gagal import file." });
+    } finally {
+      setIsImporting(false);
+      if (e.target) e.target.value = "";
+    }
+  }, [importPeriod]);
+
+  // ─── Delete saved month ───
+  const handleDeletePeriod = useCallback(async (period: string) => {
+    if (!confirm(`Hapus data ${formatPeriod(period)}?`)) return;
+    try {
+      await deleteLaporanHarianData(period);
+      const periods = await listLaporanHarianPeriods();
+      setSavedPeriods(periods);
+      if (selectedPeriod === period) {
+        setSelectedPeriod("live");
+        prevPeriodRef.current = "live";
+        setSavedData(null);
+      }
+      setSaveMsg({ type: "ok", text: `Data ${formatPeriod(period)} berhasil dihapus.` });
+    } catch (err: any) {
+      setSaveMsg({ type: "err", text: "Gagal menghapus: " + (err?.message || err) });
+    }
+  }, [selectedPeriod]);
+
+  // ─── Determine active data ───
+  const isLive = selectedPeriod === "live";
+  const activeData = isLive ? liveData : savedData;
+
+  if (isLoading && isLive) return <LoadingState />;
+  if (isLoadingSaved) return <LoadingState />;
+  if (isLive && (error || !liveData?.summary)) return <ErrorState error={error} data={liveData} onRetry={() => mutate()} />;
+  if (!isLive && !savedData?.summary) {
+    return (
+      <div className="space-y-5 pb-10">
+        <MonthHeader
+          selectedPeriod={selectedPeriod} savedPeriods={savedPeriods}
+          onPeriodChange={handlePeriodChange} onImport={() => setShowImportModal(true)}
+          onSave={handleManualSave} isSaving={isSaving} isLive={isLive}
+          onDelete={handleDeletePeriod}
+        />
+        {saveMsg && <MsgBanner type={saveMsg.type} text={saveMsg.text} />}
+        <div className="flex items-center justify-center py-24">
+          <div className="text-center max-w-sm space-y-3">
+            <Database size={36} className="text-gray-300 mx-auto" />
+            <h2 className="font-bold text-gray-900">Belum Ada Data</h2>
+            <p className="text-sm text-gray-500">Tidak ada data tersimpan untuk {formatPeriod(selectedPeriod)}. Import file Excel untuk menambahkan data.</p>
+            <button onClick={() => setShowImportModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium inline-flex items-center gap-1.5">
+              <Upload size={14} /> Import Excel
+            </button>
+          </div>
+        </div>
+        {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
+      </div>
+    );
+  }
+
+  const data = activeData!;
   const { summary: s, harian, weekly, channels, channel_data, evaluasi_per_brand, highlights } = data;
   const health = healthScore(s, target);
 
@@ -137,15 +865,29 @@ export default function LaporanHarianScreen() {
 
   return (
     <div className="space-y-5 pb-10">
+      {/* ═══ MONTH SELECTOR & HEADER ═══ */}
+      <MonthHeader
+        selectedPeriod={selectedPeriod} savedPeriods={savedPeriods}
+        onPeriodChange={handlePeriodChange} onImport={() => setShowImportModal(true)}
+        onSave={handleManualSave} isSaving={isSaving} isLive={isLive}
+        onDelete={handleDeletePeriod}
+      />
+      {saveMsg && <MsgBanner type={saveMsg.type} text={saveMsg.text} />}
+      {importMsg && <MsgBanner type={importMsg.type} text={importMsg.text} />}
+
       {/* ═══ HEADER ═══ */}
       <div className="bg-white rounded-2xl border p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Laporan Harian FreshVision</h1>
+              <h1 className="text-xl font-bold text-gray-900">
+                Laporan Harian FreshVision
+                {!isLive && <span className="text-base font-medium text-gray-400 ml-2">— {formatPeriod(selectedPeriod)}</span>}
+              </h1>
               <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
                 <span>Update: {lastUpdate ? lastUpdate.toLocaleString("id-ID") : "—"}</span>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 animate-pulse">● Live</span>
+                {isLive && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 animate-pulse">● Live</span>}
+                {!isLive && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600"><Database size={10} /> Data Tersimpan</span>}
               </div>
             </div>
             {/* Health Score Badge */}
@@ -167,15 +909,19 @@ export default function LaporanHarianScreen() {
             <button onClick={() => handleExport("ppt")} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 text-sm transition">
               <Presentation size={14} /> PPT
             </button>
-            <button onClick={() => mutate()} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition">
-              <RefreshCw size={14} /> Refresh
-            </button>
+            {isLive && (
+              <button onClick={() => mutate()} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition">
+                <RefreshCw size={14} /> Refresh
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* ═══ SETTINGS MODAL ═══ */}
       {showSettings && <SettingsModal target={target} onSave={setTarget} onClose={() => setShowSettings(false)} />}
+      {/* ═══ IMPORT MODAL ═══ */}
+      {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
       <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} />
@@ -195,6 +941,160 @@ export default function LaporanHarianScreen() {
       {activeTab === "cost" && <CostTab s={s} harian={harian} />}
       {activeTab === "channels" && <ChannelsTab channels={channels} channelData={channel_data} />}
       {activeTab === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// MONTH HEADER / SELECTOR
+// ═══════════════════════════════════════════════════════════
+function MonthHeader({
+  selectedPeriod, savedPeriods, onPeriodChange, onImport, onSave, isSaving, isLive, onDelete,
+}: {
+  selectedPeriod: string;
+  savedPeriods: { period: string; saved_at: string }[];
+  onPeriodChange: (p: string) => void;
+  onImport: () => void;
+  onSave: () => void;
+  isSaving: boolean;
+  isLive: boolean;
+  onDelete: (p: string) => void;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Calendar size={16} className="text-gray-400" />
+          <span className="text-sm font-medium text-gray-600">Periode:</span>
+          {/* Live button */}
+          <button
+            onClick={() => onPeriodChange("live")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+              isLive
+                ? "bg-red-50 text-red-700 border border-red-200 ring-1 ring-red-200"
+                : "bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100"
+            }`}
+          >
+            <span className="inline-flex items-center gap-1">
+              {isLive && <span className="animate-pulse">●</span>} Live
+            </span>
+          </button>
+          {/* Saved months */}
+          {savedPeriods.map((sp) => (
+            <div key={sp.period} className="relative group">
+              <button
+                onClick={() => onPeriodChange(sp.period)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  selectedPeriod === sp.period
+                    ? "bg-blue-50 text-blue-700 border border-blue-200 ring-1 ring-blue-200"
+                    : "bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                {formatPeriod(sp.period)}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(sp.period); }}
+                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Hapus data"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onImport} className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition">
+            <Upload size={13} /> Import Excel
+          </button>
+          <button onClick={onSave} disabled={isSaving} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-3 py-2 rounded-lg text-xs font-medium transition">
+            {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            {isSaving ? "Menyimpan..." : "Simpan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// IMPORT MODAL
+// ═══════════════════════════════════════════════════════════
+function ImportModal({
+  importPeriod, setImportPeriod, onImport, onClose, isImporting, importMsg, fileRef,
+}: {
+  importPeriod: string;
+  setImportPeriod: (v: string) => void;
+  onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onClose: () => void;
+  isImporting: boolean;
+  importMsg: { type: "ok" | "err"; text: string } | null;
+  fileRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  const months = [];
+  for (let y = 2025; y <= 2027; y++) {
+    for (let m = 1; m <= 12; m++) {
+      months.push(`${y}-${String(m).padStart(2, "0")}`);
+    }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-gray-900">Import Data Laporan Harian</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-gray-700 block mb-1">Pilih Bulan (Opsional)</label>
+          <select
+            value={importPeriod}
+            onChange={(e) => setImportPeriod(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          >
+            <option value="">Auto-detect dari file</option>
+            {months.map((m) => (
+              <option key={m} value={m}>{formatPeriod(m)}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-gray-400 mt-1">Jika tidak dipilih, bulan akan dideteksi otomatis dari kolom tanggal di Excel.</p>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-gray-700 block mb-1">File Excel (.xlsx / .xls)</label>
+          <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-blue-300 transition cursor-pointer"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload size={24} className="text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-500">Klik untuk pilih file atau drag & drop</p>
+            <p className="text-[10px] text-gray-400 mt-1">Kolom wajib: Tanggal, Omzet. Kolom opsional: Closing, Botol, Upsell, CAC, Biaya Iklan, Komisi Affiliate</p>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={onImport}
+            className="hidden"
+          />
+        </div>
+        {isImporting && (
+          <div className="flex items-center gap-2 text-sm text-blue-600">
+            <Loader2 size={14} className="animate-spin" /> Memproses file...
+          </div>
+        )}
+        {importMsg && <MsgBanner type={importMsg.type} text={importMsg.text} />}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// MESSAGE BANNER
+// ═══════════════════════════════════════════════════════════
+function MsgBanner({ type, text }: { type: "ok" | "err"; text: string }) {
+  return (
+    <div className={`text-xs px-4 py-2.5 rounded-xl border flex items-center gap-2 ${
+      type === "ok" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+    }`}>
+      {type === "ok" ? <Check size={14} /> : <AlertTriangle size={14} />}
+      {text}
     </div>
   );
 }

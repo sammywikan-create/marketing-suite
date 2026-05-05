@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import PasswordGate from "@/components/PasswordGate";
 import "./globals.css";
@@ -13,9 +13,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: "#1A237E",
+};
+
 export const metadata: Metadata = {
   title: "Marketing Suite — Aplikasi Manajemen Marketing",
   description: "Aplikasi manajemen marketing lengkap: Dashboard, Content Tracker, Campaign Log, KOL Tracker, Budget & ROI, AIDA Funnel, dan lainnya.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Marketing Suite",
+  },
 };
 
 export default function RootLayout({
