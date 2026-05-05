@@ -160,19 +160,21 @@ export async function getFreshVisionLive(): Promise<FVChannelRow[]> {
 }
 
 // ═══ FETCHER 4: FreshVision SHOP TAB ═══
-// Kolom TOTAL: D=biaya_iklan, E=closing, F=botol, G=nilai, H=omzet, I=cac, J=upsell
+// Kolom: A=tanggal, B=biaya_iklan, C=closing, D=botol, E=nilai_per_txn,
+//        F=omzet, G=cac, H=upsell
+// BERBEDA dengan VIDEO/LIVE — kolom lebih sedikit, mulai dari B bukan D
 export async function getFreshVisionShopTab(): Promise<FVChannelRow[]> {
-  const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:J50');
+  const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:H50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
       tanggal:   cleanDate(r[0]),
-      omzet:     cleanRp(r[7]),    // H
-      closing:   cleanInt(r[4]),   // E
-      botol:     cleanInt(r[5]),   // F
-      upsell:    cleanDecimal(r[9]), // J
-      cac_ads:   cleanPct(r[8]),   // I
-      cac_total:  cleanPct(r[8]),  // I
+      omzet:     cleanRp(r[5]),      // F
+      closing:   cleanInt(r[2]),     // C
+      botol:     cleanInt(r[3]),     // D
+      upsell:    cleanDecimal(r[7]), // H
+      cac_ads:   cleanPct(r[6]),     // G
+      cac_total: cleanPct(r[6]),     // G
     }))
     .filter(r => r.omzet > 0);
 }
