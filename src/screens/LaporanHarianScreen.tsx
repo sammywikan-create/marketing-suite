@@ -315,9 +315,9 @@ function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
   return { shop, period };
 }
 
-// ─── Parse VIDEO/LIVE/SHOP_TAB — mirrors getFreshVisionVideo/Live/ShopTab() ───
-// Kolom TOTAL: E=closing, F=botol, H=omzet, I=cac, J=upsell
-function parseVideoLiveShopTabSheet(rows: any[][], label: string): ChannelRow[] {
+// ─── Parse VIDEO/LIVE — mirrors getFreshVisionVideo/Live() ───
+// Layout 'with biaya_iklan': A=tanggal, D=biaya, E=closing, F=botol, G=nilai, H=omzet, I=cac, J=upsell
+function parseVideoLiveSheet(rows: any[][], label: string): ChannelRow[] {
   const { dataRows } = getDateRows(rows);
   if (!dataRows.length) return [];
 
@@ -344,9 +344,9 @@ function parseVideoLiveShopTabSheet(rows: any[][], label: string): ChannelRow[] 
   return result;
 }
 
-// ─── Parse AFFILIATE — mirrors getFreshVisionAffiliate() ───
-// Kolom TOTAL: C=closing, D=botol, F=omzet, G=cac, H=upsell
-function parseAffiliateSheet(rows: any[][]): ChannelRow[] {
+// ─── Parse SHOP_TAB / AFFILIATE — same layout (no biaya_iklan column) ───
+// Layout 'no biaya_iklan': A=tanggal, B=biaya/komisi, C=closing, D=botol, E=nilai, F=omzet, G=cac, H=upsell
+function parseShopTabAffiliateSheet(rows: any[][], label: string): ChannelRow[] {
   const { dataRows } = getDateRows(rows);
   if (!dataRows.length) return [];
 
@@ -367,8 +367,8 @@ function parseAffiliateSheet(rows: any[][]): ChannelRow[] {
     });
   }
   if (result.length > 0) {
-    console.log(`[Excel Import] AFFILIATE: ${result.length} rows, first:`, result[0]);
-    console.log(`[Excel Import] AFFILIATE total omzet: ${result.reduce((a, r) => a + r.omzet, 0).toLocaleString()}`);
+    console.log(`[Excel Import] ${label}: ${result.length} rows, first:`, result[0]);
+    console.log(`[Excel Import] ${label} total omzet: ${result.reduce((a, r) => a + r.omzet, 0).toLocaleString()}`);
   }
   return result;
 }
@@ -727,10 +727,12 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
         }
 
         // Parse channels — exact same column indices as googleSheets.ts
-        const video     = videoMatch    ? parseVideoLiveShopTabSheet(videoMatch.rows, "VIDEO")       : [];
-        const live      = liveMatch     ? parseVideoLiveShopTabSheet(liveMatch.rows, "LIVE")         : [];
-        const shopTab   = shopTabMatch  ? parseVideoLiveShopTabSheet(shopTabMatch.rows, "SHOP_TAB")  : [];
-        const affiliate = affiliateMatch ? parseAffiliateSheet(affiliateMatch.rows)                  : [];
+        // VIDEO/LIVE have biaya_iklan column → omzet at H (idx 7)
+        // SHOP_TAB/AFFILIATE no biaya_iklan column → omzet at F (idx 5)
+        const video     = videoMatch    ? parseVideoLiveSheet(videoMatch.rows, "VIDEO")              : [];
+        const live      = liveMatch     ? parseVideoLiveSheet(liveMatch.rows, "LIVE")                : [];
+        const shopTab   = shopTabMatch  ? parseShopTabAffiliateSheet(shopTabMatch.rows, "SHOP_TAB")  : [];
+        const affiliate = affiliateMatch ? parseShopTabAffiliateSheet(affiliateMatch.rows, "AFFILIATE") : [];
 
         // Brand/evaluasi data: try PROPORSI first (simpler layout), then EVALUASI
         let evaluasi: EvalRow[] = [];
