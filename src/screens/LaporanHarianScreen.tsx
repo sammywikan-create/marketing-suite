@@ -68,6 +68,7 @@ interface ApiResponse {
   channels: Record<string, ChannelSummary>;
   channel_data: { video: ChannelRow[]; live: ChannelRow[]; shop_tab: ChannelRow[]; affiliate: ChannelRow[] };
   evaluasi_per_brand: EvaluasiPerBrand; highlights: Highlights;
+  period?: string;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -98,6 +99,9 @@ function getCurrentPeriod(): string {
 }
 
 function detectPeriodFromData(data: ApiResponse | null | undefined): string {
+  // If period was explicitly set during import (with correct year), use it
+  if (data?.period && /^\d{4}-\d{2}$/.test(data.period)) return data.period;
+
   if (!data?.harian?.length) return getCurrentPeriod();
   // Try to extract month from first harian date like "1 Apr", "15 Jan"
   const BULAN_TO_NUM: Record<string, string> = {
@@ -109,6 +113,7 @@ function detectPeriodFromData(data: ApiResponse | null | undefined): string {
     if (m) {
       const mon = BULAN_TO_NUM[m[1].toLowerCase()];
       if (mon) {
+        // Use current year only as fallback — period field should have correct year
         const year = new Date().getFullYear();
         return `${year}-${mon}`;
       }
@@ -346,37 +351,61 @@ function colHasMoneyData(dataRows: any[][], colIdx: number): boolean {
   return valid >= 2;
 }
 
-// Multi-strategy column resolver: TOTAL section → header keywords → fixed indices → auto-detect
+// Multi-strategy column resolver
+// preferFixed=false (SHOP):    TOTAL section → header keywords → fixed indices → auto-detect
+// preferFixed=true  (channels): fixed indices → header keywords → TOTAL section → auto-detect
 function resolveColumns(
   rows: any[][], dataRows: any[][], dataStart: number,
   fixedMap: Record<string, number>, label: string,
+  preferFixed = false,
 ): Record<string, number> {
-  // Strategy 1: TOTAL section
-  const totalCols = findTotalSectionCols(rows, dataStart);
-  if (totalCols && totalCols.omzet !== undefined) {
-    console.log(`[Excel Import] ${label}: using TOTAL section columns`);
-    return totalCols;
+  // Helper: header keyword scan
+  const scanHeaders = (): Record<string, number> | null => {
+    const findCol = buildColFinder(rows, dataStart);
+    const hCols: Record<string, number> = {};
+    const kwMap: [string, string[]][] = [
+      ["omzet", ["omzet", "omset"]], ["closing", ["closing"]], ["botol", ["botol", "bottle", "qty"]],
+      ["nilai", ["nilai", "per txn", "aov"]], ["cac", ["cac"]], ["cac_ads", ["cac ads", "cac_ads"]],
+      ["cac_total", ["cac total", "cac_total"]], ["upsell", ["upsell", "up sell"]],
+      ["biaya_iklan", ["biaya iklan", "biaya_iklan", "biaya", "ad spend"]], ["komisi", ["komisi", "affiliate"]],
+    ];
+    for (const [k, kws] of kwMap) { const i = findCol(kws); if (i >= 0) hCols[k] = i; }
+    return hCols.omzet !== undefined ? hCols : null;
+  };
+
+  // Helper: check fixed map
+  const checkFixed = (): Record<string, number> | null => {
+    if (fixedMap.omzet !== undefined && colHasMoneyData(dataRows, fixedMap.omzet)) return fixedMap;
+    return null;
+  };
+
+  // Helper: TOTAL section
+  const checkTotal = (): Record<string, number> | null => {
+    const totalCols = findTotalSectionCols(rows, dataStart);
+    return (totalCols && totalCols.omzet !== undefined) ? totalCols : null;
+  };
+
+  let result: Record<string, number> | null = null;
+
+  if (preferFixed) {
+    // Channel sheets: fixed → headers → TOTAL → auto
+    result = checkFixed();
+    if (result) { console.log(`[Excel Import] ${label}: using fixed column indices`); return result; }
+    result = scanHeaders();
+    if (result) { console.log(`[Excel Import] ${label}: using header keyword columns:`, result); return result; }
+    result = checkTotal();
+    if (result) { console.log(`[Excel Import] ${label}: using TOTAL section columns`); return result; }
+  } else {
+    // SHOP sheet: TOTAL → headers → fixed → auto
+    result = checkTotal();
+    if (result) { console.log(`[Excel Import] ${label}: using TOTAL section columns`); return result; }
+    result = scanHeaders();
+    if (result) { console.log(`[Excel Import] ${label}: using header keyword columns:`, result); return result; }
+    result = checkFixed();
+    if (result) { console.log(`[Excel Import] ${label}: using fixed column indices`); return result; }
   }
-  // Strategy 2: Header keywords
-  const findCol = buildColFinder(rows, dataStart);
-  const hCols: Record<string, number> = {};
-  const kwMap: [string, string[]][] = [
-    ["omzet", ["omzet", "omset"]], ["closing", ["closing"]], ["botol", ["botol", "bottle", "qty"]],
-    ["nilai", ["nilai", "per txn", "aov"]], ["cac", ["cac"]], ["cac_ads", ["cac ads", "cac_ads"]],
-    ["cac_total", ["cac total", "cac_total"]], ["upsell", ["upsell", "up sell"]],
-    ["biaya_iklan", ["biaya iklan", "biaya_iklan", "biaya", "ad spend"]], ["komisi", ["komisi", "affiliate"]],
-  ];
-  for (const [k, kws] of kwMap) { const i = findCol(kws); if (i >= 0) hCols[k] = i; }
-  if (hCols.omzet !== undefined) {
-    console.log(`[Excel Import] ${label}: using header keyword columns:`, hCols);
-    return hCols;
-  }
-  // Strategy 3: Fixed indices
-  if (fixedMap.omzet !== undefined && colHasMoneyData(dataRows, fixedMap.omzet)) {
-    console.log(`[Excel Import] ${label}: using fixed column indices`);
-    return fixedMap;
-  }
-  // Strategy 4: Auto-detect omzet as highest-sum column
+
+  // Auto-detect omzet as highest-sum column
   const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
   let best = -1, bestSum = 0;
   for (let c = 1; c < maxC; c++) {
@@ -464,7 +493,8 @@ function parseChannelSheet(rows: any[][], label: string, fixedMap: Record<string
     console.log(`[Excel Import] ${label} header row ${i}: ${cells}`);
   }
 
-  const cols = resolveColumns(rows, dataRows, dataStart, fixedMap, label);
+  // Channel sheets use preferFixed=true so fixed indices are tried first
+  const cols = resolveColumns(rows, dataRows, dataStart, fixedMap, label, true);
   const iOmzet = cols.omzet ?? -1;
   if (iOmzet === -1) {
     console.warn(`[Excel Import] ${label}: could not find omzet column!`);
@@ -798,11 +828,31 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
         };
 
         // Parse channels — each with correct fixed map fallback
-        const video = videoMatch ? parseChannelSheet(videoMatch.rows, "VIDEO", videoLiveShopTabFixed) : [];
-        const live = liveMatch ? parseChannelSheet(liveMatch.rows, "LIVE", videoLiveShopTabFixed) : [];
-        const shopTab = shopTabMatch ? parseChannelSheet(shopTabMatch.rows, "SHOP_TAB", videoLiveShopTabFixed) : [];
-        const affiliate = affiliateMatch ? parseChannelSheet(affiliateMatch.rows, "AFFILIATE", affiliateFixed) : [];
+        let video = videoMatch ? parseChannelSheet(videoMatch.rows, "VIDEO", videoLiveShopTabFixed) : [];
+        let live = liveMatch ? parseChannelSheet(liveMatch.rows, "LIVE", videoLiveShopTabFixed) : [];
+        let shopTab = shopTabMatch ? parseChannelSheet(shopTabMatch.rows, "SHOP_TAB", videoLiveShopTabFixed) : [];
+        let affiliate = affiliateMatch ? parseChannelSheet(affiliateMatch.rows, "AFFILIATE", affiliateFixed) : [];
         const evaluasi = evaluasiMatch ? parseEvaluasiSheet(evaluasiMatch.rows) : [];
+
+        // ─── Sanity check: channel omzet should not wildly exceed shop ───
+        const shopTotalOmzet = shopResult.shop.reduce((a, r) => a + r.omzet, 0);
+        const shopAvgDaily = shopTotalOmzet / Math.max(shopResult.shop.length, 1);
+        const MAX_RATIO = 5;
+
+        function sanityCheck(ch: ChannelRow[], label: string): ChannelRow[] {
+          if (ch.length === 0) return ch;
+          const chAvg = ch.reduce((a, r) => a + r.omzet, 0) / ch.length;
+          if (chAvg > shopAvgDaily * MAX_RATIO) {
+            console.warn(`[Excel Import] ${label}: avg daily omzet ${Math.round(chAvg).toLocaleString()} is >${MAX_RATIO}x shop avg ${Math.round(shopAvgDaily).toLocaleString()} — likely wrong column, discarding`);
+            return [];
+          }
+          return ch;
+        }
+
+        video = sanityCheck(video, "VIDEO");
+        live = sanityCheck(live, "LIVE");
+        shopTab = sanityCheck(shopTab, "SHOP_TAB");
+        affiliate = sanityCheck(affiliate, "AFFILIATE");
 
         console.log("[Excel Import] Parsed rows:", {
           shop: shopResult.shop.length, video: video.length, live: live.length,
@@ -812,7 +862,12 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
         // Build full response — same as API route
         const response = buildFullApiResponse(shopResult.shop, video, live, shopTab, affiliate, evaluasi);
 
+        // Stamp period into the response so it's persisted with the data
+        const period = shopResult.period || "";
+        if (period) response.period = period;
+
         console.log("[Excel Import] Final Summary:", {
+          period,
           omzet: response.summary.total_omzet,
           closing: response.summary.total_closing,
           botol: response.summary.total_botol,
@@ -823,7 +878,7 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
           brandTotal: response.evaluasi_per_brand.total,
         });
 
-        resolve({ response, period: shopResult.period });
+        resolve({ response, period });
       } catch (err: any) {
         reject(new Error("Gagal parse Excel: " + (err?.message || err)));
       }
@@ -868,6 +923,9 @@ export default function LaporanHarianScreen() {
   const [saveMsg, setSaveMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const prevPeriodRef = useRef<string>("live");
 
+  // ─── Data mode: "live" | "saved" | "imported" ───
+  const [dataMode, setDataMode] = useState<"live" | "saved" | "imported">("live");
+
   // ─── Import state ───
   const [isImporting, setIsImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -888,10 +946,11 @@ export default function LaporanHarianScreen() {
       .catch(() => {});
   }, []);
 
-  // ─── Auto-save live data when it arrives ───
+  // ─── Auto-save live data when it arrives (only in live mode) ───
   const autoSaveRef = useRef(false);
   useEffect(() => {
     if (!liveData?.summary || autoSaveRef.current) return;
+    if (dataMode !== "live") return; // Don't auto-save when viewing imported/saved data
     autoSaveRef.current = true;
     const period = detectPeriodFromData(liveData);
     saveLaporanHarianData(period, liveData)
@@ -899,7 +958,7 @@ export default function LaporanHarianScreen() {
         listLaporanHarianPeriods().then(setSavedPeriods).catch(() => {});
       })
       .catch(() => {});
-  }, [liveData]);
+  }, [liveData, dataMode]);
 
   useEffect(() => { if (liveData?.summary) setLastUpdate(new Date()); }, [liveData]);
 
@@ -931,8 +990,11 @@ export default function LaporanHarianScreen() {
 
     if (newPeriod === "live") {
       setSavedData(null);
+      setDataMode("live");
       return;
     }
+
+    setDataMode("saved");
 
     // Load saved data for selected month
     setIsLoadingSaved(true);
@@ -987,6 +1049,7 @@ export default function LaporanHarianScreen() {
       setSavedData(response);
       setSelectedPeriod(period);
       prevPeriodRef.current = period;
+      setDataMode("imported");
       const chCount = [response.channel_data.video, response.channel_data.live, response.channel_data.shop_tab, response.channel_data.affiliate].filter(c => c.length > 0).length;
       setImportMsg({ type: "ok", text: `Berhasil import ${response.harian.length} hari data + ${chCount} channel untuk ${formatPeriod(period)}!` });
       setShowImportModal(false);
@@ -1090,8 +1153,9 @@ export default function LaporanHarianScreen() {
               </h1>
               <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
                 <span>Update: {lastUpdate ? lastUpdate.toLocaleString("id-ID") : "—"}</span>
-                {isLive && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 animate-pulse">● Live</span>}
-                {!isLive && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600"><Database size={10} /> Data Tersimpan</span>}
+                {dataMode === "live" && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 animate-pulse">● Live</span>}
+                {dataMode === "imported" && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600"><Upload size={10} /> Data Diimport</span>}
+                {dataMode === "saved" && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600"><Database size={10} /> Data Tersimpan</span>}
               </div>
             </div>
             {/* Health Score Badge */}
