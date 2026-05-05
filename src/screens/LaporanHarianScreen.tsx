@@ -240,14 +240,20 @@ const SHEET_PATTERNS = {
   SHOP_TAB:  ["freshvision(shop tab)", "freshvision (shop tab)", "adv saeful - freshvision(shop tab)", "adv saeful- freshvision(shop tab)", "shop tab"],
   AFFILIATE: ["freshvision(affiliate)", "freshvision (affiliate)", "adv saeful - freshvision(affiliate)", "adv saeful- freshvision(affiliate)", "affiliate"],
   EVALUASI:  ["evaluasi produk", "total evaluasi produk", "tiktokshop", "evaluasi"],
+  PROPORSI:  ["proporsi total omset", "proporsi", "freshvision(proporsi"],
 };
 
-function findSheet(wb: XLSX.WorkBook, patterns: string[]): any[][] | null {
+function findSheet(wb: XLSX.WorkBook, patterns: string[], exclude?: string[]): { rows: any[][]; name: string } | null {
   for (const pat of patterns) {
-    const found = wb.SheetNames.find((n) => n.toLowerCase().includes(pat));
+    const found = wb.SheetNames.find((n) => {
+      const lower = n.toLowerCase();
+      if (!lower.includes(pat)) return false;
+      if (exclude && exclude.some((ex) => lower.includes(ex))) return false;
+      return true;
+    });
     if (found) {
       const ws = wb.Sheets[found];
-      return XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      return { rows: XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][], name: found };
     }
   }
   return null;
@@ -286,70 +292,138 @@ function buildColFinder(rows: any[][], dataStart: number) {
   };
 }
 
-// Check if a fixed-column index produces valid data in the first few rows
-function colHasData(dataRows: any[][], colIdx: number): boolean {
+// Find the "TOTAL" section in headers and map sub-columns within it
+function findTotalSectionCols(rows: any[][], dataStart: number): Record<string, number> | null {
+  let totalCol = -1;
+  let totalRow = -1;
+  for (let i = 0; i < dataStart; i++) {
+    const row = rows[i] || [];
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j] ?? "").toLowerCase().trim();
+      if (cell === "total" || cell === "total omset" || cell === "total omzet" || cell.startsWith("total ")) {
+        totalCol = j; totalRow = i; break;
+      }
+    }
+    if (totalCol >= 0) break;
+  }
+  if (totalCol < 0) return null;
+
+  const cols: Record<string, number> = {};
+  const fieldMap: [string, string[]][] = [
+    ["omzet", ["omzet", "omset", "revenue"]],
+    ["closing", ["closing", "order"]],
+    ["botol", ["botol", "bottle", "qty", "item"]],
+    ["nilai", ["nilai", "per txn", "aov"]],
+    ["cac", ["cac"]],
+    ["cac_ads", ["cac ads", "cac_ads"]],
+    ["cac_total", ["cac total", "cac_total"]],
+    ["upsell", ["upsell", "up sell", "up-sell"]],
+    ["biaya_iklan", ["biaya iklan", "biaya_iklan", "biaya", "ad spend"]],
+    ["komisi", ["komisi", "affiliate", "commission"]],
+  ];
+  for (let i = totalRow; i < dataStart; i++) {
+    const row = rows[i] || [];
+    for (let j = Math.max(0, totalCol - 1); j < row.length; j++) {
+      const cell = String(row[j] ?? "").toLowerCase().trim();
+      if (!cell) continue;
+      for (const [key, keywords] of fieldMap) {
+        if (!(key in cols) && keywords.some((k) => cell.includes(k))) { cols[key] = j; }
+      }
+    }
+  }
+  console.log("[Excel Import] TOTAL section at row", totalRow, "col", totalCol, "→ mapped:", cols);
+  return Object.keys(cols).length > 0 ? cols : null;
+}
+
+// Check if a column has monetary-looking data
+function colHasMoneyData(dataRows: any[][], colIdx: number): boolean {
   let valid = 0;
   for (const r of dataRows.slice(0, 5)) {
-    if (r && r[colIdx] !== undefined && r[colIdx] !== null && r[colIdx] !== "") valid++;
+    if (!r || r[colIdx] == null || r[colIdx] === "") continue;
+    const v = cleanRp(r[colIdx]);
+    if (v > 10000) valid++;
   }
   return valid >= 2;
 }
 
+// Multi-strategy column resolver: TOTAL section → header keywords → fixed indices → auto-detect
+function resolveColumns(
+  rows: any[][], dataRows: any[][], dataStart: number,
+  fixedMap: Record<string, number>, label: string,
+): Record<string, number> {
+  // Strategy 1: TOTAL section
+  const totalCols = findTotalSectionCols(rows, dataStart);
+  if (totalCols && totalCols.omzet !== undefined) {
+    console.log(`[Excel Import] ${label}: using TOTAL section columns`);
+    return totalCols;
+  }
+  // Strategy 2: Header keywords
+  const findCol = buildColFinder(rows, dataStart);
+  const hCols: Record<string, number> = {};
+  const kwMap: [string, string[]][] = [
+    ["omzet", ["omzet", "omset"]], ["closing", ["closing"]], ["botol", ["botol", "bottle", "qty"]],
+    ["nilai", ["nilai", "per txn", "aov"]], ["cac", ["cac"]], ["cac_ads", ["cac ads", "cac_ads"]],
+    ["cac_total", ["cac total", "cac_total"]], ["upsell", ["upsell", "up sell"]],
+    ["biaya_iklan", ["biaya iklan", "biaya_iklan", "biaya", "ad spend"]], ["komisi", ["komisi", "affiliate"]],
+  ];
+  for (const [k, kws] of kwMap) { const i = findCol(kws); if (i >= 0) hCols[k] = i; }
+  if (hCols.omzet !== undefined) {
+    console.log(`[Excel Import] ${label}: using header keyword columns:`, hCols);
+    return hCols;
+  }
+  // Strategy 3: Fixed indices
+  if (fixedMap.omzet !== undefined && colHasMoneyData(dataRows, fixedMap.omzet)) {
+    console.log(`[Excel Import] ${label}: using fixed column indices`);
+    return fixedMap;
+  }
+  // Strategy 4: Auto-detect omzet as highest-sum column
+  const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
+  let best = -1, bestSum = 0;
+  for (let c = 1; c < maxC; c++) {
+    let s = 0;
+    for (const r of dataRows.slice(0, 10)) { if (r?.[c]) s += Math.abs(cleanRp(r[c])); }
+    if (s > bestSum) { bestSum = s; best = c; }
+  }
+  if (best >= 0) { console.log(`[Excel Import] ${label}: auto-detected omzet at col ${best}`); return { omzet: best }; }
+  return {};
+}
+
 // ─── Parse SHOP sheet ───
-// FIXED COLUMNS (from googleSheets.ts getFreshVisionShop):
-//   A(0)=tanggal, D(3)=biaya_iklan, J(9)=komisi_affiliate,
-//   K(10)=closing, L(11)=botol, M(12)=nilai_per_txn,
-//   N(13)=omzet, O(14)=cac_ads, P(15)=cac_total, Q(16)=upsell
 function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
   const { dataRows, dataStart } = getDateRows(rows);
   if (!dataRows.length) return { shop: [], period: "" };
 
-  // Try fixed column indices first (matching live API exactly)
-  const useFixed = colHasData(dataRows, 13); // col N = omzet
-
-  let iBiayaIklan: number, iKomisiAff: number, iClosing: number;
-  let iBotol: number, iNilaiTxn: number, iOmzet: number;
-  let iCacAds: number, iCacTotal: number, iUpsell: number;
-
-  if (useFixed) {
-    iBiayaIklan = 3;   // D
-    iKomisiAff  = 9;   // J
-    iClosing    = 10;  // K
-    iBotol      = 11;  // L
-    iNilaiTxn   = 12;  // M
-    iOmzet      = 13;  // N
-    iCacAds     = 14;  // O
-    iCacTotal   = 15;  // P
-    iUpsell     = 16;  // Q
-  } else {
-    // Fallback: header keyword detection
-    const findCol = buildColFinder(rows, dataStart);
-    iOmzet = findCol(["omzet", "omset"]);
-    iClosing = findCol(["closing"]);
-    iBotol = findCol(["botol", "bottle", "qty"]);
-    iNilaiTxn = findCol(["nilai", "per txn", "aov"]);
-    iCacAds = findCol(["cac ads", "cac_ads"]);
-    iCacTotal = findCol(["cac total", "cac_total"]);
-    if (iCacTotal === -1) iCacTotal = findCol(["cac"]);
-    iUpsell = findCol(["upsell", "up sell"]);
-    iBiayaIklan = findCol(["biaya iklan", "biaya_iklan"]);
-    if (iBiayaIklan === -1) iBiayaIklan = findCol(["biaya", "ad spend"]);
-    iKomisiAff = findCol(["komisi", "affiliate"]);
-
-    // Last resort: auto-detect omzet as highest-sum column
-    if (iOmzet === -1) {
-      const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
-      let best = -1, bestSum = 0;
-      for (let c = 1; c < maxC; c++) {
-        let s = 0;
-        for (const r of dataRows.slice(0, 10)) { if (r?.[c]) s += Math.abs(cleanRp(r[c])); }
-        if (s > bestSum) { bestSum = s; best = c; }
-      }
-      iOmzet = best;
-    }
+  // Log header rows for debugging
+  for (let i = 0; i < Math.min(dataStart, 4); i++) {
+    const r = rows[i] || [];
+    const cells = r.slice(0, 20).map((c: any, j: number) => `[${j}]=${c ?? ""}`).join(" | ");
+    console.log(`[Excel Import] SHOP header row ${i}: ${cells}`);
   }
 
+  // Fixed column map from googleSheets.ts getFreshVisionShop
+  const fixedMap: Record<string, number> = {
+    biaya_iklan: 3, komisi: 9, closing: 10, botol: 11,
+    nilai: 12, omzet: 13, cac_ads: 14, cac_total: 15, upsell: 16,
+  };
+
+  const cols = resolveColumns(rows, dataRows, dataStart, fixedMap, "SHOP");
+  const iOmzet = cols.omzet ?? -1;
   if (iOmzet === -1) return { shop: [], period: "" };
+
+  const iClosing = cols.closing ?? -1;
+  const iBotol = cols.botol ?? -1;
+  const iNilaiTxn = cols.nilai ?? -1;
+  const iCacAds = cols.cac_ads ?? cols.cac ?? -1;
+  const iCacTotal = cols.cac_total ?? cols.cac ?? -1;
+  const iUpsell = cols.upsell ?? -1;
+  const iBiayaIklan = cols.biaya_iklan ?? -1;
+  const iKomisiAff = cols.komisi ?? -1;
+
+  console.log("[Excel Import] SHOP column indices:", {
+    omzet: iOmzet, closing: iClosing, botol: iBotol, nilai: iNilaiTxn,
+    cac_ads: iCacAds, cac_total: iCacTotal, upsell: iUpsell,
+    biaya_iklan: iBiayaIklan, komisi: iKomisiAff,
+  });
 
   let period = "";
   const shop: HarianRow[] = [];
@@ -374,47 +448,35 @@ function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
       pct_kontribusi_fv: 0,
     });
   }
+  if (shop.length > 0) console.log("[Excel Import] SHOP first row:", shop[0]);
   return { shop, period };
 }
 
-// ─── Parse VIDEO / LIVE / SHOP TAB sheets ───
-// FIXED COLUMNS (from googleSheets.ts getFreshVisionVideo/Live/ShopTab):
-//   A(0)=tanggal, E(4)=closing, F(5)=botol, H(7)=omzet, I(8)=cac, J(9)=upsell
-function parseVideoLiveShopTabSheet(rows: any[][]): ChannelRow[] {
+// ─── Unified channel sheet parser (VIDEO, LIVE, SHOP TAB, AFFILIATE) ───
+function parseChannelSheet(rows: any[][], label: string, fixedMap: Record<string, number>): ChannelRow[] {
   const { dataRows, dataStart } = getDateRows(rows);
   if (!dataRows.length) return [];
 
-  // Try fixed columns first
-  const useFixed = colHasData(dataRows, 7); // col H = omzet
-
-  let iOmzet: number, iClosing: number, iBotol: number, iCac: number, iUpsell: number;
-
-  if (useFixed) {
-    iClosing = 4;  // E
-    iBotol   = 5;  // F
-    iOmzet   = 7;  // H
-    iCac     = 8;  // I
-    iUpsell  = 9;  // J
-  } else {
-    const findCol = buildColFinder(rows, dataStart);
-    iOmzet = findCol(["omzet", "omset"]);
-    iClosing = findCol(["closing"]);
-    iBotol = findCol(["botol", "bottle", "qty"]);
-    iCac = findCol(["cac"]);
-    iUpsell = findCol(["upsell", "up sell"]);
-
-    if (iOmzet === -1) {
-      const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
-      let best = -1, bestSum = 0;
-      for (let c = 1; c < maxC; c++) {
-        let s = 0;
-        for (const r of dataRows.slice(0, 10)) { if (r?.[c]) s += Math.abs(cleanRp(r[c])); }
-        if (s > bestSum) { bestSum = s; best = c; }
-      }
-      iOmzet = best;
-    }
+  // Log header rows for debugging
+  for (let i = 0; i < Math.min(dataStart, 4); i++) {
+    const r = rows[i] || [];
+    const cells = r.slice(0, 15).map((c: any, j: number) => `[${j}]=${c ?? ""}`).join(" | ");
+    console.log(`[Excel Import] ${label} header row ${i}: ${cells}`);
   }
-  if (iOmzet === -1) return [];
+
+  const cols = resolveColumns(rows, dataRows, dataStart, fixedMap, label);
+  const iOmzet = cols.omzet ?? -1;
+  if (iOmzet === -1) {
+    console.warn(`[Excel Import] ${label}: could not find omzet column!`);
+    return [];
+  }
+
+  const iClosing = cols.closing ?? -1;
+  const iBotol = cols.botol ?? -1;
+  const iCac = cols.cac_ads ?? cols.cac ?? -1;
+  const iUpsell = cols.upsell ?? -1;
+
+  console.log(`[Excel Import] ${label} final columns:`, { omzet: iOmzet, closing: iClosing, botol: iBotol, cac: iCac, upsell: iUpsell });
 
   const result: ChannelRow[] = [];
   for (const r of dataRows) {
@@ -432,106 +494,94 @@ function parseVideoLiveShopTabSheet(rows: any[][]): ChannelRow[] {
       cac_total: iCac >= 0 ? cleanPct(r[iCac]) : 0,
     });
   }
-  return result;
-}
 
-// ─── Parse AFFILIATE sheet (different column layout!) ───
-// FIXED COLUMNS (from googleSheets.ts getFreshVisionAffiliate):
-//   A(0)=tanggal, C(2)=closing, D(3)=botol, F(5)=omzet, G(6)=cac, H(7)=upsell
-function parseAffiliateSheet(rows: any[][]): ChannelRow[] {
-  const { dataRows, dataStart } = getDateRows(rows);
-  if (!dataRows.length) return [];
-
-  // Try fixed columns first
-  const useFixed = colHasData(dataRows, 5); // col F = omzet
-
-  let iOmzet: number, iClosing: number, iBotol: number, iCac: number, iUpsell: number;
-
-  if (useFixed) {
-    iClosing = 2;  // C
-    iBotol   = 3;  // D
-    iOmzet   = 5;  // F
-    iCac     = 6;  // G
-    iUpsell  = 7;  // H
-  } else {
-    const findCol = buildColFinder(rows, dataStart);
-    iOmzet = findCol(["omzet", "omset"]);
-    iClosing = findCol(["closing"]);
-    iBotol = findCol(["botol", "bottle", "qty"]);
-    iCac = findCol(["cac"]);
-    iUpsell = findCol(["upsell", "up sell"]);
-
-    if (iOmzet === -1) {
-      const maxC = Math.max(...dataRows.map((r) => r?.length || 0), 0);
-      let best = -1, bestSum = 0;
-      for (let c = 1; c < maxC; c++) {
-        let s = 0;
-        for (const r of dataRows.slice(0, 10)) { if (r?.[c]) s += Math.abs(cleanRp(r[c])); }
-        if (s > bestSum) { bestSum = s; best = c; }
-      }
-      iOmzet = best;
-    }
-  }
-  if (iOmzet === -1) return [];
-
-  const result: ChannelRow[] = [];
-  for (const r of dataRows) {
-    const { dateStr } = cleanDate(r[0]);
-    if (!dateStr) continue;
-    const omzet = cleanRp(r[iOmzet]);
-    if (omzet <= 0) continue;
-    result.push({
-      tanggal: dateStr,
-      omzet,
-      closing: iClosing >= 0 ? cleanInt(r[iClosing]) : 0,
-      botol: iBotol >= 0 ? cleanInt(r[iBotol]) : 0,
-      upsell: iUpsell >= 0 ? cleanDecimal(r[iUpsell]) : 1,
-      cac_ads: iCac >= 0 ? cleanPct(r[iCac]) : 0,
-      cac_total: iCac >= 0 ? cleanPct(r[iCac]) : 0,
-    });
+  if (result.length > 0) {
+    console.log(`[Excel Import] ${label} first row:`, result[0]);
+    const totalOmzet = result.reduce((a, r) => a + r.omzet, 0);
+    console.log(`[Excel Import] ${label} total omzet: ${totalOmzet.toLocaleString()}, rows: ${result.length}`);
   }
   return result;
 }
 
 // ─── Parse EVALUASI sheet ───
-// FIXED COLUMNS (from googleSheets.ts getEvaluasiHarian):
-//   A(0)=tanggal, col 175=etawaku, 256=freshmag, 273=nutriflakes, 322=freshvision, 339=total
 interface EvalRow {
   tanggal: string; omzet_freshvision: number; omzet_nutriflakes: number;
   omzet_freshmag: number; omzet_etawaku: number; omzet_total: number;
 }
 function parseEvaluasiSheet(rows: any[][]): EvalRow[] {
   const { dataRows, dataStart } = getDateRows(rows);
-  if (!dataRows.length) return [];
+  if (!dataRows.length) {
+    console.log("[Excel Import] EVALUASI: no date rows found");
+    return [];
+  }
 
-  // Try fixed Google Sheets column indices FIRST (highest reliability)
-  const hasWideData = dataRows.some((r) => r.length > 339);
+  const maxCols = Math.max(...dataRows.map(r => r?.length || 0));
+  console.log(`[Excel Import] EVALUASI: ${dataRows.length} data rows, dataStart=${dataStart}, maxCols=${maxCols}`);
 
-  const result: EvalRow[] = [];
-  if (hasWideData) {
+  // Strategy 1: Fixed wide-column indices (col 175=etawaku, 256=freshmag, 273=nutriflakes, 322=freshvision, 339=total)
+  if (maxCols > 339) {
+    const result: EvalRow[] = [];
     for (const r of dataRows) {
       const { dateStr } = cleanDate(r[0]);
       if (!dateStr) continue;
-      const omzet_freshvision = cleanRp(r[322]);
-      const omzet_nutriflakes = cleanRp(r[273]);
-      const omzet_freshmag = cleanRp(r[256]);
-      const omzet_etawaku = cleanRp(r[175]);
       const omzet_total = cleanRp(r[339]);
       if (omzet_total > 0) {
-        result.push({ tanggal: dateStr, omzet_freshvision, omzet_nutriflakes, omzet_freshmag, omzet_etawaku, omzet_total });
+        result.push({
+          tanggal: dateStr, omzet_freshvision: cleanRp(r[322]),
+          omzet_nutriflakes: cleanRp(r[273]), omzet_freshmag: cleanRp(r[256]),
+          omzet_etawaku: cleanRp(r[175]), omzet_total,
+        });
       }
     }
-    if (result.length > 0) return result;
+    if (result.length > 0) {
+      console.log("[Excel Import] EVALUASI: used fixed wide-column indices, rows:", result.length);
+      if (result.length > 0) console.log("[Excel Import] EVALUASI first row:", result[0]);
+      return result;
+    }
   }
 
-  // Fallback: scan headers for brand column names
-  const findCol = buildColFinder(rows, dataStart);
-  const iFV = findCol(["freshvision", "fresh vision"]);
-  const iNF = findCol(["nutriflakes", "nutri flakes"]);
-  const iFM = findCol(["freshmag", "fresh mag"]);
-  const iET = findCol(["etawaku", "eta waku"]);
-  const iTotal = findCol(["total", "grand total"]);
+  // Strategy 2: Scan ALL header rows for brand names
+  const brandCols: Record<string, number> = {};
+  const brandKW: [string, string[]][] = [
+    ["freshvision", ["freshvision", "fresh vision", "fv"]],
+    ["nutriflakes", ["nutriflakes", "nutri flakes"]],
+    ["freshmag", ["freshmag", "fresh mag"]],
+    ["etawaku", ["etawaku", "eta waku"]],
+  ];
+  for (let i = 0; i < dataStart; i++) {
+    const row = rows[i] || [];
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j] ?? "").toLowerCase().trim();
+      if (!cell) continue;
+      for (const [brand, kws] of brandKW) {
+        if (!(brand in brandCols) && kws.some((k) => cell.includes(k))) brandCols[brand] = j;
+      }
+      if (!("total" in brandCols) && (cell === "total" || cell.includes("grand total") || cell === "total keseluruhan")) {
+        brandCols["total"] = j;
+      }
+    }
+  }
+  console.log("[Excel Import] EVALUASI brand anchor columns:", brandCols);
 
+  // For each brand anchor, find the column with the highest monetary values nearby
+  function findOmzetNear(anchor: number): number {
+    let bestCol = anchor, bestSum = 0;
+    for (let c = anchor; c < Math.min(anchor + 6, maxCols); c++) {
+      let sum = 0;
+      for (const r of dataRows.slice(0, 5)) { const v = cleanRp(r?.[c]); if (v > 10000) sum += v; }
+      if (sum > bestSum) { bestSum = sum; bestCol = c; }
+    }
+    return bestSum > 0 ? bestCol : anchor;
+  }
+
+  const iFV = brandCols.freshvision !== undefined ? findOmzetNear(brandCols.freshvision) : -1;
+  const iNF = brandCols.nutriflakes !== undefined ? findOmzetNear(brandCols.nutriflakes) : -1;
+  const iFM = brandCols.freshmag !== undefined ? findOmzetNear(brandCols.freshmag) : -1;
+  const iET = brandCols.etawaku !== undefined ? findOmzetNear(brandCols.etawaku) : -1;
+  const iTotal = brandCols.total !== undefined ? findOmzetNear(brandCols.total) : -1;
+  console.log("[Excel Import] EVALUASI omzet columns:", { fv: iFV, nf: iNF, fm: iFM, et: iET, total: iTotal });
+
+  const result: EvalRow[] = [];
   for (const r of dataRows) {
     const { dateStr } = cleanDate(r[0]);
     if (!dateStr) continue;
@@ -539,11 +589,16 @@ function parseEvaluasiSheet(rows: any[][]): EvalRow[] {
     const omzet_nutriflakes = iNF >= 0 ? cleanRp(r[iNF]) : 0;
     const omzet_freshmag = iFM >= 0 ? cleanRp(r[iFM]) : 0;
     const omzet_etawaku = iET >= 0 ? cleanRp(r[iET]) : 0;
-    const omzet_total = iTotal >= 0 ? cleanRp(r[iTotal]) : 0;
+    let omzet_total = iTotal >= 0 ? cleanRp(r[iTotal]) : 0;
+    if (omzet_total <= 0 && (omzet_freshvision > 0 || omzet_nutriflakes > 0)) {
+      omzet_total = omzet_freshvision + omzet_nutriflakes + omzet_freshmag + omzet_etawaku;
+    }
     if (omzet_total > 0) {
       result.push({ tanggal: dateStr, omzet_freshvision, omzet_nutriflakes, omzet_freshmag, omzet_etawaku, omzet_total });
     }
   }
+  if (result.length > 0) console.log("[Excel Import] EVALUASI first row:", result[0]);
+  else console.warn("[Excel Import] EVALUASI: no valid rows found!");
   return result;
 }
 
@@ -695,23 +750,27 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
 
         console.log("[Excel Import] Sheets found:", wb.SheetNames);
 
-        // ─── Find & parse each sheet like the live API ───
-        const shopRows = findSheet(wb, SHEET_PATTERNS.SHOP);
-        const videoRows = findSheet(wb, SHEET_PATTERNS.VIDEO);
-        const liveRows = findSheet(wb, SHEET_PATTERNS.LIVE);
-        const shopTabRows = findSheet(wb, SHEET_PATTERNS.SHOP_TAB);
-        const affiliateRows = findSheet(wb, SHEET_PATTERNS.AFFILIATE);
-        const evaluasiRows = findSheet(wb, SHEET_PATTERNS.EVALUASI);
+        // ─── Find each sheet — SHOP excludes "shop tab" to avoid false match ───
+        const shopMatch = findSheet(wb, SHEET_PATTERNS.SHOP, ["shop tab"]);
+        const videoMatch = findSheet(wb, SHEET_PATTERNS.VIDEO);
+        const liveMatch = findSheet(wb, SHEET_PATTERNS.LIVE);
+        const shopTabMatch = findSheet(wb, SHEET_PATTERNS.SHOP_TAB);
+        const affiliateMatch = findSheet(wb, SHEET_PATTERNS.AFFILIATE);
+        const evaluasiMatch = findSheet(wb, SHEET_PATTERNS.EVALUASI);
 
         console.log("[Excel Import] Matched sheets:", {
-          shop: !!shopRows, video: !!videoRows, live: !!liveRows,
-          shopTab: !!shopTabRows, affiliate: !!affiliateRows, evaluasi: !!evaluasiRows,
+          shop: shopMatch?.name ?? "NOT FOUND",
+          video: videoMatch?.name ?? "NOT FOUND",
+          live: liveMatch?.name ?? "NOT FOUND",
+          shopTab: shopTabMatch?.name ?? "NOT FOUND",
+          affiliate: affiliateMatch?.name ?? "NOT FOUND",
+          evaluasi: evaluasiMatch?.name ?? "NOT FOUND",
         });
 
         // Parse SHOP (required) — try named sheet first, else try first/largest sheet
         let shopResult: { shop: HarianRow[]; period: string };
-        if (shopRows) {
-          shopResult = parseShopSheet(shopRows);
+        if (shopMatch) {
+          shopResult = parseShopSheet(shopMatch.rows);
         } else {
           // Fallback: try all sheets, pick the one with most data
           let best: { shop: HarianRow[]; period: string } = { shop: [], period: "" };
@@ -730,12 +789,20 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
           return;
         }
 
-        // Parse channels — each with correct column layout
-        const video = videoRows ? parseVideoLiveShopTabSheet(videoRows) : [];
-        const live = liveRows ? parseVideoLiveShopTabSheet(liveRows) : [];
-        const shopTab = shopTabRows ? parseVideoLiveShopTabSheet(shopTabRows) : [];
-        const affiliate = affiliateRows ? parseAffiliateSheet(affiliateRows) : [];
-        const evaluasi = evaluasiRows ? parseEvaluasiSheet(evaluasiRows) : [];
+        // Fixed column maps per channel type (from googleSheets.ts)
+        const videoLiveShopTabFixed: Record<string, number> = {
+          closing: 4, botol: 5, omzet: 7, cac: 8, upsell: 9,
+        };
+        const affiliateFixed: Record<string, number> = {
+          closing: 2, botol: 3, omzet: 5, cac: 6, upsell: 7,
+        };
+
+        // Parse channels — each with correct fixed map fallback
+        const video = videoMatch ? parseChannelSheet(videoMatch.rows, "VIDEO", videoLiveShopTabFixed) : [];
+        const live = liveMatch ? parseChannelSheet(liveMatch.rows, "LIVE", videoLiveShopTabFixed) : [];
+        const shopTab = shopTabMatch ? parseChannelSheet(shopTabMatch.rows, "SHOP_TAB", videoLiveShopTabFixed) : [];
+        const affiliate = affiliateMatch ? parseChannelSheet(affiliateMatch.rows, "AFFILIATE", affiliateFixed) : [];
+        const evaluasi = evaluasiMatch ? parseEvaluasiSheet(evaluasiMatch.rows) : [];
 
         console.log("[Excel Import] Parsed rows:", {
           shop: shopResult.shop.length, video: video.length, live: live.length,
@@ -745,12 +812,15 @@ function parseImportedExcel(file: File): Promise<ImportResult> {
         // Build full response — same as API route
         const response = buildFullApiResponse(shopResult.shop, video, live, shopTab, affiliate, evaluasi);
 
-        console.log("[Excel Import] Summary:", {
+        console.log("[Excel Import] Final Summary:", {
           omzet: response.summary.total_omzet,
           closing: response.summary.total_closing,
           botol: response.summary.total_botol,
           biayaIklan: response.summary.total_biaya_iklan,
           komisiAff: response.summary.total_komisi_aff,
+          evaluasiRows: evaluasi.length,
+          brandFV: response.evaluasi_per_brand.freshvision,
+          brandTotal: response.evaluasi_per_brand.total,
         });
 
         resolve({ response, period: shopResult.period });
