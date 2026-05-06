@@ -18,7 +18,7 @@ const TG_API = 'https://api.telegram.org';
 export async function sendTelegramMessage(
   config: TelegramConfig,
   message: string,
-  parseMode: 'Markdown' | 'HTML' = 'Markdown'
+  parseMode: 'Markdown' | 'HTML' = 'HTML'
 ): Promise<{ success: boolean; error?: string }> {
   if (!config.enabled) {
     return { success: false, error: 'Telegram notifications disabled' };
@@ -52,6 +52,50 @@ export async function sendTelegramMessage(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Network error';
     console.error('[Telegram] Error:', msg);
+    return { success: false, error: msg };
+  }
+}
+
+export async function sendTelegramDocument(
+  config: TelegramConfig,
+  fileBuffer: Buffer,
+  filename: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!config.enabled) {
+    return { success: false, error: 'Telegram notifications disabled' };
+  }
+  if (!config.botToken || !config.chatId) {
+    return { success: false, error: 'Bot token atau Chat ID belum diisi' };
+  }
+
+  const url = `${TG_API}/bot${config.botToken}/sendDocument`;
+
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', config.chatId);
+    formData.append('document', new Blob([new Uint8Array(fileBuffer)]), filename);
+    if (caption) {
+      formData.append('caption', caption);
+      formData.append('parse_mode', 'HTML');
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data: TelegramResponse = await res.json();
+
+    if (!data.ok) {
+      console.error('[Telegram] Send document failed:', data.description);
+      return { success: false, error: data.description || 'Gagal kirim dokumen' };
+    }
+
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Network error';
+    console.error('[Telegram] Document error:', msg);
     return { success: false, error: msg };
   }
 }

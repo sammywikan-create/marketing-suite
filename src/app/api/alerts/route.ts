@@ -60,7 +60,7 @@ export async function PUT(req: NextRequest) {
 
     // Send test message if chatId provided
     if (chatId) {
-      const testMsg = `✅ *Test Alert Berhasil!*\n\nBot @${botResult.botName} terhubung ke chat ini.\nAlert otomatis dari Marketing Suite akan dikirim ke sini.`;
+      const testMsg = `\u2705 <b>Test Alert Berhasil!</b>\n\nBot @${botResult.botName} terhubung ke chat ini.\nAlert otomatis dari Marketing Suite akan dikirim ke sini.`;
       const sendResult = await sendTelegramMessage(
         { botToken, chatId, enabled: true },
         testMsg,

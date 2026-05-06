@@ -214,25 +214,23 @@ function fR(v: number): string {
 export function formatAlertForTelegram(alerts: AlertResult[], period?: string): string {
   if (alerts.length === 0) return '';
 
-  const header = `🚨 *ALERT LAPORAN HARIAN*${period ? ` — ${period}` : ''}\n${'─'.repeat(30)}\n\n`;
-
   const criticals = alerts.filter(a => a.severity === 'critical');
   const warnings = alerts.filter(a => a.severity === 'warning');
 
-  let msg = header;
+  let msg = `🚨 <b>ALERT LAPORAN HARIAN</b>${period ? ` - ${period}` : ''}\n${'─'.repeat(20)}\n\n`;
 
   if (criticals.length > 0) {
-    msg += `🔴 *CRITICAL (${criticals.length}):*\n`;
+    msg += `🔴 <b>CRITICAL (${criticals.length}):</b>\n`;
     criticals.forEach(a => { msg += `${a.message}\n\n`; });
   }
 
   if (warnings.length > 0) {
-    msg += `🟡 *WARNING (${warnings.length}):*\n`;
+    msg += `🟡 <b>WARNING (${warnings.length}):</b>\n`;
     warnings.forEach(a => { msg += `${a.message}\n\n`; });
   }
 
   msg += `─────────────────\n📅 ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\n`;
-  msg += `💡 _Cek dashboard untuk detail lengkap_`;
+  msg += `💡 <i>Cek dashboard untuk detail lengkap</i>`;
 
   return msg;
 }
