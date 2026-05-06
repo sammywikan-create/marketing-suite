@@ -14,7 +14,7 @@ interface TelegramResponse {
 
 const TG_API = 'https://api.telegram.org';
 
-function getTelegramBotToken(): string {
+export function getTelegramBotToken(): string {
   return process.env.TELEGRAM_BOT_TOKEN || '';
 }
 

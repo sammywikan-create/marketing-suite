@@ -27,6 +27,7 @@ import * as XLSX from "xlsx";
 import AIInsightsCard from "@/components/AIInsightsCard";
 import AlertPanel from "@/components/alerts/AlertPanel";
 import ReportButton from "@/components/reports/ReportButton";
+import TelegramQuickActions from "@/components/telegram/TelegramQuickActions";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -1617,6 +1618,7 @@ function OverviewTab({
             target={target}
             period={periodKey}
           />
+          <TelegramQuickActions />
           <ReportButton
             summary={s}
             target={target}
