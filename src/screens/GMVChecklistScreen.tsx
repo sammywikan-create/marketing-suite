@@ -57,23 +57,63 @@ function getStatusStyle(status: CheckStatus) {
 export default function GMVChecklistScreen() {
   const [weekly, setWeekly] = useState<CheckItem[]>([]);
   const [monthly, setMonthly] = useState<CheckItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setWeekly(parsed.weekly || weeklyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
-        setMonthly(parsed.monthly || monthlyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
-        return;
-      }
-    } catch { /* ignore */ }
-    setWeekly(weeklyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
-    setMonthly(monthlyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
+    loadChecklist();
   }, []);
 
-  function save(w: CheckItem[], m: CheckItem[]) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ weekly: w, monthly: m }));
+  async function loadChecklist() {
+    try {
+      const res = await fetch('/api/gmv-checklist');
+      const data = await res.json();
+      if (data.weekly && data.weekly.length > 0) {
+        setWeekly(data.weekly.map((item: any) => ({
+          id: item.item_id,
+          label: item.item_text,
+          status: item.completed ? "BAIK" as CheckStatus : "BELUM" as CheckStatus,
+        })));
+      } else {
+        setWeekly(weeklyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
+      }
+      if (data.monthly && data.monthly.length > 0) {
+        setMonthly(data.monthly.map((item: any) => ({
+          id: item.item_id,
+          label: item.item_text,
+          status: item.completed ? "BAIK" as CheckStatus : "BELUM" as CheckStatus,
+        })));
+      } else {
+        setMonthly(monthlyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
+      }
+    } catch {
+      setWeekly(weeklyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
+      setMonthly(monthlyDefaults.map(d => ({ ...d, status: "BELUM" as CheckStatus })));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function save(w: CheckItem[], m: CheckItem[]) {
+    try {
+      await fetch('/api/gmv-checklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekly: w.map(item => ({
+            item_id: item.id,
+            item_text: item.label,
+            completed: item.status === "BAIK",
+          })),
+          monthly: m.map(item => ({
+            item_id: item.id,
+            item_text: item.label,
+            completed: item.status === "BAIK",
+          })),
+        }),
+      });
+    } catch {
+      console.error('Failed to save checklist to Supabase');
+    }
   }
 
   function updateWeekly(id: string, status: CheckStatus) {

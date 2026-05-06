@@ -149,10 +149,10 @@ function useTarget(period?: string) {
   const loadTarget = useCallback(async () => {
     try {
       const currentPeriod = period || new Date().toISOString().slice(0, 7);
-      const res = await fetch(`/api/target?period=${currentPeriod}`);
+      const res = await fetch(`/api/target?period=${currentPeriod}&type=omzet`);
       const data = await res.json();
-      if (data.target_omzet !== undefined) {
-        setTargetState(data.target_omzet);
+      if (data.target_value !== undefined) {
+        setTargetState(data.target_value);
       }
     } catch {
       // Fallback to default
@@ -172,7 +172,7 @@ function useTarget(period?: string) {
       await fetch('/api/target', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ period: currentPeriod, target_omzet: v }),
+        body: JSON.stringify({ period: currentPeriod, target_value: v, type: 'omzet' }),
       });
     } catch {
       console.error('Failed to save target to Supabase');

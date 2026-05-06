@@ -91,11 +91,12 @@ export async function GET() {
     if (supabase) {
       const { data: targetData, error: targetError } = await supabase
         .from('target_settings')
-        .select('target_omzet')
+        .select('target_value')
         .eq('period', currentPeriod)
+        .eq('type', 'omzet')
         .single();
       if (!targetError && targetData) {
-        target = targetData.target_omzet;
+        target = targetData.target_value;
       }
     }
 

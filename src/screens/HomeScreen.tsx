@@ -142,14 +142,22 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return prevGMV > 0 ? ((agg.totalGMV - prevGMV) / prevGMV) * 100 : null;
   }, [prevPeriod, allAffiliateData, agg.totalGMV]);
 
-  // ─── TARGET (localStorage) ──────────────────────────────
-  const getTarget = useCallback((period: string) => {
-    if (typeof window === "undefined") return 0;
-    return Number(localStorage.getItem(`target_gmv_${period}`) || 0);
+  // ─── TARGET (Supabase) ──────────────────────────────
+  const getTarget = useCallback(async (period: string) => {
+    try {
+      const res = await fetch(`/api/target?period=${period}&type=gmv`);
+      const data = await res.json();
+      return data.target_value || 0;
+    } catch {
+      return 0;
+    }
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const targetGMV = useMemo(() => getTarget(activePeriod), [activePeriod, targetVersion, getTarget]);
+  const [targetGMV, setTargetGMV] = useState(0);
+
+  useEffect(() => {
+    getTarget(activePeriod).then(setTargetGMV);
+  }, [activePeriod, targetVersion, getTarget]);
   const targetProgress = targetGMV > 0 ? (agg.totalGMV / targetGMV) * 100 : 0;
   const targetRemaining = Math.max(0, targetGMV - agg.totalGMV);
 
@@ -952,10 +960,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                 className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button
-                onClick={() => {
+                onClick={async () => {
                   const val = Number(targetInput);
                   if (val > 0) {
-                    localStorage.setItem(`target_gmv_${activePeriod}`, String(val));
+                    await fetch('/api/target', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ period: activePeriod, target_value: val, type: 'gmv' }),
+                    });
                     setShowTargetForm(false);
                     setTargetInput("");
                     setTargetVersion((v) => v + 1);
