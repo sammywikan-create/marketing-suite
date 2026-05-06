@@ -15,13 +15,32 @@ function avg<T>(a: T[], fn: (r: T) => number) { return a.length ? sum(a, fn) / a
 function pct(part: number, total: number) { return total > 0 ? parseFloat((part / total * 100).toFixed(2)) : 0; }
 
 function channelSummary(rows: (FVChannelRow | FVShopRow)[]) {
+  const total_omzet = sum(rows, r => r.omzet);
+  const total_closing = sum(rows, r => r.closing);
+  const total_botol = sum(rows, r => r.botol);
+  const total_biaya_iklan = sum(rows, r => r.biaya_iklan);
+  // ROI = Omzet / Cost. Higher = more efficient.
+  const roi = total_biaya_iklan > 0 ? parseFloat((total_omzet / total_biaya_iklan).toFixed(2)) : 0;
+  // Cost per closing = how much we spend per transaction
+  const cost_per_closing = total_closing > 0 ? Math.round(total_biaya_iklan / total_closing) : 0;
+  const cost_per_botol = total_botol > 0 ? Math.round(total_biaya_iklan / total_botol) : 0;
+  // Omzet per closing = average transaction value
+  const omzet_per_closing = total_closing > 0 ? Math.round(total_omzet / total_closing) : 0;
+  // Bottle per closing = upsell efficiency
+  const bottle_per_closing = total_closing > 0 ? parseFloat((total_botol / total_closing).toFixed(2)) : 0;
   return {
-    total_omzet:   sum(rows, r => r.omzet),
-    total_closing: sum(rows, r => r.closing),
-    total_botol:   sum(rows, r => r.botol),
-    rata_upsell:   avg(rows, r => r.upsell),
-    rata_cac:      avg(rows, r => r.cac_total),
-    hari:          rows.length,
+    total_omzet,
+    total_closing,
+    total_botol,
+    total_biaya_iklan,
+    rata_upsell:        avg(rows, r => r.upsell),
+    rata_cac:           avg(rows, r => r.cac_total),
+    hari:               rows.length,
+    roi,
+    cost_per_closing,
+    cost_per_botol,
+    omzet_per_closing,
+    bottle_per_closing,
   };
 }
 

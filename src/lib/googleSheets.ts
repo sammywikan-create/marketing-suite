@@ -95,6 +95,7 @@ export interface FVShopRow {
 export interface FVChannelRow {
   tanggal: string; omzet: number; closing: number; botol: number;
   upsell: number; cac_ads: number; cac_total: number;
+  biaya_iklan: number;  // VIDEO/LIVE/SHOP_TAB: col D (biaya iklan); AFFILIATE: col B (komisi affiliate)
 }
 export interface EvalRow {
   tanggal: string; omzet_freshvision: number; omzet_nutriflakes: number;
@@ -130,13 +131,14 @@ export async function getFreshVisionVideo(): Promise<FVChannelRow[]> {
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:   cleanDate(r[0]),
-      omzet:     cleanRp(r[7]),    // H
-      closing:   cleanInt(r[4]),   // E
-      botol:     cleanInt(r[5]),   // F
-      upsell:    cleanDecimal(r[9]), // J
-      cac_ads:   cleanPct(r[8]),   // I (only one CAC column)
-      cac_total:  cleanPct(r[8]),  // I
+      tanggal:    cleanDate(r[0]),
+      biaya_iklan: cleanRp(r[3]),    // D
+      omzet:      cleanRp(r[7]),     // H
+      closing:    cleanInt(r[4]),    // E
+      botol:      cleanInt(r[5]),    // F
+      upsell:     cleanDecimal(r[9]), // J
+      cac_ads:    cleanPct(r[8]),    // I (only one CAC column)
+      cac_total:  cleanPct(r[8]),    // I
     }))
     .filter(r => r.omzet > 0);
 }
@@ -148,13 +150,14 @@ export async function getFreshVisionLive(): Promise<FVChannelRow[]> {
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:   cleanDate(r[0]),
-      omzet:     cleanRp(r[7]),    // H
-      closing:   cleanInt(r[4]),   // E
-      botol:     cleanInt(r[5]),   // F
-      upsell:    cleanDecimal(r[9]), // J
-      cac_ads:   cleanPct(r[8]),   // I
-      cac_total:  cleanPct(r[8]),  // I
+      tanggal:    cleanDate(r[0]),
+      biaya_iklan: cleanRp(r[3]),    // D
+      omzet:      cleanRp(r[7]),     // H
+      closing:    cleanInt(r[4]),    // E
+      botol:      cleanInt(r[5]),    // F
+      upsell:     cleanDecimal(r[9]), // J
+      cac_ads:    cleanPct(r[8]),    // I
+      cac_total:  cleanPct(r[8]),    // I
     }))
     .filter(r => r.omzet > 0);
 }
@@ -169,13 +172,14 @@ export async function getFreshVisionShopTab(): Promise<FVChannelRow[]> {
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:   cleanDate(r[0]),
-      omzet:     cleanRp(r[7]),      // H
-      closing:   cleanInt(r[4]),     // E
-      botol:     cleanInt(r[5]),     // F
-      upsell:    cleanDecimal(r[9]), // J
-      cac_ads:   cleanPct(r[8]),     // I
-      cac_total: cleanPct(r[8]),     // I
+      tanggal:    cleanDate(r[0]),
+      biaya_iklan: cleanRp(r[3]),    // D
+      omzet:      cleanRp(r[7]),     // H
+      closing:    cleanInt(r[4]),    // E
+      botol:      cleanInt(r[5]),    // F
+      upsell:     cleanDecimal(r[9]), // J
+      cac_ads:    cleanPct(r[8]),    // I
+      cac_total:  cleanPct(r[8]),    // I
     }))
     .filter(r => r.omzet > 0);
 }
@@ -187,13 +191,14 @@ export async function getFreshVisionAffiliate(): Promise<FVChannelRow[]> {
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:   cleanDate(r[0]),
-      omzet:     cleanRp(r[5]),    // F
-      closing:   cleanInt(r[2]),   // C
-      botol:     cleanInt(r[3]),   // D
-      upsell:    cleanDecimal(r[7]), // H
-      cac_ads:   cleanPct(r[6]),   // G
-      cac_total:  cleanPct(r[6]),  // G
+      tanggal:    cleanDate(r[0]),
+      biaya_iklan: cleanRp(r[1]),    // B = komisi affiliate (treated as cost)
+      omzet:      cleanRp(r[5]),     // F
+      closing:    cleanInt(r[2]),    // C
+      botol:      cleanInt(r[3]),    // D
+      upsell:     cleanDecimal(r[7]), // H
+      cac_ads:    cleanPct(r[6]),    // G
+      cac_total:  cleanPct(r[6]),    // G
     }))
     .filter(r => r.omzet > 0);
 }

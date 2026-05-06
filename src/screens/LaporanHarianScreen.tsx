@@ -24,6 +24,7 @@ import {
 } from "@/lib/db";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import AIInsightsCard from "@/components/AIInsightsCard";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -37,10 +38,15 @@ interface HarianRow {
 interface ChannelRow {
   tanggal: string; omzet: number; closing: number; botol: number;
   upsell: number; cac_ads: number; cac_total: number;
+  biaya_iklan: number;
 }
 interface ChannelSummary {
   total_omzet: number; total_closing: number; total_botol: number;
+  total_biaya_iklan: number;
   rata_upsell: number; rata_cac: number; hari: number;
+  roi: number;
+  cost_per_closing: number; cost_per_botol: number;
+  omzet_per_closing: number; bottle_per_closing: number;
 }
 interface WeeklyRow {
   label: string; hari: number; total_omzet: number; total_closing: number;
@@ -96,6 +102,17 @@ function formatPeriod(period: string): string {
 function getCurrentPeriod(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Compute the previous period (YYYY-MM) for MoM comparison.
+// e.g., "2026-02" → "2026-01"; "2026-01" → "2025-12"
+function getPreviousPeriod(period: string): string {
+  if (!/^\d{4}-\d{2}$/.test(period)) return "";
+  const [yStr, mStr] = period.split("-");
+  let year = parseInt(yStr);
+  let month = parseInt(mStr) - 1;
+  if (month < 1) { month = 12; year -= 1; }
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 function detectPeriodFromData(data: ApiResponse | null | undefined): string {
@@ -336,6 +353,7 @@ function parseVideoLiveShopTabSheet(rows: any[][], label: string): ChannelRow[] 
     if (omzet <= 0) continue;
     result.push({
       tanggal: dateStr,
+      biaya_iklan: cleanRp(r[3]),       // D
       omzet,                            // H
       closing:   cleanInt(r[4]),        // E
       botol:     cleanInt(r[5]),        // F
@@ -365,6 +383,7 @@ function parseAffiliateSheet(rows: any[][]): ChannelRow[] {
     if (omzet <= 0) continue;
     result.push({
       tanggal: dateStr,
+      biaya_iklan: cleanRp(r[1]),       // B = komisi affiliate (treated as cost)
       omzet,                            // F
       closing:   cleanInt(r[2]),        // C
       botol:     cleanInt(r[3]),        // D
@@ -628,14 +647,26 @@ function buildFullApiResponse(
   }
 
   // Channel summaries (same as API route channelSummary)
-  const chanSum = (rows: (ChannelRow | HarianRow)[]): ChannelSummary => ({
-    total_omzet: sum(rows, (r) => r.omzet),
-    total_closing: sum(rows, (r) => r.closing),
-    total_botol: sum(rows, (r) => r.botol),
-    rata_upsell: avg(rows, (r) => r.upsell),
-    rata_cac: avg(rows, (r) => r.cac_total),
-    hari: rows.length,
-  });
+  const chanSum = (rows: (ChannelRow | HarianRow)[]): ChannelSummary => {
+    const total_omzet = sum(rows, (r) => r.omzet);
+    const total_closing = sum(rows, (r) => r.closing);
+    const total_botol = sum(rows, (r) => r.botol);
+    const total_biaya_iklan = sum(rows, (r) => r.biaya_iklan);
+    return {
+      total_omzet,
+      total_closing,
+      total_botol,
+      total_biaya_iklan,
+      rata_upsell: avg(rows, (r) => r.upsell),
+      rata_cac: avg(rows, (r) => r.cac_total),
+      hari: rows.length,
+      roi: total_biaya_iklan > 0 ? parseFloat((total_omzet / total_biaya_iklan).toFixed(2)) : 0,
+      cost_per_closing: total_closing > 0 ? Math.round(total_biaya_iklan / total_closing) : 0,
+      cost_per_botol: total_botol > 0 ? Math.round(total_biaya_iklan / total_botol) : 0,
+      omzet_per_closing: total_closing > 0 ? Math.round(total_omzet / total_closing) : 0,
+      bottle_per_closing: total_closing > 0 ? parseFloat((total_botol / total_closing).toFixed(2)) : 0,
+    };
+  };
 
   // Highlights (same as API route)
   const sorted = [...shop].sort((a, b) => b.omzet - a.omzet);
@@ -844,6 +875,10 @@ export default function LaporanHarianScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const { target, setTarget } = useTarget();
 
+  // ─── MoM comparison: previous month's data ───
+  const [prevMonthData, setPrevMonthData] = useState<ApiResponse | null>(null);
+  const [prevMonthPeriod, setPrevMonthPeriod] = useState<string>("");
+
   // ─── Load saved periods list ───
   useEffect(() => {
     listLaporanHarianPeriods()
@@ -988,6 +1023,32 @@ export default function LaporanHarianScreen() {
   const isLive = selectedPeriod === "live";
   const activeData = isLive ? liveData : savedData;
 
+  // ─── Auto-load previous month for MoM comparison ───
+  useEffect(() => {
+    if (!activeData?.summary) {
+      setPrevMonthData(null);
+      setPrevMonthPeriod("");
+      return;
+    }
+    const currentPeriod = isLive ? detectPeriodFromData(activeData) : selectedPeriod;
+    const prevPeriod = getPreviousPeriod(currentPeriod);
+    if (!prevPeriod) {
+      setPrevMonthData(null);
+      setPrevMonthPeriod("");
+      return;
+    }
+    if (prevPeriod === prevMonthPeriod && prevMonthData) return; // already loaded
+    loadLaporanHarianData(prevPeriod)
+      .then((d) => {
+        setPrevMonthData(d);
+        setPrevMonthPeriod(prevPeriod);
+      })
+      .catch(() => {
+        setPrevMonthData(null);
+        setPrevMonthPeriod(prevPeriod);
+      });
+  }, [activeData, isLive, selectedPeriod, prevMonthPeriod, prevMonthData]);
+
   if (isLoading && isLive) return <LoadingState />;
   if (isLoadingSaved) return <LoadingState />;
   if (isLive && (error || !liveData?.summary)) return <ErrorState error={error} data={liveData} onRetry={() => mutate()} />;
@@ -1097,7 +1158,7 @@ export default function LaporanHarianScreen() {
       {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
-      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} />
+      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} />
 
       {/* ═══ TAB BAR ═══ */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
@@ -1110,7 +1171,17 @@ export default function LaporanHarianScreen() {
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
-      {activeTab === "overview" && <OverviewTab s={s} target={target} harian={harian} evaluasi={evaluasi_per_brand} />}
+      {activeTab === "overview" && (
+        <OverviewTab
+          s={s}
+          target={target}
+          harian={harian}
+          evaluasi={evaluasi_per_brand}
+          snapshot={data}
+          prevSnapshot={prevMonthData}
+          periodKey={isLive ? detectPeriodFromData(data) : selectedPeriod}
+        />
+      )}
       {activeTab === "cost" && <CostTab s={s} harian={harian} />}
       {activeTab === "channels" && <ChannelsTab channels={channels} channelData={channel_data} />}
       {activeTab === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} />}
@@ -1382,12 +1453,34 @@ function SettingsModal({ target, onSave, onClose }: { target: number; onSave: (v
 // ═══════════════════════════════════════════════════════════
 // EXECUTIVE SUMMARY
 // ═══════════════════════════════════════════════════════════
-function ExecutiveSummary({ s, target, health, highlights }: { s: Summary; target: number; health: { score: number; label: string; color: string }; highlights: Highlights }) {
+// ─── MoM helper: compute % delta safely ───
+// Returns null when previous value is 0 (can't compute %).
+// Higher-is-better sets the color; for inverse metrics (CAC) flip with isInverse.
+function pctDelta(curr: number, prev: number): number | null {
+  if (!prev || prev === 0) return null;
+  return parseFloat((((curr - prev) / prev) * 100).toFixed(1));
+}
+
+function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMonthPeriod }: { s: Summary; target: number; health: { score: number; label: string; color: string }; highlights: Highlights; prevMonthData?: ApiResponse | null; prevMonthPeriod?: string }) {
   const pctTarget = (s.total_omzet / target) * 100;
   const sisaTarget = Math.max(0, target - s.total_omzet);
   const sisaHari = Math.max(1, 30 - s.hari);
   const needPerDay = sisaTarget / sisaHari;
   const onTrack = s.avg_omzet_harian >= (target / 30);
+
+  // ─── MoM deltas (only computed when prev data exists & has summary) ───
+  const prev = prevMonthData?.summary;
+  const deltas = prev ? {
+    omzet:   pctDelta(s.total_omzet, prev.total_omzet),
+    avgDay:  pctDelta(s.avg_omzet_harian, prev.avg_omzet_harian),
+    botol:   pctDelta(s.total_botol, prev.total_botol),
+    nilai:   pctDelta(s.nilai_per_txn, prev.nilai_per_txn),
+    upsell:  pctDelta(s.rata_upsell, prev.rata_upsell),
+    cac:     pctDelta(s.rata_cac, prev.rata_cac),
+    roas:    pctDelta(s.roas, prev.roas),
+  } : null;
+
+  const prevLabel = prevMonthPeriod ? `vs ${formatPeriod(prevMonthPeriod).split(" ")[0]}` : "";
 
   const alerts: { type: "success" | "warning" | "danger"; text: string }[] = [];
   if (pctTarget >= 100) alerts.push({ type: "success", text: "🎉 Target bulanan sudah tercapai!" });
@@ -1397,6 +1490,17 @@ function ExecutiveSummary({ s, target, health, highlights }: { s: Summary; targe
   if (s.rata_cac > 60) alerts.push({ type: "danger", text: `🔴 CAC ${s.rata_cac.toFixed(1)}% terlalu tinggi — evaluasi spending iklan` });
   if (s.rata_upsell < 1.1) alerts.push({ type: "danger", text: `🔴 Upsell ${s.rata_upsell.toFixed(2)}x sangat rendah — push bundling/promo` });
   if (s.roas < 2.5) alerts.push({ type: "warning", text: `⚠️ ROAS ${s.roas.toFixed(1)}x rendah — iklan kurang efisien` });
+
+  // MoM-driven alerts (only when delta available)
+  if (deltas?.omzet != null && deltas.omzet <= -10) {
+    alerts.push({ type: "warning", text: `📉 Omzet turun ${Math.abs(deltas.omzet)}% ${prevLabel} — investigasi penyebabnya` });
+  }
+  if (deltas?.cac != null && deltas.cac >= 15) {
+    alerts.push({ type: "danger", text: `🔴 CAC naik ${deltas.cac}% ${prevLabel} — biaya akuisisi makin mahal` });
+  }
+  if (deltas?.omzet != null && deltas.omzet >= 20) {
+    alerts.push({ type: "success", text: `🚀 Omzet naik ${deltas.omzet}% ${prevLabel} — pertahankan momentum!` });
+  }
 
   if (highlights.anomalies.length > 0) {
     highlights.anomalies.forEach((a) => {
@@ -1419,15 +1523,22 @@ function ExecutiveSummary({ s, target, health, highlights }: { s: Summary; targe
             style={{ width: `${Math.min(pctTarget, 100)}%` }} />
         </div>
       </div>
+      {/* MoM badge */}
+      {deltas && (
+        <div className="flex items-center gap-2 text-[11px] text-gray-500">
+          <span className="font-medium">Bandingkan:</span>
+          <span className="bg-gray-50 px-2 py-0.5 rounded border">{prevLabel}</span>
+        </div>
+      )}
       {/* KPI Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <MiniKpi label="Omzet" value={fR(s.total_omzet)} sub={`${s.hari} hari`} />
-        <MiniKpi label="Avg/Hari" value={fR(s.avg_omzet_harian)} sub={`${fN(s.avg_closing_harian)} closing`} />
-        <MiniKpi label="Botol" value={fN(s.total_botol)} sub={`~${fN(s.avg_botol_harian)}/hari`} />
-        <MiniKpi label="Nilai/Txn" value={fR(s.nilai_per_txn)} sub={`${fN(s.total_closing)} txn`} />
-        <MiniKpi label="Upsell" value={`${s.rata_upsell.toFixed(2)}x`} sub={s.rata_upsell >= 1.3 ? "🟢 Baik" : s.rata_upsell >= 1.1 ? "🟡 Cukup" : "🔴 Rendah"} />
-        <MiniKpi label="CAC" value={`${s.rata_cac.toFixed(1)}%`} sub={s.rata_cac <= 50 ? "🟢 Efisien" : s.rata_cac <= 60 ? "🟡 Normal" : "🔴 Tinggi"} />
-        <MiniKpi label="ROAS" value={`${s.roas.toFixed(1)}x`} sub={s.roas >= 4 ? "🟢 Excellent" : s.roas >= 3 ? "🟡 OK" : "🔴 Low"} />
+        <MiniKpi label="Omzet" value={fR(s.total_omzet)} sub={`${s.hari} hari`} delta={deltas?.omzet} />
+        <MiniKpi label="Avg/Hari" value={fR(s.avg_omzet_harian)} sub={`${fN(s.avg_closing_harian)} closing`} delta={deltas?.avgDay} />
+        <MiniKpi label="Botol" value={fN(s.total_botol)} sub={`~${fN(s.avg_botol_harian)}/hari`} delta={deltas?.botol} />
+        <MiniKpi label="Nilai/Txn" value={fR(s.nilai_per_txn)} sub={`${fN(s.total_closing)} txn`} delta={deltas?.nilai} />
+        <MiniKpi label="Upsell" value={`${s.rata_upsell.toFixed(2)}x`} sub={s.rata_upsell >= 1.3 ? "🟢 Baik" : s.rata_upsell >= 1.1 ? "🟡 Cukup" : "🔴 Rendah"} delta={deltas?.upsell} />
+        <MiniKpi label="CAC" value={`${s.rata_cac.toFixed(1)}%`} sub={s.rata_cac <= 50 ? "🟢 Efisien" : s.rata_cac <= 60 ? "🟡 Normal" : "🔴 Tinggi"} delta={deltas?.cac} isInverse />
+        <MiniKpi label="ROAS" value={`${s.roas.toFixed(1)}x`} sub={s.roas >= 4 ? "🟢 Excellent" : s.roas >= 3 ? "🟡 OK" : "🔴 Low"} delta={deltas?.roas} />
       </div>
       {/* Alerts */}
       {alerts.length > 0 && (
@@ -1448,12 +1559,24 @@ function ExecutiveSummary({ s, target, health, highlights }: { s: Summary; targe
     </div>
   );
 }
-function MiniKpi({ label, value, sub }: { label: string; value: string; sub: string }) {
+function MiniKpi({ label, value, sub, delta, isInverse }: { label: string; value: string; sub: string; delta?: number | null; isInverse?: boolean }) {
+  // For inverse metrics (CAC), down is good. For normal metrics, up is good.
+  const isUp = delta != null && delta > 0;
+  const isDown = delta != null && delta < 0;
+  const isPositive = isInverse ? isDown : isUp;
+  const isNegative = isInverse ? isUp : isDown;
+  const deltaColor = isPositive ? "text-green-600" : isNegative ? "text-red-600" : "text-gray-400";
+  const arrow = isUp ? "↑" : isDown ? "↓" : "—";
   return (
     <div className="text-center">
       <div className="text-[10px] text-gray-400 font-medium">{label}</div>
       <div className="text-sm font-bold text-gray-900 mt-0.5">{value}</div>
       <div className="text-[10px] text-gray-400">{sub}</div>
+      {delta != null && (
+        <div className={`text-[10px] font-semibold mt-0.5 ${deltaColor}`}>
+          {arrow} {Math.abs(delta)}%
+        </div>
+      )}
     </div>
   );
 }
@@ -1461,9 +1584,29 @@ function MiniKpi({ label, value, sub }: { label: string; value: string; sub: str
 // ═══════════════════════════════════════════════════════════
 // OVERVIEW TAB
 // ═══════════════════════════════════════════════════════════
-function OverviewTab({ s, target, harian, evaluasi }: { s: Summary; target: number; harian: HarianRow[]; evaluasi: EvaluasiPerBrand }) {
+function OverviewTab({
+  s, target, harian, evaluasi,
+  snapshot, prevSnapshot, periodKey,
+}: {
+  s: Summary;
+  target: number;
+  harian: HarianRow[];
+  evaluasi: EvaluasiPerBrand;
+  snapshot?: ApiResponse;
+  prevSnapshot?: ApiResponse | null;
+  periodKey?: string;
+}) {
   return (
     <div className="space-y-5">
+      {/* AI Insights — top of overview for visibility */}
+      {snapshot && periodKey && (
+        <AIInsightsCard
+          snapshot={snapshot}
+          prevSnapshot={prevSnapshot ?? undefined}
+          target={target}
+          periodKey={periodKey}
+        />
+      )}
       {/* Executive Report */}
       <ExecutiveReport s={s} target={target} harian={harian} />
       {/* Heatmap Calendar */}
@@ -1675,29 +1818,108 @@ function ChannelsTab({ channels, channelData }: { channels: Record<string, Chann
     fill: CH_META[k]?.color || "#94a3b8",
   }));
 
+  // ROI threshold colors: >5x = excellent, >3x = good, >2x = ok, <2x = low
+  const roiColor = (roi: number) => {
+    if (roi >= 5) return { bg: "bg-green-50", text: "text-green-700", border: "border-green-200" };
+    if (roi >= 3) return { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" };
+    if (roi >= 2) return { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" };
+    return { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" };
+  };
+
+  // Find best channel by ROI for highlighting
+  const channelsArr = Object.entries(channels).map(([k, c]) => ({ key: k, ...c }));
+  const validRoi = channelsArr.filter(c => c.roi > 0);
+  const bestRoiKey = validRoi.length > 0 ? validRoi.reduce((a, b) => a.roi > b.roi ? a : b).key : null;
+
   return (
     <div className="space-y-5">
+      {/* ═══ Channel cards with ROI ═══ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {Object.entries(channels).map(([k, c]) => {
           const meta = CH_META[k];
           const pct = totalAll > 0 ? ((c.total_omzet / totalAll) * 100).toFixed(1) : "0";
+          const roiC = roiColor(c.roi);
+          const isBest = k === bestRoiKey;
           return (
-            <div key={k} className="bg-white rounded-2xl border p-4">
+            <div key={k} className={`bg-white rounded-2xl border p-4 relative ${isBest ? "ring-2 ring-green-400 ring-offset-1" : ""}`}>
+              {isBest && <div className="absolute -top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">BEST ROI</div>}
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-1.5 rounded-lg" style={{ backgroundColor: meta.color + "15", color: meta.color }}>{meta.icon}</div>
                 <span className="text-sm font-semibold text-gray-700">{meta.label}</span>
               </div>
               <div className="text-lg font-bold text-gray-900">{fR(c.total_omzet)}</div>
               <div className="text-[10px] text-gray-400 mb-2">{pct}% · {c.hari} hari</div>
+              {/* ROI badge */}
+              {c.total_biaya_iklan > 0 && (
+                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold mb-2 ${roiC.bg} ${roiC.text} ${roiC.border}`}>
+                  ROI {c.roi.toFixed(2)}x
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
                 <div><span className="text-gray-400">Closing</span> <strong>{fN(c.total_closing)}</strong></div>
                 <div><span className="text-gray-400">Botol</span> <strong>{fN(c.total_botol)}</strong></div>
                 <div><span className="text-gray-400">Upsell</span> <strong>{c.rata_upsell.toFixed(2)}x</strong></div>
                 <div><span className="text-gray-400">CAC</span> <strong>{c.rata_cac.toFixed(1)}%</strong></div>
+                <div><span className="text-gray-400">Avg Trx</span> <strong>{fR(c.omzet_per_closing)}</strong></div>
+                <div><span className="text-gray-400">Btl/Cls</span> <strong>{c.bottle_per_closing.toFixed(2)}</strong></div>
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* ═══ Efficiency Comparison Table ═══ */}
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <Zap size={16} className="text-amber-500" />
+          Channel Efficiency Ranking
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left">
+                <th className="p-2">Channel</th>
+                <th className="p-2 text-right">Omzet</th>
+                <th className="p-2 text-right">Iklan/Komisi</th>
+                <th className="p-2 text-right">ROI</th>
+                <th className="p-2 text-right">Cost/Closing</th>
+                <th className="p-2 text-right">Cost/Botol</th>
+                <th className="p-2 text-right">Avg Trx</th>
+                <th className="p-2 text-right">Btl/Cls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...channelsArr].sort((a, b) => b.roi - a.roi).map((c) => {
+                const meta = CH_META[c.key] || { label: c.key, color: "#94a3b8" };
+                const roiC = roiColor(c.roi);
+                return (
+                  <tr key={c.key} className="border-b hover:bg-gray-50">
+                    <td className="p-2 font-medium" style={{ color: meta.color }}>{meta.label}</td>
+                    <td className="p-2 text-right">{fR(c.total_omzet)}</td>
+                    <td className="p-2 text-right text-gray-500">{fR(c.total_biaya_iklan)}</td>
+                    <td className="p-2 text-right">
+                      {c.total_biaya_iklan > 0 ? (
+                        <span className={`inline-block px-1.5 py-0.5 rounded font-bold ${roiC.bg} ${roiC.text}`}>
+                          {c.roi.toFixed(2)}x
+                        </span>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="p-2 text-right">{c.cost_per_closing > 0 ? fR(c.cost_per_closing) : "—"}</td>
+                    <td className="p-2 text-right">{c.cost_per_botol > 0 ? fR(c.cost_per_botol) : "—"}</td>
+                    <td className="p-2 text-right">{fR(c.omzet_per_closing)}</td>
+                    <td className="p-2 text-right">{c.bottle_per_closing.toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 text-[10px] text-gray-400 leading-relaxed">
+          <span className="inline-block w-3 h-3 rounded bg-green-100 border border-green-200 align-middle mr-1"></span>ROI ≥5x (Excellent)
+          <span className="inline-block w-3 h-3 rounded bg-blue-100 border border-blue-200 align-middle mr-1 ml-3"></span>ROI ≥3x (Good)
+          <span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-200 align-middle mr-1 ml-3"></span>ROI ≥2x (OK)
+          <span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-200 align-middle mr-1 ml-3"></span>ROI &lt;2x (Low)
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border p-5">
