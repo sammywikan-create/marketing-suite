@@ -6,7 +6,7 @@ import { useAIStore } from "@/store/useAIStore";
 
 interface AIInsightsCardProps {
   // Snapshot of current period's data — passed by parent
-  snapshot: unknown;
+  snapshot: unknown | null;
   // Optional previous month snapshot for MoM analysis
   prevSnapshot?: unknown;
   // Target for current period
@@ -78,22 +78,33 @@ export default function AIInsightsCard({ snapshot, prevSnapshot, target, periodK
   const [error, setError] = useState<string | null>(null);
 
   const generate = useCallback(async () => {
+    if (!snapshot) {
+      setError("Data belum tersedia. Tunggu data laporan harian dimuat.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
+      console.log('[AIInsightsCard] Generating insight...');
+      console.log('[AIInsightsCard] Provider:', aiSettings.provider, 'Model:', aiSettings.provider === 'ollama' ? aiSettings.ollamaModel : aiSettings.geminiModel);
       const res = await fetch("/api/ai-insights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ snapshot, prevSnapshot, target, settings: aiSettings }),
       });
       const data = await res.json();
+      console.log('[AIInsightsCard] Response status:', res.status, 'content length:', data.content?.length || 0);
       if (!res.ok) throw new Error(data.error || "Gagal generate insight");
+      if (!data.content || data.content.trim().length === 0) {
+        throw new Error("AI memberikan respons kosong. Coba generate ulang atau ganti model.");
+      }
       setInsight(data.content);
       const now = Date.now();
       setGeneratedAt(now);
       saveCached(periodKey, data.content);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal generate insight AI";
+      console.error('[AIInsightsCard] Error:', msg);
       setError(msg);
     } finally {
       setIsLoading(false);

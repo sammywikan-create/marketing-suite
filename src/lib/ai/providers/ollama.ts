@@ -14,20 +14,27 @@ export async function callOllama(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (isCloud) {
     const key = apiKey || process.env.OLLAMA_API_KEY
-    if (!key) throw new Error('OLLAMA_API_KEY tidak ditemukan')
+    if (!key) throw new Error('OLLAMA_API_KEY tidak ditemukan. Masukkan API key di Settings > Ollama > Cloud.')
     headers['Authorization'] = `Bearer ${key}`
   }
+
+  const allMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages,
+  ]
+
+  console.log('[Ollama] Calling:', url, 'model:', model, 'mode:', mode)
+  console.log('[Ollama] Messages count:', allMessages.length, 'system prompt length:', systemPrompt.length)
+  console.log('[Ollama] User message length:', messages[0]?.content?.length || 0)
 
   const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
+      messages: allMessages,
       stream: false,
+      think: false,
       options: {
         temperature,
         num_predict: maxTokens,
@@ -37,14 +44,53 @@ export async function callOllama(
 
   if (!response.ok) {
     const err = await response.text()
+    console.error('[Ollama] API error:', response.status, err)
     throw new Error(isCloud
-      ? `Ollama Cloud error: ${err}. Pastikan OLLAMA_API_KEY sudah benar.`
-      : `Ollama error: ${err}. Pastikan Ollama sudah berjalan di ${baseUrl}`
+      ? `Ollama Cloud error (${response.status}): ${err.slice(0, 200)}`
+      : `Ollama error (${response.status}): ${err.slice(0, 200)}. Pastikan Ollama berjalan di ${baseUrl}`
     )
   }
 
-  const data = await response.json()
-  return data.message?.content || 'Tidak ada respons dari Ollama.'
+  const rawText = await response.text()
+  console.log('[Ollama] Raw response length:', rawText.length)
+
+  let data: any
+  try {
+    data = JSON.parse(rawText)
+  } catch {
+    // Some Ollama responses may be NDJSON (streamed lines) even with stream:false
+    // Try to parse the last complete JSON line
+    const lines = rawText.trim().split('\n').filter(l => l.trim())
+    let lastMessage = ''
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line)
+        if (parsed.message?.content) {
+          lastMessage += parsed.message.content
+        }
+      } catch { /* skip non-JSON lines */ }
+    }
+    if (lastMessage) {
+      console.log('[Ollama] Parsed NDJSON content length:', lastMessage.length)
+      return lastMessage
+    }
+    console.error('[Ollama] Failed to parse response:', rawText.slice(0, 500))
+    throw new Error('Gagal parse respons dari Ollama.')
+  }
+
+  console.log('[Ollama] Response done:', data.done, 'done_reason:', data.done_reason)
+  console.log('[Ollama] Message keys:', data.message ? Object.keys(data.message) : 'no message')
+  console.log('[Ollama] Content length:', data.message?.content?.length || 0)
+  console.log('[Ollama] Thinking length:', data.message?.thinking?.length || 0)
+
+  // Try content first, then thinking (some models use thinking mode)
+  const content = data.message?.content || data.message?.thinking || data.response || ''
+  if (!content || content.trim().length === 0) {
+    console.error('[Ollama] Empty response. Full data:', JSON.stringify(data).slice(0, 1000))
+    throw new Error('Ollama memberikan respons kosong. Coba model lain atau tingkatkan max tokens.')
+  }
+
+  return content
 }
 
 export async function getOllamaModels(

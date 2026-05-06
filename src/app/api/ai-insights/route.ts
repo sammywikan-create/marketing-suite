@@ -94,16 +94,17 @@ function buildPrompt(snapshot: Snapshot, prev?: Snapshot, target?: number): stri
   if (target) prompt += `- Target bulan ini: ${fR(target)} (pencapaian ${(s.total_omzet / target * 100).toFixed(1)}%)\n`;
 
   // Channel block
-  if (snapshot.channels) {
+  if (snapshot.channels && Object.keys(snapshot.channels).length > 0) {
     prompt += `\n## Performa Per Channel\n`;
     Object.entries(snapshot.channels).forEach(([key, c]) => {
+      if (!c) return;
       prompt += `\n### ${key.toUpperCase()}\n`;
-      prompt += `- Omzet: ${fR(c.total_omzet)}\n`;
-      prompt += `- Biaya Iklan/Komisi: ${fR(c.total_biaya_iklan)}\n`;
-      prompt += `- ROI: ${c.roi.toFixed(2)}x\n`;
-      prompt += `- Closing: ${c.total_closing} | Botol: ${c.total_botol}\n`;
-      prompt += `- CAC: ${c.rata_cac.toFixed(1)}% | Cost/Closing: ${fR(c.cost_per_closing)}\n`;
-      prompt += `- Avg Trx: ${fR(c.omzet_per_closing)} | Btl/Cls: ${c.bottle_per_closing.toFixed(2)}\n`;
+      prompt += `- Omzet: ${fR(c.total_omzet || 0)}\n`;
+      prompt += `- Biaya Iklan/Komisi: ${fR(c.total_biaya_iklan || 0)}\n`;
+      prompt += `- ROI: ${(c.roi || 0).toFixed(2)}x\n`;
+      prompt += `- Closing: ${c.total_closing || 0} | Botol: ${c.total_botol || 0}\n`;
+      prompt += `- CAC: ${(c.rata_cac || 0).toFixed(1)}% | Cost/Closing: ${fR(c.cost_per_closing || 0)}\n`;
+      prompt += `- Avg Trx: ${fR(c.omzet_per_closing || 0)} | Btl/Cls: ${(c.bottle_per_closing || 0).toFixed(2)}\n`;
     });
   }
 
@@ -153,11 +154,58 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { snapshot, prevSnapshot, target, settings } = body;
 
+    console.log('[AI-Insights] Request received');
+    console.log('[AI-Insights] Has snapshot:', !!snapshot);
+    console.log('[AI-Insights] Has snapshot.summary:', !!snapshot?.summary);
+    console.log('[AI-Insights] Provider:', settings?.provider);
+
     if (!snapshot?.summary || !settings) {
+      console.error('[AI-Insights] Missing data:', { hasSnapshot: !!snapshot, hasSummary: !!snapshot?.summary, hasSettings: !!settings });
       return NextResponse.json({ error: 'Missing snapshot.summary or settings' }, { status: 400 });
     }
 
-    const userPrompt = buildPrompt(snapshot, prevSnapshot, target);
+    // Transform ApiResponse to Snapshot format for buildPrompt
+    const transformedSnapshot: Snapshot = {
+      period: snapshot.period || undefined,
+      summary: {
+        total_omzet: snapshot.summary.total_omzet || 0,
+        total_closing: snapshot.summary.total_closing || 0,
+        total_botol: snapshot.summary.total_botol || 0,
+        hari: snapshot.summary.hari || 0,
+        rata_cac: snapshot.summary.rata_cac || 0,
+        rata_upsell: snapshot.summary.rata_upsell || 0,
+        roas: snapshot.summary.roas || 0,
+        total_biaya_iklan: snapshot.summary.total_biaya_iklan || 0,
+        margin_after_cost: snapshot.summary.margin_after_cost || 0,
+        pct_kontribusi_fv: snapshot.summary.pct_kontribusi_fv || 0,
+      },
+      channels: snapshot.channels || {},
+      highlights: snapshot.highlights || undefined,
+      evaluasi_per_brand: snapshot.evaluasi_per_brand || undefined,
+    };
+
+    const transformedPrev: Snapshot | undefined = prevSnapshot?.summary ? {
+      period: prevSnapshot.period || undefined,
+      summary: {
+        total_omzet: prevSnapshot.summary.total_omzet || 0,
+        total_closing: prevSnapshot.summary.total_closing || 0,
+        total_botol: prevSnapshot.summary.total_botol || 0,
+        hari: prevSnapshot.summary.hari || 0,
+        rata_cac: prevSnapshot.summary.rata_cac || 0,
+        rata_upsell: prevSnapshot.summary.rata_upsell || 0,
+        roas: prevSnapshot.summary.roas || 0,
+        total_biaya_iklan: prevSnapshot.summary.total_biaya_iklan || 0,
+        margin_after_cost: prevSnapshot.summary.margin_after_cost || 0,
+        pct_kontribusi_fv: prevSnapshot.summary.pct_kontribusi_fv || 0,
+      },
+      channels: prevSnapshot.channels || {},
+      highlights: prevSnapshot.highlights || undefined,
+      evaluasi_per_brand: prevSnapshot.evaluasi_per_brand || undefined,
+    } : undefined;
+
+    const userPrompt = buildPrompt(transformedSnapshot, transformedPrev, target);
+    console.log('[AI-Insights] Prompt length:', userPrompt.length);
+    console.log('[AI-Insights] Prompt preview:', userPrompt.slice(0, 500));
     const messages = [{ role: 'user' as const, content: userPrompt }];
 
     let content: string;
@@ -176,7 +224,7 @@ export async function POST(req: NextRequest) {
           settings.ollamaModel || 'llama3.2',
           settings.ollamaBaseUrl || 'http://localhost:11434',
           settings.temperature ?? 0.5,
-          settings.maxTokens ?? 1500,
+          Math.max(settings.maxTokens || 2000, 2000),
           settings.ollamaMode || 'local',
           settings.ollamaApiKey,
         );

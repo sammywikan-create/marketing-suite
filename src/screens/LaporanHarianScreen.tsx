@@ -1599,14 +1599,12 @@ function OverviewTab({
   return (
     <div className="space-y-5">
       {/* AI Insights — top of overview for visibility */}
-      {snapshot && periodKey && (
-        <AIInsightsCard
-          snapshot={snapshot}
-          prevSnapshot={prevSnapshot ?? undefined}
-          target={target}
-          periodKey={periodKey}
-        />
-      )}
+      <AIInsightsCard
+        snapshot={snapshot || null}
+        prevSnapshot={prevSnapshot ?? undefined}
+        target={target}
+        periodKey={periodKey || "current"}
+      />
       {/* Executive Report */}
       <ExecutiveReport s={s} target={target} harian={harian} />
       {/* Heatmap Calendar */}
