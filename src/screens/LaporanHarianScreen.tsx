@@ -25,6 +25,7 @@ import {
 import { isSupabaseConfigured } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 import AIInsightsCard from "@/components/AIInsightsCard";
+import AlertPanel from "@/components/alerts/AlertPanel";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -1598,13 +1599,23 @@ function OverviewTab({
 }) {
   return (
     <div className="space-y-5">
-      {/* AI Insights — top of overview for visibility */}
-      <AIInsightsCard
-        snapshot={snapshot || null}
-        prevSnapshot={prevSnapshot ?? undefined}
-        target={target}
-        periodKey={periodKey || "current"}
-      />
+      {/* Alert Monitor & AI Insights */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2">
+          <AIInsightsCard
+            snapshot={snapshot || null}
+            prevSnapshot={prevSnapshot ?? undefined}
+            target={target}
+            periodKey={periodKey || "current"}
+          />
+        </div>
+        <AlertPanel
+          summary={s}
+          harian={harian.map(h => ({ tanggal: h.tanggal, omzet: h.omzet, biaya_iklan: h.biaya_iklan }))}
+          target={target}
+          period={periodKey}
+        />
+      </div>
       {/* Executive Report */}
       <ExecutiveReport s={s} target={target} harian={harian} />
       {/* Heatmap Calendar */}
