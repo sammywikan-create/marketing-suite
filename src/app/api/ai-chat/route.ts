@@ -30,7 +30,8 @@ export async function POST(req: NextRequest) {
           settings.ollamaBaseUrl || 'http://localhost:11434',
           settings.temperature ?? 0.7,
           settings.maxTokens ?? 600,
-          settings.ollamaMode || 'local'
+          settings.ollamaMode || 'local',
+          settings.ollamaApiKey
         )
         break
       case 'openrouter':

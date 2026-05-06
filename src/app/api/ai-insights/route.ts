@@ -178,6 +178,7 @@ export async function POST(req: NextRequest) {
           settings.temperature ?? 0.5,
           settings.maxTokens ?? 1500,
           settings.ollamaMode || 'local',
+          settings.ollamaApiKey,
         );
         break;
       case 'openrouter':

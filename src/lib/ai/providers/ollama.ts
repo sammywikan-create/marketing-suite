@@ -5,16 +5,17 @@ export async function callOllama(
   baseUrl: string = 'http://localhost:11434',
   temperature: number = 0.7,
   maxTokens: number = 600,
-  mode: 'local' | 'cloud' = 'local'
+  mode: 'local' | 'cloud' = 'local',
+  apiKey?: string
 ): Promise<string> {
   const isCloud = mode === 'cloud'
   const url = isCloud ? 'https://ollama.com/api/chat' : `${baseUrl}/api/chat`
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (isCloud) {
-    const apiKey = process.env.OLLAMA_API_KEY
-    if (!apiKey) throw new Error('OLLAMA_API_KEY tidak ditemukan di .env.local')
-    headers['Authorization'] = `Bearer ${apiKey}`
+    const key = apiKey || process.env.OLLAMA_API_KEY
+    if (!key) throw new Error('OLLAMA_API_KEY tidak ditemukan')
+    headers['Authorization'] = `Bearer ${key}`
   }
 
   const response = await fetch(url, {

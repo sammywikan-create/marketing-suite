@@ -143,10 +143,24 @@ export function AISettings({ onClose }: { onClose: () => void }) {
               )}
             </div>
 
+            {/* Cloud-specific: API Key */}
+            {isOllamaCloud && (
+              <>
+                <label className="text-sm font-semibold text-gray-600">Ollama API Key</label>
+                <input
+                  type="password"
+                  value={settings.ollamaApiKey}
+                  onChange={e => updateSettings({ ollamaApiKey: e.target.value })}
+                  className="w-full border rounded-lg p-2 text-sm"
+                  placeholder="Masukkan API key Ollama Cloud"
+                />
+              </>
+            )}
+
             {/* Info text */}
             {isOllamaCloud ? (
               <p className="text-xs text-green-600">
-                💡 Dapatkan API key di: <strong>ollama.com</strong> → tambahkan ke .env.local sebagai OLLAMA_API_KEY
+                💡 Dapatkan API key di: <strong>ollama.com</strong>
               </p>
             ) : (
               <p className="text-xs text-green-600">

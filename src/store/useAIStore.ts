@@ -11,6 +11,7 @@ export interface AISettings {
   ollamaMode: OllamaMode
   ollamaModel: string
   ollamaBaseUrl: string
+  ollamaApiKey: string
   openrouterModel: string
   temperature: number
   maxTokens: number
@@ -45,6 +46,7 @@ export const useAIStore = create<AIStore>()(
         ollamaMode: 'local',
         ollamaModel: 'llama3.2',
         ollamaBaseUrl: 'http://localhost:11434',
+        ollamaApiKey: '',
         openrouterModel: 'google/gemini-flash-1.5',
         temperature: 0.7,
         maxTokens: 600,
