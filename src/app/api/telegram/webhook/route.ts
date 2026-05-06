@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendTelegramMessage, getTelegramBotToken } from '@/lib/alerts/telegram';
 import { formatDailySummary, formatMonthlySummary, formatAlertSummary, formatTargetProgress, formatChannelPerformance } from '@/lib/reports/summaryFormatter';
-import { useAlertStore } from '@/store/useAlertStore';
 
 // Verify webhook secret
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
@@ -32,12 +31,15 @@ export async function POST(req: NextRequest) {
 
     console.log('[Telegram Webhook] Command:', text, 'Chat:', chatId);
 
+    // Use origin for internal fetch
+    const baseUrl = req.nextUrl.origin;
+
     // Handle commands
     let responseMessage = '';
 
     if (text === '/today' || text === '/start') {
       // Fetch current data from Google Sheets
-      const sheetsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/laporan-harian`);
+      const sheetsRes = await fetch(`${baseUrl}/api/laporan-harian`);
       const sheetsData = sheetsRes.ok ? await sheetsRes.json() : null;
 
       if (sheetsData?.summary) {
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
         responseMessage = '<b>❌ Gagal mengambil data</b>\n\nCoba lagi nanti atau cek dashboard.';
       }
     } else if (text === '/month') {
-      const sheetsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/laporan-harian`);
+      const sheetsRes = await fetch(`${baseUrl}/api/laporan-harian`);
       const sheetsData = sheetsRes.ok ? await sheetsRes.json() : null;
 
       if (sheetsData?.summary) {
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
       // Get alert history from store (this won't work server-side, so we'll need a different approach)
       responseMessage = '<b>🔔 ALERT STATUS</b>\n\nGunakan /today untuk melihat ringkasan dengan alert aktif.';
     } else if (text === '/target') {
-      const sheetsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/laporan-harian`);
+      const sheetsRes = await fetch(`${baseUrl}/api/laporan-harian`);
       const sheetsData = sheetsRes.ok ? await sheetsRes.json() : null;
 
       if (sheetsData?.summary) {
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
         responseMessage = '<b>❌ Gagal mengambil data</b>\n\nCoba lagi nanti atau cek dashboard.';
       }
     } else if (text === '/channel') {
-      const sheetsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/laporan-harian`);
+      const sheetsRes = await fetch(`${baseUrl}/api/laporan-harian`);
       const sheetsData = sheetsRes.ok ? await sheetsRes.json() : null;
 
       if (sheetsData?.channels && sheetsData?.summary) {
