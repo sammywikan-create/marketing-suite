@@ -208,7 +208,26 @@ export function formatAlertSummary(alerts: any[]): string {
 
 export function formatTargetProgress(data: SummaryData): string {
   const { summary: s, target, period } = data;
-  const pctTarget = target > 0 ? ((s.total_omzet / target) * 100).toFixed(0) : '0';
+
+  // Handle target yang 0 atau tidak tersedia
+  if (!target || target <= 0) {
+    const lines = [
+      `<b>🎯 TARGET PROGRESS${period ? ` - ${period}` : ''}</b>`,
+      '',
+      `<b>⚠️ TARGET BELUM DISET</b>`,
+      '',
+      `Omzet saat ini: ${fR(s.total_omzet)}`,
+      `Hari ke-${s.hari} dari 30`,
+      `Pace harian: ${fR(s.avg_omzet_harian)}/hari`,
+      '',
+      `<i>Set target di Google Sheets untuk melihat progress.</i>`,
+      '',
+      `<i>Generated at ${new Date().toLocaleString('id-ID')}</i>`,
+    ];
+    return lines.join('\n');
+  }
+
+  const pctTarget = ((s.total_omzet / target) * 100).toFixed(0);
   const remaining = target - s.total_omzet;
   const daysLeft = 30 - s.hari;
   const requiredPace = daysLeft > 0 ? remaining / daysLeft : 0;
