@@ -5,15 +5,21 @@ import { formatDailySummary, formatMonthlySummary, formatAlertSummary, formatTar
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { type, chatId } = body;
+    const { type, chatId: providedChatId } = body;
 
-    if (!type || !chatId) {
-      return NextResponse.json({ error: 'Missing required fields: type, chatId' }, { status: 400 });
+    if (!type) {
+      return NextResponse.json({ error: 'Missing required field: type' }, { status: 400 });
     }
 
     const botToken = getTelegramBotToken();
     if (!botToken) {
       return NextResponse.json({ error: 'TELEGRAM_BOT_TOKEN belum diset' }, { status: 400 });
+    }
+
+    // Use provided chatId or fall back to environment variable
+    const chatId = providedChatId || process.env.TELEGRAM_DEFAULT_CHAT_ID || '';
+    if (!chatId) {
+      return NextResponse.json({ error: 'Chat ID tidak tersedia. Set TELEGRAM_DEFAULT_CHAT_ID di environment variables.' }, { status: 400 });
     }
 
     // Fetch current data from Google Sheets
