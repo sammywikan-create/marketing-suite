@@ -237,14 +237,20 @@ function cleanDate(val: unknown): { dateStr: string; period: string } {
 }
 
 // ─── Sheet name patterns — EXACT same names as googleSheets.ts SHEETS constant ───
+// NOTE: Excel limits sheet names to 31 chars. Long names get TRUNCATED:
+//   "ADV SAEFUL - FRESHVISION(SHOP TAB)" (34) → "ADV SAEFUL - FRESHVISION(SHOP T"
+//   "ADV SAEFUL - FRESHVISION(AFFILIATE)" (35) → "ADV SAEFUL - FRESHVISION(AFFILI"
+//   "ADV SAEFUL - FRESHVISION(LIVE STREAMING)" (40) → "ADV SAEFUL - FRESHVISION(LIVE S"
+//   "ADV SAEFUL - FRESHVISION(PROPORSI TOTAL OMSET)" (47) → "ADV SAEFUL - FRESHVISION(PROPOR"
+// Patterns must match BOTH full + truncated forms.
 const SHEET_PATTERNS = {
-  SHOP:      ["adv saeful- freshvision(shop)", "adv saeful - freshvision(shop)", "freshvision(shop)"],
-  VIDEO:     ["adv saeful - freshvision(video)", "adv saeful- freshvision(video)", "freshvision(video)"],
-  LIVE:      ["adv saeful - freshvision(live streaming)", "adv saeful- freshvision(live streaming)", "freshvision(live"],
-  SHOP_TAB:  ["adv saeful - freshvision(shop tab)", "adv saeful- freshvision(shop tab)", "freshvision(shop tab)"],
-  AFFILIATE: ["adv saeful - freshvision(affiliate)", "adv saeful- freshvision(affiliate)", "freshvision(affiliate)"],
-  PROPORSI:  ["adv saeful - freshvision(proporsi total omset)", "proporsi total omset", "freshvision(proporsi"],
-  EVALUASI:  ["total evaluasi produk (tiktokshop)", "total evaluasi produk", "evaluasi produk"],
+  SHOP:      ["freshvision(shop)"],         // closing paren prevents matching SHOP TAB / SHOP T
+  VIDEO:     ["freshvision(video)"],
+  LIVE:      ["freshvision(live"],          // matches "live streaming)" and truncated "live s"
+  SHOP_TAB:  ["freshvision(shop t"],        // matches "shop tab)" and truncated "shop t"
+  AFFILIATE: ["freshvision(affili"],        // matches "affiliate)" and truncated "affili"
+  PROPORSI:  ["freshvision(propor", "freshvision (propor", "proporsi total omset"],
+  EVALUASI:  ["evaluasi produk"],           // matches "evaluasi produk (tiktokshop)" and truncated
 };
 
 function findSheet(wb: XLSX.WorkBook, patterns: string[], exclude?: string[]): { rows: any[][]; name: string } | null {

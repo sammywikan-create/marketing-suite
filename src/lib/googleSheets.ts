@@ -160,11 +160,10 @@ export async function getFreshVisionLive(): Promise<FVChannelRow[]> {
 }
 
 // ═══ FETCHER 4: FreshVision SHOP TAB ═══
-// Layout TOTAL FRESH VISION SHOP TAB (cols B-J):
-//   B=komponen biaya, C=biaya GMV MAX, D=biaya total,
-//   E=closing, F=botol, G=nilai_per_txn, H=omzet, I=cac, J=upsell
+// Layout TOTAL FRESH VISION SHOP TAB (cols B-J): same as VIDEO/LIVE
+//   D=biaya_iklan, E=closing, F=botol, G=nilai_per_txn, H=omzet, I=cac, J=upsell
 // Sheet juga punya sub-sections FRESH VISION SHOP (K-S) & FRESH VISION OFC (T-AB)
-// tapi kita hanya butuh TOTAL di kolom E-J.
+// tapi kita hanya butuh TOTAL di kolom B-J.
 export async function getFreshVisionShopTab(): Promise<FVChannelRow[]> {
   const rows = await fetchRange(SHEETS.FV_SHOP_TAB, 'A4:J50');
   return rows
