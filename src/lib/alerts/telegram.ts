@@ -3,8 +3,7 @@
  */
 
 export interface TelegramConfig {
-  botToken: string;
-  chatId: string;
+  chatId?: string;
   enabled: boolean;
 }
 
@@ -15,6 +14,14 @@ interface TelegramResponse {
 
 const TG_API = 'https://api.telegram.org';
 
+function getTelegramBotToken(): string {
+  return process.env.TELEGRAM_BOT_TOKEN || '';
+}
+
+function getTelegramChatId(config: TelegramConfig): string {
+  return config.chatId || process.env.TELEGRAM_DEFAULT_CHAT_ID || '';
+}
+
 export async function sendTelegramMessage(
   config: TelegramConfig,
   message: string,
@@ -23,18 +30,23 @@ export async function sendTelegramMessage(
   if (!config.enabled) {
     return { success: false, error: 'Telegram notifications disabled' };
   }
-  if (!config.botToken || !config.chatId) {
-    return { success: false, error: 'Bot token atau Chat ID belum diisi' };
+  const botToken = getTelegramBotToken();
+  const chatId = getTelegramChatId(config);
+  if (!botToken) {
+    return { success: false, error: 'TELEGRAM_BOT_TOKEN belum diset di Vercel Environment Variables' };
+  }
+  if (!chatId) {
+    return { success: false, error: 'Chat ID belum diisi' };
   }
 
-  const url = `${TG_API}/bot${config.botToken}/sendMessage`;
+  const url = `${TG_API}/bot${botToken}/sendMessage`;
 
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: config.chatId,
+        chat_id: chatId,
         text: message,
         parse_mode: parseMode,
         disable_web_page_preview: true,
@@ -65,15 +77,20 @@ export async function sendTelegramDocument(
   if (!config.enabled) {
     return { success: false, error: 'Telegram notifications disabled' };
   }
-  if (!config.botToken || !config.chatId) {
-    return { success: false, error: 'Bot token atau Chat ID belum diisi' };
+  const botToken = getTelegramBotToken();
+  const chatId = getTelegramChatId(config);
+  if (!botToken) {
+    return { success: false, error: 'TELEGRAM_BOT_TOKEN belum diset di Vercel Environment Variables' };
+  }
+  if (!chatId) {
+    return { success: false, error: 'Chat ID belum diisi' };
   }
 
-  const url = `${TG_API}/bot${config.botToken}/sendDocument`;
+  const url = `${TG_API}/bot${botToken}/sendDocument`;
 
   try {
     const formData = new FormData();
-    formData.append('chat_id', config.chatId);
+    formData.append('chat_id', chatId);
     formData.append('document', new Blob([new Uint8Array(fileBuffer)]), filename);
     if (caption) {
       formData.append('caption', caption);
@@ -100,14 +117,13 @@ export async function sendTelegramDocument(
   }
 }
 
-export async function testTelegramConnection(
-  config: TelegramConfig
-): Promise<{ success: boolean; botName?: string; error?: string }> {
-  if (!config.botToken) {
-    return { success: false, error: 'Bot token belum diisi' };
+export async function testTelegramConnection(): Promise<{ success: boolean; botName?: string; error?: string }> {
+  const botToken = getTelegramBotToken();
+  if (!botToken) {
+    return { success: false, error: 'TELEGRAM_BOT_TOKEN belum diset di Vercel Environment Variables' };
   }
 
-  const url = `${TG_API}/bot${config.botToken}/getMe`;
+  const url = `${TG_API}/bot${botToken}/getMe`;
 
   try {
     const res = await fetch(url);

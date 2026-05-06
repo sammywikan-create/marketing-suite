@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { Bell, BellRing, Settings, Trash2, Send, AlertTriangle, CheckCircle } from "lucide-react";
 import { useAlertStore } from "@/store/useAlertStore";
+import type { AlertResult } from "@/lib/alerts/rules";
 import AlertSettings from "./AlertSettings";
 
 interface AlertPanelProps {
@@ -40,7 +41,10 @@ export default function AlertPanel({ summary, harian, target, period }: AlertPan
           target,
           thresholds: settings.thresholds,
           enabledRules: settings.enabledRules,
-          telegram: settings.telegram,
+          telegram: {
+            enabled: settings.telegram.enabled,
+            chatId: settings.telegram.chatId,
+          },
           period,
         }),
       });
@@ -49,7 +53,7 @@ export default function AlertPanel({ summary, harian, target, period }: AlertPan
         setLastChecked(Date.now());
         setLastResult({ count: data.count, telegramSent: data.telegram?.sent || false });
         if (data.alerts?.length > 0) {
-          addToHistory(data.alerts.map((a: any) => ({
+          addToHistory(data.alerts.map((a: AlertResult) => ({
             ...a,
             sentViaTelegram: data.telegram?.sent || false,
             period,
@@ -157,7 +161,7 @@ export default function AlertPanel({ summary, harian, target, period }: AlertPan
           </div>
         ) : (
           <p className="text-xs text-gray-400 text-center py-2">
-            Belum ada alert. Klik "Cek Alert" untuk memulai monitoring.
+            Belum ada alert. Klik &quot;Cek Alert&quot; untuk memulai monitoring.
           </p>
         )}
       </div>

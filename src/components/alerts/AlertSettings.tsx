@@ -16,7 +16,6 @@ export default function AlertSettings({ onClose }: { onClose: () => void }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          botToken: settings.telegram.botToken,
           chatId: settings.telegram.chatId,
         }),
       });
@@ -68,16 +67,11 @@ export default function AlertSettings({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
 
-              <div>
-                <label className="text-xs font-medium text-gray-500">Bot Token</label>
-                <input
-                  type="password"
-                  value={settings.telegram.botToken}
-                  onChange={e => updateTelegram({ botToken: e.target.value })}
-                  placeholder="123456789:ABCdefGHI..."
-                  className="w-full border rounded-lg p-2 text-sm mt-1"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Buat bot di @BotFather di Telegram</p>
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <div className="text-xs font-semibold text-blue-800">Bot Token disimpan di Vercel</div>
+                <p className="text-[11px] text-blue-700 mt-1">
+                  Set environment variable <code>TELEGRAM_BOT_TOKEN</code> di Vercel. Token tidak lagi disimpan di browser.
+                </p>
               </div>
 
               <div>
@@ -94,7 +88,7 @@ export default function AlertSettings({ onClose }: { onClose: () => void }) {
 
               <button
                 onClick={handleTestTelegram}
-                disabled={testStatus.loading || !settings.telegram.botToken}
+                disabled={testStatus.loading}
                 className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-100 disabled:opacity-50 transition"
               >
                 <TestTube size={14} />

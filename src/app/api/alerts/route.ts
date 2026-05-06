@@ -46,14 +46,10 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { botToken, chatId } = body;
-
-    if (!botToken) {
-      return NextResponse.json({ error: 'Bot token required' }, { status: 400 });
-    }
+    const { chatId } = body;
 
     // Test bot connection
-    const botResult = await testTelegramConnection({ botToken, chatId: chatId || '', enabled: true });
+    const botResult = await testTelegramConnection();
     if (!botResult.success) {
       return NextResponse.json({ error: botResult.error }, { status: 400 });
     }
@@ -62,7 +58,7 @@ export async function PUT(req: NextRequest) {
     if (chatId) {
       const testMsg = `\u2705 <b>Test Alert Berhasil!</b>\n\nBot @${botResult.botName} terhubung ke chat ini.\nAlert otomatis dari Marketing Suite akan dikirim ke sini.`;
       const sendResult = await sendTelegramMessage(
-        { botToken, chatId, enabled: true },
+        { chatId, enabled: true },
         testMsg,
       );
       if (!sendResult.success) {

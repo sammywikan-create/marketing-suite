@@ -19,10 +19,19 @@ interface ReportButtonProps {
     nilai_per_txn: number;
   };
   target: number;
-  channels?: Record<string, any>;
-  harian?: any[];
-  evaluasi_per_brand?: any;
-  highlights?: any;
+  channels?: Record<string, {
+    total_omzet: number;
+    total_closing: number;
+    total_botol: number;
+    rata_cac: number;
+    roi: number;
+  }>;
+  harian?: { tanggal: string; omzet: number; closing: number; botol: number; cac_total: number }[];
+  evaluasi_per_brand?: { freshvision: number; nutriflakes: number; freshmag: number; etawaku: number; total: number };
+  highlights?: {
+    best_day?: { tanggal: string; omzet: number } | null;
+    worst_day?: { tanggal: string; omzet: number } | null;
+  };
   aiSummary?: string;
   period?: string;
 }
@@ -58,7 +67,10 @@ export default function ReportButton({
           evaluasi_per_brand,
           highlights,
           aiSummary,
-          telegram: settings.telegram,
+          telegram: {
+            enabled: settings.telegram.enabled,
+            chatId: settings.telegram.chatId,
+          },
         }),
       });
       const data = await res.json();

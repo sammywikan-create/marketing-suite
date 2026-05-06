@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateReportPdf, formatReportCaption, ReportData } from '@/lib/reports/generateReport';
 import { sendTelegramDocument, TelegramConfig } from '@/lib/alerts/telegram';
-import { useAlertStore } from '@/store/useAlertStore';
 
 // POST /api/reports — generate and send PDF report to Telegram
 export async function POST(req: NextRequest) {
@@ -32,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     // Send to Telegram if configured
     let telegramResult = { sent: false, error: '' };
-    if (telegram?.enabled && telegram.botToken && telegram.chatId) {
+    if (telegram?.enabled) {
       const filename = `FreshVision_${type}_${period.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
       const caption = formatReportCaption(reportData);
 

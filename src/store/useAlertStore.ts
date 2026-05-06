@@ -3,7 +3,6 @@ import { persist } from 'zustand/middleware';
 import { AlertThresholds, DEFAULT_THRESHOLDS, AlertResult } from '@/lib/alerts/rules';
 
 export interface TelegramConfig {
-  botToken: string;
   chatId: string;
   enabled: boolean;
 }
@@ -38,7 +37,6 @@ export const useAlertStore = create<AlertState>()(
     (set) => ({
       settings: {
         telegram: {
-          botToken: '',
           chatId: '',
           enabled: false,
         },
@@ -80,6 +78,30 @@ export const useAlertStore = create<AlertState>()(
     }),
     {
       name: 'ms-alert-settings',
+      version: 1,
+      migrate: (persistedState: unknown) => {
+        const state = persistedState as Partial<AlertState>;
+        return {
+          ...state,
+          settings: {
+            ...state.settings,
+            telegram: {
+              chatId: state.settings?.telegram?.chatId || '',
+              enabled: state.settings?.telegram?.enabled || false,
+            },
+          },
+        } as AlertState;
+      },
+      partialize: (state) => ({
+        ...state,
+        settings: {
+          ...state.settings,
+          telegram: {
+            chatId: state.settings.telegram.chatId,
+            enabled: state.settings.telegram.enabled,
+          },
+        },
+      }),
     }
   )
 );
