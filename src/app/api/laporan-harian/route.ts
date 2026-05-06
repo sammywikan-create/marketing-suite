@@ -8,6 +8,7 @@ import {
   getEvaluasiHarian,
 } from '@/lib/googleSheets';
 import type { FVShopRow, FVChannelRow } from '@/lib/googleSheets';
+import { createClient } from '@supabase/supabase-js';
 
 // ─── Utility ───
 function sum<T>(a: T[], fn: (r: T) => number) { return a.reduce((s, r) => s + fn(r), 0); }
@@ -78,6 +79,26 @@ function groupByWeek<T extends { omzet: number; closing: number; botol: number; 
 
 export async function GET() {
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+
+    // Get current period (YYYY-MM)
+    const currentPeriod = new Date().toISOString().slice(0, 7); // e.g., "2026-05"
+
+    // Fetch target from Supabase
+    let target = 0;
+    if (supabase) {
+      const { data: targetData, error: targetError } = await supabase
+        .from('target_settings')
+        .select('target_omzet')
+        .eq('period', currentPeriod)
+        .single();
+      if (!targetError && targetData) {
+        target = targetData.target_omzet;
+      }
+    }
+
     const [shop, video, live, shopTab, affiliate, evaluasi] = await Promise.all([
       getFreshVisionShop(),
       getFreshVisionVideo(),
@@ -185,6 +206,8 @@ export async function GET() {
         worst_day: worstDay ? { tanggal: worstDay.tanggal, omzet: worstDay.omzet } : null,
         anomalies,
       },
+      target,
+      period: currentPeriod,
     });
   } catch (err) {
     console.error('[laporan-harian]', err);

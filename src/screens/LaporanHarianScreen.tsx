@@ -142,17 +142,44 @@ function detectPeriodFromData(data: ApiResponse | null | undefined): string {
   return getCurrentPeriod();
 }
 
-function useTarget() {
+function useTarget(period?: string) {
   const [target, setTargetState] = useState(350_000_000);
+  const [loading, setLoading] = useState(true);
+
+  const loadTarget = useCallback(async () => {
+    try {
+      const currentPeriod = period || new Date().toISOString().slice(0, 7);
+      const res = await fetch(`/api/target?period=${currentPeriod}`);
+      const data = await res.json();
+      if (data.target_omzet !== undefined) {
+        setTargetState(data.target_omzet);
+      }
+    } catch {
+      // Fallback to default
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
+
   useEffect(() => {
-    const saved = localStorage.getItem("fv_target_omzet");
-    if (saved) setTargetState(parseInt(saved));
-  }, []);
-  const setTarget = useCallback((v: number) => {
+    loadTarget();
+  }, [loadTarget]);
+
+  const setTarget = useCallback(async (v: number) => {
     setTargetState(v);
-    localStorage.setItem("fv_target_omzet", String(v));
-  }, []);
-  return { target, setTarget };
+    try {
+      const currentPeriod = period || new Date().toISOString().slice(0, 7);
+      await fetch('/api/target', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period: currentPeriod, target_omzet: v }),
+      });
+    } catch {
+      console.error('Failed to save target to Supabase');
+    }
+  }, [period]);
+
+  return { target, setTarget, loading };
 }
 
 // ═══════════════════════════════════════════════════════════
