@@ -10,11 +10,6 @@ export default function TelegramQuickActions() {
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const sendSummary = async (type: 'today' | 'month' | 'alert' | 'target' | 'channel') => {
-    if (!settings.telegram.enabled || !settings.telegram.chatId) {
-      setResult({ success: false, message: 'Telegram belum diaktifkan atau Chat ID belum diisi' });
-      return;
-    }
-
     setSending(type);
     setResult(null);
     try {
@@ -23,7 +18,7 @@ export default function TelegramQuickActions() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type,
-          chatId: settings.telegram.chatId,
+          chatId: settings.telegram.chatId || '', // Empty string to use environment default
         }),
       });
       const data = await res.json();
@@ -75,15 +70,9 @@ export default function TelegramQuickActions() {
         ))}
       </div>
 
-      {settings.telegram.enabled ? (
-        <div className="mt-2 text-[10px] text-green-600 flex items-center gap-1">
-          <CheckCircle size={10} /> Telegram aktif — Chat ID: {settings.telegram.chatId.slice(0, 5)}***
-        </div>
-      ) : (
-        <div className="mt-2 text-[10px] text-red-500 flex items-center gap-1">
-          <XCircle size={10} /> Telegram belum diaktifkan
-        </div>
-      )}
+      <div className="mt-2 text-[10px] text-green-600 flex items-center gap-1">
+        <CheckCircle size={10} /> Telegram aktif via Environment Variables
+      </div>
 
       {result && (
         <div className={`mt-2 text-xs p-2 rounded ${result.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
