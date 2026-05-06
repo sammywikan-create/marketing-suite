@@ -22,11 +22,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Chat ID tidak tersedia. Set TELEGRAM_DEFAULT_CHAT_ID di environment variables.' }, { status: 400 });
     }
 
-    // Fetch current data from Google Sheets
-    const sheetsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/laporan-harian`);
+    // Fetch current data from Google Sheets (use relative URL for server-side fetch)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    const sheetsRes = await fetch(`${baseUrl}/api/laporan-harian`);
     const sheetsData = sheetsRes.ok ? await sheetsRes.json() : null;
 
     if (!sheetsData?.summary) {
+      console.error('[Telegram Summary] Failed to fetch laporan-harian:', sheetsRes.status);
       return NextResponse.json({ error: 'Gagal mengambil data dari Google Sheets' }, { status: 500 });
     }
 
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
         break;
       case 'alert':
         // Evaluate alerts first
-        const alertsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/alerts`, {
+        const alertsRes = await fetch(`${baseUrl}/api/alerts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
