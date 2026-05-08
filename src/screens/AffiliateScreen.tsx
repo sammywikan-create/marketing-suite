@@ -406,6 +406,35 @@ export default function AffiliateScreen() {
               </button>
             ))}
           </div>
+          <button
+            onClick={async () => {
+              if (!activeStore?.id) return;
+              setIsLoadingCreators(true);
+              try {
+                // Pull latest summary + creators from Supabase so viewers on other
+                // devices see uploads made elsewhere without needing a full reload.
+                await useStoreManager.getState().loadAffiliateFromSupabase(activeStore.id);
+                const period = selectedPeriod !== "all"
+                  ? (selectedPeriod.split(" ~ ")[0]?.slice(0, 7) || selectedPeriod)
+                  : undefined;
+                const plt = platformFilter !== "all" ? platformFilter : undefined;
+                const fresh = await loadAffiliateCreators(activeStore.id, period, plt);
+                setSupabaseCreators(fresh);
+              } catch (err: any) {
+                if (err?.message !== '__SUPABASE_NOT_CONFIGURED__') {
+                  console.error("Refresh failed:", err);
+                }
+              } finally {
+                setIsLoadingCreators(false);
+              }
+            }}
+            disabled={isLoadingCreators || !activeStore?.id}
+            className="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            title="Ambil data terbaru dari server (device lain)"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoadingCreators ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
           {!combinedMode && <UploadButton onUpload={handleUpload} isUploading={isUploading} />}
         </div>
       </div>
