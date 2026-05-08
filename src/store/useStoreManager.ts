@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 import type { Store, BusinessOverviewData, VideoPerformanceData, AffiliateMonthData, AffiliateTarget } from '@/lib/types'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import {
   createStore as dbCreateStore,
   updateStoreDb,
@@ -19,11 +20,17 @@ if (typeof window !== 'undefined') {
   try { localStorage.removeItem('gmv-store-manager') } catch { /* ignore */ }
 }
 
+// Tracks the progress of the Supabase sync that runs on app startup.
+// 'pending': still loading; 'done': success; 'offline': Supabase not configured or fetch failed.
+// The UI uses this to avoid showing SetupScreen before we know if Supabase already has stores.
+export type SupabaseInitStatus = 'pending' | 'done' | 'offline'
+
 interface StoreManagerState {
   stores: Store[]
   activeStoreId: string | null
   migrated: boolean
   _supabaseReady: boolean
+  _supabaseInitStatus: SupabaseInitStatus
 
   // Store CRUD (async — creates in Supabase first)
   addStore: (name: string, color: string, avatar: string) => Promise<string>
@@ -62,6 +69,7 @@ export const useStoreManager = create<StoreManagerState>()(
       activeStoreId: null,
       migrated: false,
       _supabaseReady: false,
+      _supabaseInitStatus: 'pending',
 
       // ─── STORE CRUD ──────────────────────────────────
       addStore: async (name, color, avatar) => {
@@ -278,39 +286,98 @@ export const useStoreManager = create<StoreManagerState>()(
         })),
 
       // ─── INIT FROM SUPABASE ────────────────────────────
+      // Source of truth for store list is Supabase. This function:
+      //   1. Merges Supabase stores into local Zustand state
+      //   2. Deduplicates local-only stores (created before Supabase sync finished)
+      //      that match a Supabase store by name — remapping their data to the
+      //      canonical Supabase ID so affiliate uploads don't get orphaned.
+      //   3. Ensures activeStoreId points to a valid store after sync.
       initFromSupabase: async () => {
+        if (!isSupabaseConfigured) {
+          set({ _supabaseInitStatus: 'offline' })
+          return
+        }
         try {
           const dbStores = await dbGetStores()
-          if (dbStores.length > 0) {
-            set((state) => {
-              // Merge: keep local stores, add Supabase stores that don't exist locally
-              const localIds = new Set(state.stores.map((s) => s.id))
-              const newStores = dbStores
-                .filter((ds) => !localIds.has(ds.id))
-                .map((ds) => ({
-                  id: ds.id,
-                  name: ds.name,
-                  color: ds.color,
-                  avatar: ds.avatar,
-                  createdAt: ds.created_at,
-                  gmvData: {},
-                  overviewData: [],
-                  videoData: [],
-                  affiliateData: [],
-                } as Store))
+          set((state) => {
+            // Build a lookup of Supabase stores by normalized name for dedup
+            const supabaseById = new Map(dbStores.map((ds) => [ds.id, ds]))
+            const supabaseByName = new Map(
+              dbStores.map((ds) => [ds.name.trim().toLowerCase(), ds]),
+            )
+
+            // Start with merged list of Supabase stores (canonical)
+            const mergedStores: Store[] = dbStores.map((ds) => {
+              // Prefer existing local entry (keeps its gmvData / videoData / overviewData in memory)
+              const local = state.stores.find((s) => s.id === ds.id)
+              if (local) {
+                return { ...local, name: ds.name, color: ds.color, avatar: ds.avatar }
+              }
               return {
-                stores: [...state.stores, ...newStores],
-                _supabaseReady: true,
+                id: ds.id,
+                name: ds.name,
+                color: ds.color,
+                avatar: ds.avatar,
+                createdAt: ds.created_at,
+                gmvData: {},
+                overviewData: [],
+                videoData: [],
+                affiliateData: [],
               }
             })
-          } else {
-            set({ _supabaseReady: true })
-          }
+
+            // Remap orphaned local stores: a local store whose ID is NOT in Supabase
+            // but whose name matches a Supabase store — transfer its cached data.
+            const orphans = state.stores.filter((s) => !supabaseById.has(s.id))
+            for (const orphan of orphans) {
+              const match = supabaseByName.get(orphan.name.trim().toLowerCase())
+              if (match) {
+                // Merge orphan's data into canonical store
+                const idx = mergedStores.findIndex((s) => s.id === match.id)
+                if (idx >= 0) {
+                  const canonical = mergedStores[idx]
+                  mergedStores[idx] = {
+                    ...canonical,
+                    gmvData: { ...orphan.gmvData, ...canonical.gmvData },
+                    overviewData: canonical.overviewData.length
+                      ? canonical.overviewData
+                      : orphan.overviewData,
+                    videoData: canonical.videoData.length
+                      ? canonical.videoData
+                      : orphan.videoData,
+                    affiliateData: canonical.affiliateData?.length
+                      ? canonical.affiliateData
+                      : orphan.affiliateData,
+                  }
+                }
+                // Orphan will be dropped (not added to mergedStores)
+              } else {
+                // No Supabase twin — keep as local-only store
+                mergedStores.push(orphan)
+              }
+            }
+
+            // Ensure activeStoreId points to a valid store.
+            // Manager devices typically have no localStorage state, so activeStoreId is null;
+            // auto-select the first store so AffiliateScreen's early-return doesn't trigger.
+            const validIds = new Set(mergedStores.map((s) => s.id))
+            let nextActiveId = state.activeStoreId
+            if (!nextActiveId || !validIds.has(nextActiveId)) {
+              nextActiveId = mergedStores[0]?.id || null
+            }
+
+            return {
+              stores: mergedStores,
+              activeStoreId: nextActiveId,
+              _supabaseReady: true,
+              _supabaseInitStatus: 'done',
+            }
+          })
         } catch (err: any) {
           if (err?.message !== '__SUPABASE_NOT_CONFIGURED__') {
             console.warn('Supabase init failed — using local data only')
           }
-          set({ _supabaseReady: false })
+          set({ _supabaseReady: false, _supabaseInitStatus: 'offline' })
         }
       },
 
@@ -322,27 +389,29 @@ export const useStoreManager = create<StoreManagerState>()(
           set((state) => ({
             stores: state.stores.map((s) => {
               if (s.id !== storeId) return s
-              // Merge Supabase summaries into local affiliate data
-              const existing = new Set(
-                (s.affiliateData || []).map(
-                  (d) => `${d.periodRaw?.split(' ~ ')[0]?.slice(0, 7) || d.period}__${d.platform || 'tiktok'}`,
-                ),
-              )
-              const newEntries: AffiliateMonthData[] = summaries
-                .filter((sm) => !existing.has(`${sm.period}__${sm.platform}`))
-                .map((sm) => ({
-                  period: sm.period,
-                  periodRaw: sm.period,
-                  storeId,
-                  source: 'combined' as const,
-                  platform: sm.platform as 'tiktok' | 'tokopedia',
-                  coreSummary: sm.coreSummary as AffiliateMonthData['coreSummary'],
-                  creators: [], // loaded on-demand
-                  summary: sm.summary,
-                }))
+              // Merge Supabase summaries into local affiliate data.
+              // When the same period+platform exists both locally and in Supabase, Supabase wins —
+              // that's the whole point of cross-device sync: other devices see uploads too.
+              const keyOf = (d: { periodRaw?: string; period: string; platform?: string }) =>
+                `${d.periodRaw?.split(' ~ ')[0]?.slice(0, 7) || d.period}__${d.platform || 'tiktok'}`
+
+              const supabaseEntries: AffiliateMonthData[] = summaries.map((sm) => ({
+                period: sm.period,
+                periodRaw: sm.period,
+                storeId,
+                source: 'combined' as const,
+                platform: sm.platform as 'tiktok' | 'tokopedia',
+                coreSummary: sm.coreSummary as AffiliateMonthData['coreSummary'],
+                creators: [], // loaded on-demand via loadAffiliateCreators()
+                summary: sm.summary,
+              }))
+
+              const supabaseKeys = new Set(supabaseEntries.map(keyOf))
+              const localOnly = (s.affiliateData || []).filter((d) => !supabaseKeys.has(keyOf(d)))
+
               return {
                 ...s,
-                affiliateData: [...(s.affiliateData || []), ...newEntries],
+                affiliateData: [...localOnly, ...supabaseEntries],
               }
             }),
           }))
@@ -370,6 +439,14 @@ export const useStoreManager = create<StoreManagerState>()(
         activeStoreId: state.activeStoreId,
         migrated: state.migrated,
       }),
+      // On rehydrate from localStorage, reset sync status to 'pending' so the UI
+      // waits for initFromSupabase() before deciding whether to show SetupScreen.
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state._supabaseInitStatus = 'pending'
+          state._supabaseReady = false
+        }
+      },
     }
   )
 )

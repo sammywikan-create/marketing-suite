@@ -98,6 +98,7 @@ export default function Home() {
   const { dark, toggle: toggleDark } = useDarkMode();
   const { fileName, setData: setGMVData } = useGMVStore();
   const { stores, activeStoreId, getActiveStore, addStore, setActiveStore, saveOverviewData, saveVideoData, migrated, setMigrated, initFromSupabase, loadAffiliateFromSupabase } = useStoreManager();
+  const supabaseInitStatus = useStoreManager((s) => s._supabaseInitStatus);
   const activeStore = getActiveStore();
   const [migrationBanner, setMigrationBanner] = useState(false);
 
@@ -220,6 +221,23 @@ export default function Home() {
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-gray-500">Memuat...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Wait for the initial Supabase sync before deciding to show SetupScreen.
+  // Without this guard, a fresh device with empty localStorage renders SetupScreen
+  // instantly, and the user creates a duplicate store before Supabase replies with
+  // the existing one — orphaning all affiliate uploads from other devices.
+  // Only block when we're still pending AND have no local stores yet; existing
+  // local stores render immediately (the sync merges in the background).
+  if (stores.length === 0 && supabaseInitStatus === 'pending') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-500">Menyinkronkan data toko...</p>
         </div>
       </div>
     );
