@@ -118,12 +118,31 @@ function getPreviousPeriod(period: string): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
-function detectPeriodFromData(data: ApiResponse | null | undefined): string {
-  // If period was explicitly set during import (with correct year), use it
+// Number of calendar days in a period like "2026-02" (accounts for leap years).
+// Fallback to 30 when the period is invalid.
+function daysInPeriod(period: string | undefined | null): number {
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) return 30;
+  const [y, m] = period.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+// Number of ISO calendar weeks a period spans. Used for weekly targets.
+// A month spans the weeks from its first day to its last day.
+function weeksInPeriod(period: string | undefined | null): number {
+  const days = daysInPeriod(period);
+  // Typical month spans 4–6 calendar weeks; use 4.345 (365.25/7/12) as the weighted average.
+  return days / 7;
+}
+
+function detectPeriodFromData(data: ApiResponse | null | undefined, selectedPeriod?: string): string {
+  // 1. Period stamped on the data (most reliable — set during import or API response)
   if (data?.period && /^\d{4}-\d{2}$/.test(data.period)) return data.period;
 
+  // 2. Currently selected period (user explicitly chose a historical month)
+  if (selectedPeriod && /^\d{4}-\d{2}$/.test(selectedPeriod)) return selectedPeriod;
+
   if (!data?.harian?.length) return getCurrentPeriod();
-  // Try to extract month from first harian date like "1 Apr", "15 Jan"
+  // 3. Try to extract month from first harian date like "1 Apr", "15 Jan"
   const BULAN_TO_NUM: Record<string, string> = {
     jan: "01", feb: "02", mar: "03", apr: "04", mei: "05", jun: "06",
     jul: "07", agu: "08", sep: "09", okt: "10", nov: "11", des: "12",
@@ -133,7 +152,7 @@ function detectPeriodFromData(data: ApiResponse | null | undefined): string {
     if (m) {
       const mon = BULAN_TO_NUM[m[1].toLowerCase()];
       if (mon) {
-        // Use current year only as fallback — period field should have correct year
+        // Use current year only as final fallback — period field should have correct year
         const year = new Date().getFullYear();
         return `${year}-${mon}`;
       }
@@ -145,21 +164,22 @@ function detectPeriodFromData(data: ApiResponse | null | undefined): string {
 function useTarget(period?: string) {
   const [target, setTargetState] = useState(350_000_000);
   const [loading, setLoading] = useState(true);
+  const effectivePeriod = period || new Date().toISOString().slice(0, 7);
 
   const loadTarget = useCallback(async () => {
+    setLoading(true);
     try {
-      const currentPeriod = period || new Date().toISOString().slice(0, 7);
-      const res = await fetch(`/api/target?period=${currentPeriod}&type=omzet`);
+      const res = await fetch(`/api/target?period=${effectivePeriod}&type=omzet`);
       const data = await res.json();
-      if (data.target_value !== undefined) {
-        setTargetState(data.target_value);
-      }
+      // API returns { target_value } when record exists; undefined = no target set for this period yet.
+      // Reset to default when switching to a period without a saved target.
+      setTargetState(typeof data.target_value === "number" ? data.target_value : 350_000_000);
     } catch {
-      // Fallback to default
+      setTargetState(350_000_000);
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [effectivePeriod]);
 
   useEffect(() => {
     loadTarget();
@@ -168,16 +188,15 @@ function useTarget(period?: string) {
   const setTarget = useCallback(async (v: number) => {
     setTargetState(v);
     try {
-      const currentPeriod = period || new Date().toISOString().slice(0, 7);
       await fetch('/api/target', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ period: currentPeriod, target_value: v, type: 'omzet' }),
+        body: JSON.stringify({ period: effectivePeriod, target_value: v, type: 'omzet' }),
       });
     } catch {
       console.error('Failed to save target to Supabase');
     }
-  }, [period]);
+  }, [effectivePeriod]);
 
   return { target, setTarget, loading };
 }
@@ -874,6 +893,123 @@ function healthScore(s: Summary, target: number): { score: number; label: string
 }
 
 // ═══════════════════════════════════════════════════════════
+// EXCEL EXPORT
+// Generates a multi-sheet .xlsx with summary, daily rows, channels, weekly, and brands.
+// Users can pivot / analyze the raw numbers in Excel rather than static PDF/PPT.
+// ═══════════════════════════════════════════════════════════
+function exportLaporanHarianToExcel(
+  data: ApiResponse,
+  target: number,
+  health: { score: number; label: string; color: string },
+  period: string,
+) {
+  const wb = XLSX.utils.book_new();
+  const { summary: s, harian, weekly, channels, channel_data, evaluasi_per_brand, highlights } = data;
+  const days = daysInPeriod(period);
+  const projected = s.avg_omzet_harian * days;
+
+  // ─── Sheet 1: Summary ───
+  const summaryRows: (string | number)[][] = [
+    ["Laporan Harian FreshVision — Ringkasan"],
+    ["Periode", formatPeriod(period)],
+    ["Hari berjalan", s.hari],
+    ["Hari di bulan ini", days],
+    [],
+    ["KPI", "Nilai"],
+    ["Total Omzet", s.total_omzet],
+    ["Target Bulan", target],
+    ["% Target Tercapai", parseFloat(((s.total_omzet / target) * 100).toFixed(2))],
+    ["Proyeksi Akhir Bulan", Math.round(projected)],
+    ["Total Closing", s.total_closing],
+    ["Total Botol", s.total_botol],
+    ["Avg Omzet Harian", s.avg_omzet_harian],
+    ["Avg Closing Harian", s.avg_closing_harian],
+    ["Nilai per Transaksi", s.nilai_per_txn],
+    ["Rata Upsell (×)", parseFloat(s.rata_upsell.toFixed(2))],
+    ["Rata CAC Total (%)", parseFloat(s.rata_cac.toFixed(2))],
+    ["Rata CAC Ads (%)", parseFloat(s.rata_cac_ads.toFixed(2))],
+    ["Total Biaya Iklan", s.total_biaya_iklan],
+    ["Total Komisi Affiliate", s.total_komisi_aff],
+    ["Total Cost", s.total_cost],
+    ["ROAS (×)", parseFloat(s.roas.toFixed(2))],
+    ["Cost per Closing", s.cost_per_closing],
+    ["Cost per Botol", s.cost_per_botol],
+    ["Margin Setelah Biaya (%)", s.margin_after_cost],
+    ["Kontribusi FV (%)", s.pct_kontribusi_fv],
+    [],
+    ["Health Score", health.score, health.label],
+    ["Best Day", highlights.best_day?.tanggal ?? "", highlights.best_day?.omzet ?? ""],
+    ["Worst Day", highlights.worst_day?.tanggal ?? "", highlights.worst_day?.omzet ?? ""],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), "Ringkasan");
+
+  // ─── Sheet 2: Daily rows ───
+  const harianHeader = [
+    "Tanggal", "Omzet", "Closing", "Botol", "Nilai/Trx",
+    "Biaya Iklan", "Komisi Affiliate", "CAC Ads (%)", "CAC Total (%)",
+    "Upsell (×)", "Omzet Total Brand", "Kontribusi FV (%)",
+  ];
+  const harianRows = harian.map((r) => [
+    r.tanggal, r.omzet, r.closing, r.botol, r.nilai_per_txn,
+    r.biaya_iklan, r.komisi_affiliate, r.cac_ads, r.cac_total,
+    r.upsell, r.omzet_total_brand, r.pct_kontribusi_fv,
+  ]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([harianHeader, ...harianRows]), "Harian");
+
+  // ─── Sheet 3: Channels summary ───
+  const chanHeader = [
+    "Channel", "Omzet", "Closing", "Botol", "Biaya/Komisi",
+    "ROI (×)", "Cost/Closing", "Cost/Botol", "Avg Trx", "Botol/Closing",
+    "Upsell (×)", "CAC (%)", "Hari",
+  ];
+  const chanRows = Object.entries(channels).map(([k, c]) => [
+    k, c.total_omzet, c.total_closing, c.total_botol, c.total_biaya_iklan,
+    c.roi, c.cost_per_closing, c.cost_per_botol, c.omzet_per_closing, c.bottle_per_closing,
+    parseFloat(c.rata_upsell.toFixed(2)), parseFloat(c.rata_cac.toFixed(2)), c.hari,
+  ]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([chanHeader, ...chanRows]), "Channel Summary");
+
+  // ─── Sheet 4: Weekly ───
+  const weekHeader = ["Minggu", "Hari", "Omzet", "Closing", "Botol", "Avg Omzet/Hari", "Upsell", "CAC (%)", "WoW Omzet (%)", "WoW Closing (%)"];
+  const weekRows = weekly.map((w) => [
+    w.label, w.hari, w.total_omzet, w.total_closing, w.total_botol,
+    Math.round(w.rata_omzet_harian), parseFloat(w.rata_upsell.toFixed(2)),
+    parseFloat(w.rata_cac.toFixed(2)), w.wow_omzet, w.wow_closing,
+  ]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([weekHeader, ...weekRows]), "Mingguan");
+
+  // ─── Sheet 5: Brand comparison ───
+  const brandRows: (string | number)[][] = [
+    ["Brand", "Omzet", "% Share"],
+    ["FreshVision", evaluasi_per_brand.freshvision, pctOf(evaluasi_per_brand.freshvision, evaluasi_per_brand.total)],
+    ["Nutriflakes", evaluasi_per_brand.nutriflakes, pctOf(evaluasi_per_brand.nutriflakes, evaluasi_per_brand.total)],
+    ["Freshmag", evaluasi_per_brand.freshmag, pctOf(evaluasi_per_brand.freshmag, evaluasi_per_brand.total)],
+    ["Etawaku", evaluasi_per_brand.etawaku, pctOf(evaluasi_per_brand.etawaku, evaluasi_per_brand.total)],
+    ["Total", evaluasi_per_brand.total, 100],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(brandRows), "Brand Mix");
+
+  // ─── Sheet 6+: Per-channel daily rows (only when data exists) ───
+  const chDailyHeader = ["Tanggal", "Omzet", "Closing", "Botol", "Biaya Iklan", "Upsell", "CAC (%)"];
+  const addChanDailySheet = (name: string, rows: ChannelRow[]) => {
+    if (!rows?.length) return;
+    const body = rows.map((r) => [r.tanggal, r.omzet, r.closing, r.botol, r.biaya_iklan, r.upsell, r.cac_total]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([chDailyHeader, ...body]), name);
+  };
+  addChanDailySheet("Video", channel_data.video);
+  addChanDailySheet("Live", channel_data.live);
+  addChanDailySheet("Shop Tab", channel_data.shop_tab);
+  addChanDailySheet("Affiliate", channel_data.affiliate);
+
+  const filename = `LaporanHarian_${period || "export"}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+function pctOf(part: number, total: number): number {
+  return total > 0 ? parseFloat(((part / total) * 100).toFixed(2)) : 0;
+}
+
+// ═══════════════════════════════════════════════════════════
 // MAIN SCREEN
 // ═══════════════════════════════════════════════════════════
 export default function LaporanHarianScreen() {
@@ -903,7 +1039,18 @@ export default function LaporanHarianScreen() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [showSettings, setShowSettings] = useState(false);
-  const { target, setTarget } = useTarget();
+
+  // ─── Determine active data & period (needed for target lookup) ───
+  const isLive = selectedPeriod === "live";
+  const activeData = isLive ? liveData : savedData;
+  const activePeriod = useMemo(
+    () => detectPeriodFromData(activeData, isLive ? undefined : selectedPeriod),
+    [activeData, isLive, selectedPeriod],
+  );
+
+  // Target is now period-scoped: loading a historical month shows that month's target.
+  const { target, setTarget } = useTarget(activePeriod);
+  const daysInCurrentPeriod = daysInPeriod(activePeriod);
 
   // ─── MoM comparison: previous month's data ───
   const [prevMonthData, setPrevMonthData] = useState<ApiResponse | null>(null);
@@ -917,11 +1064,15 @@ export default function LaporanHarianScreen() {
   }, []);
 
   // ─── Auto-save live data when it arrives (only in live mode) ───
-  const autoSaveRef = useRef(false);
+  // Use a content-hash as the guard so SWR refreshes that bring genuinely new data
+  // trigger another save, instead of permanently blocking after the first save.
+  const autoSaveHashRef = useRef<string>("");
   useEffect(() => {
-    if (!liveData?.summary || autoSaveRef.current) return;
+    if (!liveData?.summary) return;
     if (dataMode !== "live") return; // Don't auto-save when viewing imported/saved data
-    autoSaveRef.current = true;
+    const hash = `${liveData.summary.total_omzet}:${liveData.summary.hari}:${liveData.harian?.length ?? 0}`;
+    if (hash === autoSaveHashRef.current) return;
+    autoSaveHashRef.current = hash;
     const period = detectPeriodFromData(liveData);
     saveLaporanHarianData(period, liveData)
       .then(() => {
@@ -1049,10 +1200,6 @@ export default function LaporanHarianScreen() {
     }
   }, [selectedPeriod]);
 
-  // ─── Determine active data ───
-  const isLive = selectedPeriod === "live";
-  const activeData = isLive ? liveData : savedData;
-
   // ─── Auto-load previous month for MoM comparison ───
   useEffect(() => {
     if (!activeData?.summary) {
@@ -1060,7 +1207,7 @@ export default function LaporanHarianScreen() {
       setPrevMonthPeriod("");
       return;
     }
-    const currentPeriod = isLive ? detectPeriodFromData(activeData) : selectedPeriod;
+    const currentPeriod = activePeriod;
     const prevPeriod = getPreviousPeriod(currentPeriod);
     if (!prevPeriod) {
       setPrevMonthData(null);
@@ -1077,7 +1224,7 @@ export default function LaporanHarianScreen() {
         setPrevMonthData(null);
         setPrevMonthPeriod(prevPeriod);
       });
-  }, [activeData, isLive, selectedPeriod, prevMonthPeriod, prevMonthData]);
+  }, [activeData, activePeriod, prevMonthPeriod, prevMonthData]);
 
   if (isLoading && isLive) return <LoadingState />;
   if (isLoadingSaved) return <LoadingState />;
@@ -1111,13 +1258,15 @@ export default function LaporanHarianScreen() {
   const { summary: s, harian, weekly, channels, channel_data, evaluasi_per_brand, highlights } = data;
   const health = healthScore(s, target);
 
-  const handleExport = (type: "pdf" | "ppt") => {
+  const handleExport = (type: "pdf" | "ppt" | "excel") => {
     const exportData = {
       summary: s, harian, channels, weekly, evaluasi_per_brand, highlights,
       target, healthScore: health.score, healthLabel: health.label,
+      period: activePeriod,
     };
     if (type === "pdf") generatePdf(exportData);
-    else generatePpt(exportData);
+    else if (type === "ppt") generatePpt(exportData);
+    else exportLaporanHarianToExcel(data, target, health, activePeriod);
   };
   const tabs = [
     { key: "overview", label: "Overview", icon: <BarChart3 size={14} /> },
@@ -1155,11 +1304,24 @@ export default function LaporanHarianScreen() {
               </div>
             </div>
             {/* Health Score Badge */}
-            <div className="hidden sm:flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+            <div className="hidden sm:flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 relative group cursor-help">
               <div className={`text-2xl font-black ${health.color}`}>{health.score}</div>
               <div className="text-[10px] leading-tight">
                 <div className="font-bold text-gray-600">Health Score</div>
                 <div className={`font-semibold ${health.color}`}>{health.label}</div>
+              </div>
+              {/* Tooltip */}
+              <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20 w-72 bg-gray-900 text-white text-[11px] rounded-lg shadow-xl p-3 leading-relaxed">
+                <div className="font-bold mb-1.5">Cara perhitungan (total 100):</div>
+                <div className="space-y-0.5 text-gray-200">
+                  <div>• <strong>Omzet vs Target</strong> (40 pts): {(Math.min(s.total_omzet / target, 1) * 40).toFixed(0)}</div>
+                  <div>• <strong>Upsell</strong> (20 pts): {Math.min(((s.rata_upsell - 1) / 0.3) * 20, 20).toFixed(0)} — 1.3× = max</div>
+                  <div>• <strong>CAC</strong> (20 pts): {Math.max(0, Math.min(((70 - s.rata_cac) / 20) * 20, 20)).toFixed(0)} — &lt;50% = max</div>
+                  <div>• <strong>ROAS</strong> (20 pts): {Math.min(Math.max(0, (s.roas - 2) / 2) * 20, 20).toFixed(0)} — &gt;4× = max</div>
+                </div>
+                <div className="mt-1.5 pt-1.5 border-t border-gray-700 text-gray-300">
+                  ≥80 Excellent · ≥60 Good · ≥40 Needs Improvement · &lt;40 Critical
+                </div>
               </div>
             </div>
           </div>
@@ -1172,6 +1334,9 @@ export default function LaporanHarianScreen() {
             </button>
             <button onClick={() => handleExport("ppt")} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 text-sm transition">
               <Presentation size={14} /> PPT
+            </button>
+            <button onClick={() => handleExport("excel")} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 text-sm transition" title="Download Excel (.xlsx)">
+              <Download size={14} /> Excel
             </button>
             {isLive && (
               <button onClick={() => mutate()} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition">
@@ -1188,7 +1353,7 @@ export default function LaporanHarianScreen() {
       {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
-      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} />
+      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} />
 
       {/* ═══ TAB BAR ═══ */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
@@ -1209,12 +1374,13 @@ export default function LaporanHarianScreen() {
           evaluasi={evaluasi_per_brand}
           snapshot={data}
           prevSnapshot={prevMonthData}
-          periodKey={isLive ? detectPeriodFromData(data) : selectedPeriod}
+          periodKey={activePeriod}
+          daysInPeriod={daysInCurrentPeriod}
         />
       )}
       {activeTab === "cost" && <CostTab s={s} harian={harian} />}
       {activeTab === "channels" && <ChannelsTab channels={channels} channelData={channel_data} />}
-      {activeTab === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} />}
+      {activeTab === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} daysInPeriod={daysInCurrentPeriod} />}
     </div>
   );
 }
@@ -1491,12 +1657,12 @@ function pctDelta(curr: number, prev: number): number | null {
   return parseFloat((((curr - prev) / prev) * 100).toFixed(1));
 }
 
-function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMonthPeriod }: { s: Summary; target: number; health: { score: number; label: string; color: string }; highlights: Highlights; prevMonthData?: ApiResponse | null; prevMonthPeriod?: string }) {
+function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMonthPeriod, daysInPeriod }: { s: Summary; target: number; health: { score: number; label: string; color: string }; highlights: Highlights; prevMonthData?: ApiResponse | null; prevMonthPeriod?: string; daysInPeriod: number }) {
   const pctTarget = (s.total_omzet / target) * 100;
   const sisaTarget = Math.max(0, target - s.total_omzet);
-  const sisaHari = Math.max(1, 30 - s.hari);
+  const sisaHari = Math.max(1, daysInPeriod - s.hari);
   const needPerDay = sisaTarget / sisaHari;
-  const onTrack = s.avg_omzet_harian >= (target / 30);
+  const onTrack = s.avg_omzet_harian >= (target / daysInPeriod);
 
   // ─── MoM deltas (only computed when prev data exists & has summary) ───
   const prev = prevMonthData?.summary;
@@ -1616,7 +1782,7 @@ function MiniKpi({ label, value, sub, delta, isInverse }: { label: string; value
 // ═══════════════════════════════════════════════════════════
 function OverviewTab({
   s, target, harian, evaluasi,
-  snapshot, prevSnapshot, periodKey,
+  snapshot, prevSnapshot, periodKey, daysInPeriod,
 }: {
   s: Summary;
   target: number;
@@ -1625,6 +1791,7 @@ function OverviewTab({
   snapshot?: ApiResponse;
   prevSnapshot?: ApiResponse | null;
   periodKey?: string;
+  daysInPeriod: number;
 }) {
   return (
     <div className="space-y-5">
@@ -1659,11 +1826,11 @@ function OverviewTab({
         </div>
       </div>
       {/* Executive Report */}
-      <ExecutiveReport s={s} target={target} harian={harian} />
+      <ExecutiveReport s={s} target={target} harian={harian} daysInPeriod={daysInPeriod} />
       {/* Heatmap Calendar */}
-      <HeatmapCalendar harian={harian} target={target} />
+      <HeatmapCalendar harian={harian} target={target} daysInPeriod={daysInPeriod} />
       {/* Omzet & Botol Chart */}
-      <OmzetBotolChart harian={harian} avgTarget={target / 30} />
+      <OmzetBotolChart harian={harian} avgTarget={target / daysInPeriod} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <BrandDonutChart evaluasi={evaluasi} />
         <UpsellCacChart harian={harian} />
@@ -1673,11 +1840,11 @@ function OverviewTab({
   );
 }
 
-function ExecutiveReport({ s, target, harian }: { s: Summary; target: number; harian: HarianRow[] }) {
+function ExecutiveReport({ s, target, harian, daysInPeriod }: { s: Summary; target: number; harian: HarianRow[]; daysInPeriod: number }) {
   const report = useMemo(() => {
     const pctTarget = (s.total_omzet / target) * 100;
-    const projected = s.avg_omzet_harian * 30;
-    const sisaHari = Math.max(1, 30 - s.hari);
+    const projected = s.avg_omzet_harian * daysInPeriod;
+    const sisaHari = Math.max(1, daysInPeriod - s.hari);
     const sisaTarget = Math.max(0, target - s.total_omzet);
     const needPerDay = sisaTarget / sisaHari;
 
@@ -1710,7 +1877,7 @@ function ExecutiveReport({ s, target, harian }: { s: Summary; target: number; ha
     if (recs.length > 0) lines.push(`Rekomendasi: ${recs.join("; ")}.`);
 
     return lines;
-  }, [s, target, harian]);
+  }, [s, target, harian, daysInPeriod]);
 
   const [expanded, setExpanded] = useState(false);
 
@@ -1732,8 +1899,8 @@ function ExecutiveReport({ s, target, harian }: { s: Summary; target: number; ha
   );
 }
 
-function HeatmapCalendar({ harian, target }: { harian: HarianRow[]; target: number }) {
-  const dailyTarget = target / 30;
+function HeatmapCalendar({ harian, target, daysInPeriod }: { harian: HarianRow[]; target: number; daysInPeriod: number }) {
+  const dailyTarget = target / daysInPeriod;
   const maxOmzet = Math.max(...harian.map((r) => r.omzet));
 
   const getColor = (omzet: number): string => {
@@ -2015,11 +2182,13 @@ function ChannelsTab({ channels, channelData }: { channels: Record<string, Chann
 // ═══════════════════════════════════════════════════════════
 // WEEKLY TAB
 // ═══════════════════════════════════════════════════════════
-function WeeklyTab({ weekly, s, target, harian }: { weekly: WeeklyRow[]; s: Summary; target: number; harian: HarianRow[] }) {
-  const weeklyTarget = target / 4;
-  const sisaHari = Math.max(1, 30 - s.hari);
+function WeeklyTab({ weekly, s, target, harian, daysInPeriod }: { weekly: WeeklyRow[]; s: Summary; target: number; harian: HarianRow[]; daysInPeriod: number }) {
+  // Use exact month length instead of hardcoded 30, so Feb/Apr/etc. are accurate.
+  const weeksInMonth = daysInPeriod / 7;
+  const weeklyTarget = target / weeksInMonth;
+  const sisaHari = Math.max(1, daysInPeriod - s.hari);
   const sisaTarget = Math.max(0, target - s.total_omzet);
-  const projected = s.avg_omzet_harian * 30;
+  const projected = s.avg_omzet_harian * daysInPeriod;
 
   function evaluate(w: WeeklyRow): { notes: string[]; grade: string } {
     const notes: string[] = [];
@@ -2124,7 +2293,7 @@ function WeeklyTab({ weekly, s, target, harian }: { weekly: WeeklyRow[]; s: Summ
       })}
 
       {/* Daily Evaluation Table */}
-      <DailyEvalTable harian={harian} avgTarget={target / 30} />
+      <DailyEvalTable harian={harian} avgTarget={target / daysInPeriod} />
     </div>
   );
 }
