@@ -91,6 +91,11 @@ export interface FVShopRow {
   tanggal: string; closing: number; botol: number; nilai_per_txn: number;
   omzet: number; cac_ads: number; cac_total: number; upsell: number;
   biaya_iklan: number; komisi_affiliate: number;
+  // New cost breakdown columns
+  komisi_platform: number; shipping_cost: number; biaya_layanan_mall: number;
+  biaya_komisi_dinamis: number; program_growth_extra: number; biaya_pemrosesan: number;
+  // New ROI columns
+  roi_no_ppn: number; roi_ads: number; total_roi: number;
 }
 export interface FVChannelRow {
   tanggal: string; omzet: number; closing: number; botol: number;
@@ -103,23 +108,41 @@ export interface EvalRow {
 }
 
 // ═══ FETCHER 1: FreshVision SHOP (main) ═══
-// Kolom: A=tanggal, B-I=biaya, J=komisi_affiliate, K=closing, L=botol,
-//        M=nilai_per_txn, N=omzet, O=cac_ads, P=cac_total, Q=upsell
+// Kolom baru (setelah penambahan BIAYA PEMROSESAN PESANAN di kolom J):
+//   A=tanggal
+//   B=biaya iklan gmv max, C=non gmv max, D=gmv max+non gmv max & ppn 11%
+//   E=komisi platform, F=shipping cost, G=biaya layanan mall
+//   H=biaya komisi dinamis, I=program growth extra, J=biaya pemrosesan pesanan (BARU!)
+//   K=komisi affiliate, L=closing, M=botol, N=nilai per txn, O=omzet
+//   P=cac of ads, Q=cac total, R=upsell, S=roi no ppn, T=roi ads, U=total roi
 export async function getFreshVisionShop(): Promise<FVShopRow[]> {
-  const rows = await fetchRange(SHEETS.FV_SHOP, 'A4:Q50');
+  const rows = await fetchRange(SHEETS.FV_SHOP, 'A4:U50');
   return rows
     .filter(r => isDateRow(r[0]))
     .map(r => ({
-      tanggal:          cleanDate(r[0]),
-      biaya_iklan:      cleanRp(r[3]),   // D = biaya iklan total
-      komisi_affiliate: cleanRp(r[9]),   // J
-      closing:          cleanInt(r[10]), // K
-      botol:            cleanInt(r[11]), // L
-      nilai_per_txn:    cleanRp(r[12]),  // M
-      omzet:            cleanRp(r[13]),  // N
-      cac_ads:          cleanPct(r[14]), // O
-      cac_total:        cleanPct(r[15]), // P
-      upsell:           cleanDecimal(r[16]), // Q
+      tanggal:             cleanDate(r[0]),
+      // D (r[3]) = total biaya iklan termasuk PPN — SAMA seperti sebelumnya
+      biaya_iklan:         cleanRp(r[3]),
+      // Cost breakdown (new columns E-J)
+      komisi_platform:     cleanRp(r[4]),   // E
+      shipping_cost:       cleanRp(r[5]),   // F
+      biaya_layanan_mall:  cleanRp(r[6]),   // G
+      biaya_komisi_dinamis: cleanRp(r[7]), // H
+      program_growth_extra: cleanRp(r[8]), // I
+      biaya_pemrosesan:    cleanRp(r[9]),   // J = BIAYA PEMROSESAN PESANAN (KOLOM BARU)
+      // Semua kolom berikut BERGESER +1 karena kolom J baru
+      komisi_affiliate:    cleanRp(r[10]),  // K (dulu J=r[9])
+      closing:             cleanInt(r[11]), // L (dulu K=r[10])
+      botol:               cleanInt(r[12]), // M (dulu L=r[11])
+      nilai_per_txn:       cleanRp(r[13]),  // N (dulu M=r[12])
+      omzet:               cleanRp(r[14]),  // O (dulu N=r[13])
+      cac_ads:             cleanPct(r[15]), // P (dulu O=r[14])
+      cac_total:           cleanPct(r[16]), // Q (dulu P=r[15])
+      upsell:              cleanDecimal(r[17]), // R (dulu Q=r[16])
+      // Kolom ROI baru di S, T, U
+      roi_no_ppn:          cleanDecimal(r[18]), // S
+      roi_ads:             cleanDecimal(r[19]), // T
+      total_roi:           cleanDecimal(r[20]), // U
     }))
     .filter(r => r.omzet > 0);
 }
@@ -204,18 +227,52 @@ export async function getFreshVisionAffiliate(): Promise<FVChannelRow[]> {
 }
 
 // ═══ FETCHER 6: EVALUASI (all brands) ═══
+// FreshVision block: LQ (col 329, index 328) to MH (col 346, index 345)
+// Urutan kolom dalam block FreshVision:
+//   +0  BIAYA IKLAN GMV MAX
+//   +1  BIAYA IKLAN NON GMV MAX
+//   +2  BIAYA IKLAN GMV MAX+NON GMV MAX & PPN 11%
+//   +3  KOMISI PLATFORM, +4 SHIPPING COST, +5 BIAYA LAYANAN MALL
+//   +6  BIAYA KOMISI DINAMIS, +7 PROGAM GROWTH EXTRA, +8 BIAYA PEMROSESAN PESANAN
+//   +9  KOMISI AFFILIATE, +10 CLOSING, +11 BOTOL, +12 UPSELL
+//   +13 NILAI PER TRANSAKSI, +14 OMZET, +15 CAC OF ADS, +16 CAC TOTAL, +17 ROI
 export async function getEvaluasiHarian(): Promise<EvalRow[]> {
-  const rows = await fetchRange(SHEETS.EVALUASI, 'A4:NZ50');
+  // Fetch from row 1 (to include headers) through row 100 up to column MH
+  const rows = await fetchRange(SHEETS.EVALUASI, 'A1:MH100');
+
+  // FreshVision block constants (0-indexed)
+  const FV_START = 328;  // Column LQ
+  const FV_END   = 345;  // Column MH
+  const DEFAULT_OMZET_OFFSET = 14; // OMZET is the 15th column in the block
+
+  // Header-based detection: scan first 5 rows for 'omzet' in FV block range
+  let fvOmzetIdx = FV_START + DEFAULT_OMZET_OFFSET; // default = 342
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const row = rows[i] || [];
+    for (let j = FV_START; j <= FV_END; j++) {
+      const cell = String(row[j] ?? '').toLowerCase().trim();
+      if (cell === 'omzet' || cell === 'total omzet') {
+        fvOmzetIdx = j;
+        console.log(`[Evaluasi] OMZET column found at index ${j} (row ${i + 1})`);
+        break;
+      }
+    }
+    if (fvOmzetIdx !== FV_START + DEFAULT_OMZET_OFFSET) break;
+  }
+
   return rows
     .filter(r => isDateRow(r[0]))
-    .map(r => ({
-      tanggal:           cleanDate(r[0]),
-      omzet_freshvision: cleanRp(r[322]),
-      omzet_nutriflakes: cleanRp(r[273]),
-      omzet_freshmag:    cleanRp(r[256]),
-      omzet_etawaku:     cleanRp(r[175]),
-      omzet_total:       cleanRp(r[339]),
-    }))
+    .map(r => {
+      const omzet_fv = cleanRp(r[fvOmzetIdx]);
+      return {
+        tanggal:           cleanDate(r[0]),
+        omzet_freshvision: omzet_fv,
+        omzet_nutriflakes: 0, // posisi kolom brand lain belum ditentukan
+        omzet_freshmag:    0,
+        omzet_etawaku:     0,
+        omzet_total:       omzet_fv,
+      };
+    })
     .filter(r => r.omzet_total > 0);
 }
 

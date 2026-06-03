@@ -351,8 +351,13 @@ function getDateRows(rows: any[][]): { dataRows: any[][]; dataStart: number } {
   return { dataRows, dataStart };
 }
 
-// ─── Parse SHOP — mirrors getFreshVisionShop() from googleSheets.ts ───
-// Kolom: A=tanggal, D=biaya_iklan, J=komisi, K=closing, L=botol, M=nilai, N=omzet, O=cac_ads, P=cac_total, Q=upsell
+// ─── Parse SHOP — mirrors getFreshVisionShop() dari googleSheets.ts ───
+// Kolom baru (setelah penambahan BIAYA PEMROSESAN PESANAN di kolom J):
+//   A=tanggal, B=gmv max, C=non gmv max, D=total biaya iklan+ppn
+//   E=komisi platform, F=shipping, G=biaya layanan mall
+//   H=biaya komisi dinamis, I=program growth extra, J=biaya pemrosesan pesanan (BARU!)
+//   K=komisi affiliate, L=closing, M=botol, N=nilai per txn, O=omzet
+//   P=cac of ads, Q=cac total, R=upsell, S=roi no ppn, T=roi ads, U=total roi
 function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
   const { dataRows } = getDateRows(rows);
   if (!dataRows.length) return { shop: [], period: "" };
@@ -363,19 +368,19 @@ function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
     const { dateStr, period: p } = cleanDate(r[0]);
     if (!dateStr) continue;
     if (p && !period) period = p;
-    const omzet = cleanRp(r[13]); // N
+    const omzet = cleanRp(r[14]); // O (dulu N=r[13], +1 karena kolom J baru)
     if (omzet <= 0) continue;
     shop.push({
       tanggal: dateStr,
-      biaya_iklan:      cleanRp(r[3]),       // D
-      komisi_affiliate: cleanRp(r[9]),       // J
-      closing:          cleanInt(r[10]),     // K
-      botol:            cleanInt(r[11]),     // L
-      nilai_per_txn:    cleanRp(r[12]),      // M
-      omzet,                                  // N
-      cac_ads:          cleanPct(r[14]),     // O
-      cac_total:        cleanPct(r[15]),     // P
-      upsell:           cleanDecimal(r[16]), // Q
+      biaya_iklan:      cleanRp(r[3]),       // D = total biaya iklan+ppn (SAMA)
+      komisi_affiliate: cleanRp(r[10]),      // K (dulu J=r[9], +1)
+      closing:          cleanInt(r[11]),     // L (dulu K=r[10], +1)
+      botol:            cleanInt(r[12]),     // M (dulu L=r[11], +1)
+      nilai_per_txn:    cleanRp(r[13]),      // N (dulu M=r[12], +1)
+      omzet,                                  // O (dulu N=r[13], +1)
+      cac_ads:          cleanPct(r[15]),     // P (dulu O=r[14], +1)
+      cac_total:        cleanPct(r[16]),     // Q (dulu P=r[15], +1)
+      upsell:           cleanDecimal(r[17]), // R (dulu Q=r[16], +1)
       omzet_total_brand: 0,
       pct_kontribusi_fv: 0,
     });
@@ -449,7 +454,11 @@ function parseAffiliateSheet(rows: any[][]): ChannelRow[] {
 }
 
 // ─── Parse EVALUASI — mirrors getEvaluasiHarian() ───
-// Kolom: r[175]=etawaku, r[256]=freshmag, r[273]=nutriflakes, r[322]=freshvision, r[339]=total
+// FreshVision block di LQ (index 328) to MH (index 345):
+//   +0 GMV MAX, +1 NON GMV MAX, +2 TOTAL BIAYA+PPN, +3 KOMISI PLATFORM
+//   +4 SHIPPING, +5 LAYANAN MALL, +6 KOMISI DINAMIS, +7 GROWTH EXTRA
+//   +8 BIAYA PEMROSESAN, +9 KOMISI AFF, +10 CLOSING, +11 BOTOL
+//   +12 UPSELL, +13 NILAI/TXN, +14 OMZET, +15 CAC ADS, +16 CAC TOTAL, +17 ROI
 interface EvalRow {
   tanggal: string; omzet_freshvision: number; omzet_nutriflakes: number;
   omzet_freshmag: number; omzet_etawaku: number; omzet_total: number;
@@ -461,95 +470,103 @@ function parseEvaluasiSheet(rows: any[][]): EvalRow[] {
     return [];
   }
 
-  const maxCols = Math.max(...dataRows.map(r => r?.length || 0));
+  const FV_START = 328;  // LQ (0-indexed) = awal block FreshVision
+  const FV_END   = 345;  // MH (0-indexed) = akhir block FreshVision
+  const maxCols  = Math.max(...dataRows.map(r => r?.length || 0));
   console.log(`[Excel Import] EVALUASI: ${dataRows.length} data rows, maxCols=${maxCols}`);
 
-  // Fixed column indices — same as googleSheets.ts getEvaluasiHarian()
-  if (maxCols > 339) {
+  // Deteksi header: cari kolom OMZET dalam rentang FV (LQ-MH)
+  let fvOmzetIdx = FV_START + 14; // default: LQ+14 = index 342
+  const scanLimit = Math.min(rows.length, 8);
+  for (let i = 0; i < scanLimit; i++) {
+    const row = rows[i] || [];
+    for (let j = FV_START; j <= Math.min(FV_END, row.length - 1); j++) {
+      const cell = String(row[j] ?? "").toLowerCase().trim();
+      if (cell === "omzet" || cell === "total omzet") {
+        fvOmzetIdx = j;
+        console.log(`[Excel Import] EVALUASI: OMZET FreshVision ditemukan di index ${j} (baris ${i})`);
+        break;
+      }
+    }
+    if (fvOmzetIdx !== FV_START + 14) break;
+  }
+
+  // Jika maxCols tidak mencapai LQ, fallback ke header-based scan lama
+  if (maxCols <= FV_START) {
+    console.log("[Excel Import] EVALUASI: maxCols < LQ, menggunakan header scan brand...");
+    const brandCols: Record<string, number> = {};
+    const brandKW: [string, string[]][] = [
+      ["freshvision", ["total fresh vision", "total freshvision", "freshvision"]],
+      ["nutriflakes", ["total nutriflakes", "nutriflakes"]],
+      ["freshmag", ["total freshmag", "freshmag"]],
+      ["etawaku", ["total etawaku", "etawaku"]],
+    ];
+    const { dataStart } = getDateRows(rows);
+    const limit = Math.min(rows.length, (dataStart >= 0 ? dataStart : 5) + 3);
+    for (let i = 0; i < limit; i++) {
+      const row = rows[i] || [];
+      for (let j = 0; j < row.length; j++) {
+        const cell = String(row[j] ?? "").toLowerCase().trim();
+        if (!cell) continue;
+        for (const [brand, kws] of brandKW) {
+          if (!(brand in brandCols) && kws.some((k) => cell.includes(k))) brandCols[brand] = j;
+        }
+        if (!("total" in brandCols) && (cell === "total" || cell.includes("grand total"))) {
+          brandCols["total"] = j;
+        }
+      }
+    }
+    console.log("[Excel Import] EVALUASI brand columns from headers:", brandCols);
+    function findOmzetNear(anchor: number): number {
+      let bestCol = anchor, bestSum = 0;
+      for (let c = anchor; c < Math.min(anchor + 20, maxCols); c++) {
+        let s = 0;
+        for (const r of dataRows.slice(0, 5)) { const v = cleanRp(r?.[c]); if (v > 10000) s += v; }
+        if (s > bestSum) { bestSum = s; bestCol = c; }
+      }
+      return bestSum > 0 ? bestCol : anchor;
+    }
+    const iFV = brandCols.freshvision !== undefined ? findOmzetNear(brandCols.freshvision) : -1;
+    const iNF = brandCols.nutriflakes !== undefined ? findOmzetNear(brandCols.nutriflakes) : -1;
+    const iFM = brandCols.freshmag !== undefined ? findOmzetNear(brandCols.freshmag) : -1;
+    const iET = brandCols.etawaku !== undefined ? findOmzetNear(brandCols.etawaku) : -1;
+    const iTotal = brandCols.total !== undefined ? findOmzetNear(brandCols.total) : -1;
     const result: EvalRow[] = [];
     for (const r of dataRows) {
       const { dateStr } = cleanDate(r[0]);
       if (!dateStr) continue;
-      const omzet_total = cleanRp(r[339]);
-      if (omzet_total > 0) {
-        result.push({
-          tanggal: dateStr,
-          omzet_freshvision: cleanRp(r[322]),
-          omzet_nutriflakes: cleanRp(r[273]),
-          omzet_freshmag:    cleanRp(r[256]),
-          omzet_etawaku:     cleanRp(r[175]),
-          omzet_total,
-        });
-      }
+      const omzet_freshvision = iFV >= 0 ? cleanRp(r[iFV]) : 0;
+      const omzet_nutriflakes = iNF >= 0 ? cleanRp(r[iNF]) : 0;
+      const omzet_freshmag    = iFM >= 0 ? cleanRp(r[iFM]) : 0;
+      const omzet_etawaku     = iET >= 0 ? cleanRp(r[iET]) : 0;
+      let omzet_total = iTotal >= 0 ? cleanRp(r[iTotal]) : 0;
+      if (omzet_total <= 0) omzet_total = omzet_freshvision + omzet_nutriflakes + omzet_freshmag + omzet_etawaku;
+      if (omzet_total > 0) result.push({ tanggal: dateStr, omzet_freshvision, omzet_nutriflakes, omzet_freshmag, omzet_etawaku, omzet_total });
     }
-    if (result.length > 0) {
-      console.log("[Excel Import] EVALUASI: used fixed indices (same as live API), rows:", result.length);
-      console.log("[Excel Import] EVALUASI first row:", result[0]);
-      return result;
-    }
+    if (result.length > 0) console.log("[Excel Import] EVALUASI first row:", result[0]);
+    else console.warn("[Excel Import] EVALUASI: no valid rows found (fallback)!");
+    return result;
   }
 
-  // Fallback: scan headers for brand names (when Excel export strips empty columns)
-  console.log("[Excel Import] EVALUASI: maxCols<=339, scanning headers for brand names...");
-  const brandCols: Record<string, number> = {};
-  const brandKW: [string, string[]][] = [
-    ["freshvision", ["total fresh vision", "total freshvision", "freshvision"]],
-    ["nutriflakes", ["total nutriflakes", "nutriflakes"]],
-    ["freshmag", ["total freshmag", "freshmag"]],
-    ["etawaku", ["total etawaku", "etawaku"]],
-  ];
-  const { dataStart } = getDateRows(rows);
-  const scanLimit = Math.min(rows.length, (dataStart >= 0 ? dataStart : 5) + 3);
-  for (let i = 0; i < scanLimit; i++) {
-    const row = rows[i] || [];
-    for (let j = 0; j < row.length; j++) {
-      const cell = String(row[j] ?? "").toLowerCase().trim();
-      if (!cell) continue;
-      for (const [brand, kws] of brandKW) {
-        if (!(brand in brandCols) && kws.some((k) => cell.includes(k))) brandCols[brand] = j;
-      }
-      if (!("total" in brandCols) && (cell === "total" || cell.includes("grand total"))) {
-        brandCols["total"] = j;
-      }
-    }
-  }
-  console.log("[Excel Import] EVALUASI brand columns from headers:", brandCols);
-
-  // For each brand anchor, find nearby column with highest monetary sum
-  function findOmzetNear(anchor: number): number {
-    let bestCol = anchor, bestSum = 0;
-    for (let c = anchor; c < Math.min(anchor + 6, maxCols); c++) {
-      let s = 0;
-      for (const r of dataRows.slice(0, 5)) { const v = cleanRp(r?.[c]); if (v > 10000) s += v; }
-      if (s > bestSum) { bestSum = s; bestCol = c; }
-    }
-    return bestSum > 0 ? bestCol : anchor;
-  }
-
-  const iFV = brandCols.freshvision !== undefined ? findOmzetNear(brandCols.freshvision) : -1;
-  const iNF = brandCols.nutriflakes !== undefined ? findOmzetNear(brandCols.nutriflakes) : -1;
-  const iFM = brandCols.freshmag !== undefined ? findOmzetNear(brandCols.freshmag) : -1;
-  const iET = brandCols.etawaku !== undefined ? findOmzetNear(brandCols.etawaku) : -1;
-  const iTotal = brandCols.total !== undefined ? findOmzetNear(brandCols.total) : -1;
-
+  // Utama: gunakan FreshVision block di LQ-MH
   const result: EvalRow[] = [];
   for (const r of dataRows) {
     const { dateStr } = cleanDate(r[0]);
     if (!dateStr) continue;
-    const omzet_freshvision = iFV >= 0 ? cleanRp(r[iFV]) : 0;
-    const omzet_nutriflakes = iNF >= 0 ? cleanRp(r[iNF]) : 0;
-    const omzet_freshmag = iFM >= 0 ? cleanRp(r[iFM]) : 0;
-    const omzet_etawaku = iET >= 0 ? cleanRp(r[iET]) : 0;
-    let omzet_total = iTotal >= 0 ? cleanRp(r[iTotal]) : 0;
-    if (omzet_total <= 0) {
-      omzet_total = omzet_freshvision + omzet_nutriflakes + omzet_freshmag + omzet_etawaku;
-    }
-    if (omzet_total > 0) {
-      result.push({ tanggal: dateStr, omzet_freshvision, omzet_nutriflakes, omzet_freshmag, omzet_etawaku, omzet_total });
+    const omzet_fv = cleanRp(r[fvOmzetIdx]);
+    if (omzet_fv > 0) {
+      result.push({
+        tanggal: dateStr,
+        omzet_freshvision: omzet_fv,
+        omzet_nutriflakes: 0,
+        omzet_freshmag:    0,
+        omzet_etawaku:     0,
+        omzet_total:       omzet_fv,
+      });
     }
   }
   if (result.length > 0) console.log("[Excel Import] EVALUASI first row:", result[0]);
-  else console.warn("[Excel Import] EVALUASI: no valid rows found!");
+  else console.warn("[Excel Import] EVALUASI: no valid FreshVision rows found at LQ-MH!");
   return result;
 }
 
