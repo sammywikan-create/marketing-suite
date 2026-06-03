@@ -177,10 +177,18 @@ export default function AffiliateScreen() {
   const agg = useMemo(() => {
     if (!filteredData.length && !supabaseCreators.length) return null;
 
-    // Prefer Supabase creators if available; otherwise use local Zustand creators
-    const hasLocalCreators = filteredData.some((d) => d.creators.length > 0);
-    const useSupabase = supabaseCreators.length > 0 && !hasLocalCreators;
-    const creatorSource = useSupabase ? supabaseCreators : filteredData.flatMap((d) => d.creators);
+    // Bug #2 fix: Always merge supabase + local creators.
+    // Supabase creators take priority (they are the canonical persisted source).
+    // Local (in-memory) creators fill in any username not yet in Supabase.
+    const localCreators = filteredData.flatMap((d) => d.creators);
+    let creatorSource: typeof localCreators;
+    if (supabaseCreators.length > 0) {
+      const supabaseUsernames = new Set(supabaseCreators.map((c) => c.creatorUsername));
+      const localOnly = localCreators.filter((c) => !supabaseUsernames.has(c.creatorUsername));
+      creatorSource = [...supabaseCreators, ...localOnly];
+    } else {
+      creatorSource = localCreators;
+    }
 
     const creatorMap: Record<string, AffiliateCreatorItem & { _months: number }> = {};
     creatorSource.forEach((c) => {
@@ -952,7 +960,7 @@ export default function AffiliateScreen() {
                         GMV: {fRp(agg.segmentation.stars.reduce((a, c) => a + c.affiliateGMV, 0))}
                       </p>
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {agg.segmentation.stars.sort((a, b) => b.affiliateGMV - a.affiliateGMV).slice(0, 5).map((c) => (
+                        {[...agg.segmentation.stars].sort((a, b) => b.affiliateGMV - a.affiliateGMV).slice(0, 5).map((c) => (
                           <span key={c.creatorUsername} className="text-xs bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-medium">@{c.creatorUsername}</span>
                         ))}
                         {agg.segmentation.stars.length > 5 && <span className="text-xs text-yellow-600">+{agg.segmentation.stars.length - 5}</span>}
@@ -971,7 +979,7 @@ export default function AffiliateScreen() {
                         GMV: {fRp(agg.segmentation.efficient.reduce((a, c) => a + c.affiliateGMV, 0))}
                       </p>
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {agg.segmentation.efficient.sort((a, b) => b.affiliateGMV - a.affiliateGMV).slice(0, 5).map((c) => (
+                        {[...agg.segmentation.efficient].sort((a, b) => b.affiliateGMV - a.affiliateGMV).slice(0, 5).map((c) => (
                           <span key={c.creatorUsername} className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">@{c.creatorUsername}</span>
                         ))}
                         {agg.segmentation.efficient.length > 5 && <span className="text-xs text-blue-600">+{agg.segmentation.efficient.length - 5}</span>}
@@ -990,7 +998,7 @@ export default function AffiliateScreen() {
                         GMV: {fRp(agg.segmentation.potential.reduce((a, c) => a + c.affiliateGMV, 0))}
                       </p>
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {agg.segmentation.potential.sort((a, b) => (b.affiliateShoppableVideos + b.affiliateLiveStreams) - (a.affiliateShoppableVideos + a.affiliateLiveStreams)).slice(0, 5).map((c) => (
+                        {[...agg.segmentation.potential].sort((a, b) => (b.affiliateShoppableVideos + b.affiliateLiveStreams) - (a.affiliateShoppableVideos + a.affiliateLiveStreams)).slice(0, 5).map((c) => (
                           <span key={c.creatorUsername} className="text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded font-medium">@{c.creatorUsername}</span>
                         ))}
                         {agg.segmentation.potential.length > 5 && <span className="text-xs text-green-600">+{agg.segmentation.potential.length - 5}</span>}
@@ -1009,7 +1017,7 @@ export default function AffiliateScreen() {
                         GMV: {fRp(agg.segmentation.nurture.reduce((a, c) => a + c.affiliateGMV, 0))}
                       </p>
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {agg.segmentation.nurture.sort((a, b) => b.affiliateGMV - a.affiliateGMV).slice(0, 5).map((c) => (
+                        {[...agg.segmentation.nurture].sort((a, b) => b.affiliateGMV - a.affiliateGMV).slice(0, 5).map((c) => (
                           <span key={c.creatorUsername} className="text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-medium">@{c.creatorUsername}</span>
                         ))}
                         {agg.segmentation.nurture.length > 5 && <span className="text-xs text-gray-500">+{agg.segmentation.nurture.length - 5}</span>}
@@ -1227,7 +1235,7 @@ export default function AffiliateScreen() {
                           <th className="pb-2 font-medium text-right">Orders</th>
                           <th className="pb-2 font-medium text-right">Refund%</th>
                           <th className="pb-2 font-medium text-right">Komisi</th>
-                          <th className="pb-2 font-medium text-center w-20">{combinedMode ? "Toko" : ""}</th>
+                          <th className="pb-2 font-medium text-center w-20">{combinedMode ? "Toko" : "Aksi"}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1267,7 +1275,7 @@ export default function AffiliateScreen() {
                                   <span className="text-xs text-gray-400">{(d as any)._storeName}</span>
                                 ) : (
                                   <button
-                                    onClick={() => activeStore && deleteAffiliateData(activeStore.id, d.periodRaw)}
+                                    onClick={() => activeStore && deleteAffiliateData(activeStore.id, d.periodRaw, d.platform)}
                                     className="text-gray-400 hover:text-red-500 transition-colors p-1"
                                     title="Hapus periode ini"
                                   >
@@ -1693,6 +1701,7 @@ export default function AffiliateScreen() {
         <CreatorDrillDownModal
           username={drillDownCreator}
           allMonths={allMonths}
+          supabaseCreators={supabaseCreators}
           onClose={() => setDrillDownCreator(null)}
         />
       )}
@@ -1850,6 +1859,25 @@ function EmptyAffiliate({ onUpload }: {
 }
 
 function ComparisonView({ data }: { data: AffiliateMonthData[] }) {
+  const sorted = [...data].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+
+  // Build unique period+platform options
+  const periodOptions = sorted.map((d, i) => ({
+    key: `${d.platform || 'all'}-${d.periodRaw}`,
+    label: `${d.period || d.periodRaw} ${d.platform ? `(${d.platform})` : ''}`,
+    index: i,
+  }));
+
+  const [prevKey, setPrevKey] = useState<string>(
+    periodOptions.length >= 2 ? periodOptions[periodOptions.length - 2].key : ''
+  );
+  const [latestKey, setLatestKey] = useState<string>(
+    periodOptions.length >= 1 ? periodOptions[periodOptions.length - 1].key : ''
+  );
+
+  const prev = sorted.find((d) => `${d.platform || 'all'}-${d.periodRaw}` === prevKey) || sorted[sorted.length - 2];
+  const latest = sorted.find((d) => `${d.platform || 'all'}-${d.periodRaw}` === latestKey) || sorted[sorted.length - 1];
+
   if (data.length < 2) {
     return (
       <div className="bg-white rounded-xl border p-8 text-center">
@@ -1860,9 +1888,14 @@ function ComparisonView({ data }: { data: AffiliateMonthData[] }) {
     );
   }
 
-  const sorted = [...data].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
-  const latest = sorted[sorted.length - 1];
-  const prev = sorted[sorted.length - 2];
+  if (!prev || !latest || prev.periodRaw === latest.periodRaw) {
+    return (
+      <div className="bg-white rounded-xl border p-8 text-center">
+        <BarChart3 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+        <p className="text-gray-500 font-medium">Pilih dua periode yang berbeda untuk dibandingkan</p>
+      </div>
+    );
+  }
 
   const metrics = [
     { label: "Total GMV", curr: latest.summary.totalGMV, prev: prev.summary.totalGMV, fmt: fRp },
@@ -1881,6 +1914,46 @@ function ComparisonView({ data }: { data: AffiliateMonthData[] }) {
 
   return (
     <div className="space-y-6">
+      {/* Period Selector — Bug #5 fix */}
+      <div className="bg-white rounded-xl border p-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-blue-600" /> Pilih Periode Perbandingan
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Periode Pembanding (Lama)</label>
+              <select
+                value={prevKey}
+                onChange={(e) => setPrevKey(e.target.value)}
+                className="text-sm border rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500"
+              >
+                {periodOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key} disabled={opt.key === latestKey}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="text-gray-400 font-medium mt-4">vs</span>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Periode Utama (Baru)</label>
+              <select
+                value={latestKey}
+                onChange={(e) => setLatestKey(e.target.value)}
+                className="text-sm border rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500"
+              >
+                {periodOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key} disabled={opt.key === prevKey}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border p-5">
         <h3 className="font-semibold text-gray-800 mb-1">
           Perbandingan: {prev.period} vs {latest.period}
@@ -2060,14 +2133,32 @@ function TargetFormModal({ initial, onSave, onClose }: {
   );
 }
 
-function CreatorDrillDownModal({ username, allMonths, onClose }: {
+function CreatorDrillDownModal({ username, allMonths, supabaseCreators, onClose }: {
   username: string;
   allMonths: AffiliateMonthData[];
+  supabaseCreators?: AffiliateCreatorItem[];
   onClose: () => void;
 }) {
   const sorted = [...allMonths].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+
+  // Bug #3 fix: When allMonths[i].creators is empty (stripped from localStorage after refresh),
+  // fall back to supabaseCreators for that username, distributed per-period.
+  // We create a lookup of the supabase data by username for quick access.
+  const supabaseByUsername = useMemo(() => {
+    const m: Record<string, AffiliateCreatorItem> = {};
+    (supabaseCreators || []).forEach((c) => { m[c.creatorUsername] = c; });
+    return m;
+  }, [supabaseCreators]);
+
   const history = sorted.map((m) => {
-    const c = m.creators.find((cr) => cr.creatorUsername === username);
+    // Prefer per-period creators in allMonths; fall back to supabase aggregate
+    let c = m.creators.find((cr) => cr.creatorUsername === username);
+    // If no per-period data and this is the only/latest period, use supabase aggregate
+    if (!c && supabaseByUsername[username]) {
+      // Only show in the most recent period to avoid duplication across multiple periods
+      const isLatest = sorted[sorted.length - 1].periodRaw === m.periodRaw;
+      if (isLatest) c = supabaseByUsername[username];
+    }
     return {
       period: m.period || m.periodRaw,
       platform: m.platform || m.source,
