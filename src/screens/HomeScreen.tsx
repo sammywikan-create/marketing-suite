@@ -216,8 +216,10 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     setAiError("");
     try {
       const ch = lhData?.channels || {};
-      const totalOmzetChannel = (ch.shop?.total_omzet || 0) + (ch.video?.total_omzet || 0) + (ch.live?.total_omzet || 0);
-      const displayOmzet = totalOmzetChannel > 0 ? totalOmzetChannel : (lhData?.summary?.total_omzet || 0);
+      // Total Omzet FreshVision = SHOP tab (sudah mencakup semua produk FreshVision)
+      const displayOmzet = (ch.shop?.total_omzet || 0) > 0
+        ? (ch.shop?.total_omzet || 0)
+        : (lhData?.summary?.total_omzet || 0);
       const res = await fetch('/api/executive-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -710,13 +712,11 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           const s = lhData.summary;
           const ch = lhData.channels || {};
 
-          // ✔ Total omzet = jumlah semua channel (SHOP + Video + Live)
-          const totalOmzetChannel =
-            (ch.shop?.total_omzet || 0) +
-            (ch.video?.total_omzet || 0) +
-            (ch.live?.total_omzet || 0);
-          // Pakai channel sum jika tersedia (lebih akurat), fallback ke summary
-          const displayOmzet = totalOmzetChannel > 0 ? totalOmzetChannel : (s.total_omzet || 0);
+          // ✔ Total omzet FreshVision = channels.shop.total_omzet
+          // (SHOP tab sudah mencakup semua produk FreshVision; Video & Live adalah channel terpisah)
+          const displayOmzet = (ch.shop?.total_omzet || 0) > 0
+            ? (ch.shop?.total_omzet || 0)
+            : (s.total_omzet || 0);
           const displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
           const displayMargin = displayOmzet - (s.total_biaya_iklan || 0) - (s.total_komisi_aff || 0);
 
