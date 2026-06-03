@@ -216,10 +216,13 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     setAiError("");
     try {
       const ch = lhData?.channels || {};
-      // shop_tab = gabungan semua tab SHOP (ADV Saeful + 130ml + 200ml)
-      const displayOmzet = (ch.shop_tab?.total_omzet || 0) > 0
-        ? (ch.shop_tab?.total_omzet || 0)
-        : (lhData?.summary?.total_omzet_fv || lhData?.summary?.total_omzet || 0);
+      // Sumber utama: evaluasi_per_brand.freshvision
+      const displayOmzet =
+        (lhData?.evaluasi_per_brand?.freshvision || 0) > 0
+          ? (lhData.evaluasi_per_brand.freshvision as number)
+          : (ch.shop_tab?.total_omzet || 0) > 0
+          ? ch.shop_tab!.total_omzet
+          : (lhData?.summary?.total_omzet_fv || lhData?.summary?.total_omzet || 0);
       const res = await fetch('/api/executive-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -712,12 +715,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           const s = lhData.summary;
           const ch = lhData.channels || {};
 
-          // ✔ Total omzet FreshVision = channels.shop_tab.total_omzet
-          // (shop_tab = gabungan semua tab SHOP: ADV Saeful + 130ml + 200ml)
-          // 'shop' (kecil) hanya dari sheet ADV Saeful saja — JANGAN dipakai
-          const displayOmzet = (ch.shop_tab?.total_omzet || 0) > 0
-            ? (ch.shop_tab?.total_omzet || 0)
-            : (s.total_omzet_fv || s.total_omzet || 0);
+          // ✔ Sumber utama: evaluasi_per_brand.freshvision (dari sheet Evaluasi Harian)
+          // Fallback bertingkat: shop_tab → total_omzet_fv → total_omzet
+          const displayOmzet =
+            (lhData.evaluasi_per_brand?.freshvision || 0) > 0
+              ? (lhData.evaluasi_per_brand.freshvision as number)
+              : (ch.shop_tab?.total_omzet || 0) > 0
+              ? (ch.shop_tab!.total_omzet)
+              : (s.total_omzet_fv || s.total_omzet || 0);
           const displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
           const displayMargin = displayOmzet - (s.total_biaya_iklan || 0) - (s.total_komisi_aff || 0);
 
