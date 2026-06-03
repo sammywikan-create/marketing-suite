@@ -189,9 +189,83 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return () => { cancelled = true; };
   }, [activePeriod]);
 
-  // ─── CREATORS (load from Supabase directly) ───────────
+  // ─── CREATORS (load from Supabase directly) ───────────────────────
   const [supabaseCreators, setSupabaseCreators] = useState<AffiliateCreatorItem[]>([]);
   const [creatorsLoading, setCreatorsLoading] = useState(false);
+
+  // ─── AI EVALUASI ───────────────────────────────────
+  const [aiContent, setAiContent] = useState<string>("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string>("");
+  const [aiCacheKey, setAiCacheKey] = useState<string>("");
+  const [aiSettings, setAiSettings] = useState<any>(null);
+
+  // Load AI settings from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ai_settings');
+      if (raw) setAiSettings(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
+
+  const runAiEvaluasi = useCallback(async () => {
+    if (!aiSettings) { setAiError('Konfigurasikan AI terlebih dahulu di menu AI Analyst.'); return; }
+    const cacheKey = `exec_ai_${activePeriod}_${aiSettings.provider}`;
+    if (aiCacheKey === cacheKey && aiContent) return; // already cached
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const ch = lhData?.channels || {};
+      const totalOmzetChannel = (ch.shop?.total_omzet || 0) + (ch.video?.total_omzet || 0) + (ch.live?.total_omzet || 0);
+      const displayOmzet = totalOmzetChannel > 0 ? totalOmzetChannel : (lhData?.summary?.total_omzet || 0);
+      const res = await fetch('/api/executive-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: aiSettings,
+          period: formatPeriod(activePeriod),
+          targetGMV,
+          targetProgress,
+          lh: lhData?.summary ? {
+            total_omzet: displayOmzet,
+            total_biaya_iklan: lhData.summary.total_biaya_iklan || 0,
+            roas: lhData.summary.total_biaya_iklan > 0 ? displayOmzet / lhData.summary.total_biaya_iklan : 0,
+            rata_cac_ads: lhData.summary.rata_cac_ads || 0,
+            margin_after_cost: displayOmzet - (lhData.summary.total_biaya_iklan || 0) - (lhData.summary.total_komisi_aff || 0),
+            total_closing: lhData.summary.total_closing || 0,
+            total_botol: lhData.summary.total_botol || 0,
+            rata_upsell: lhData.summary.rata_upsell || 0,
+            cost_per_closing: lhData.summary.cost_per_closing || 0,
+            hari: lhData.summary.hari || 0,
+            channels: lhData.channels || {},
+          } : null,
+          aff: agg.totalGMV > 0 ? {
+            totalGMV: agg.totalGMV,
+            netGMV: agg.netGMV,
+            totalRefund: agg.totalRefund,
+            refundRate: agg.refundRate,
+            totalOrders: agg.totalOrders,
+            activeCreators: agg.activeCreators,
+            totalCreators: agg.totalCreators,
+            totalCommission: agg.totalCommission,
+            videoGMV: agg.videoGMV,
+            liveGMV: agg.liveGMV,
+            momGrowth: momGrowth,
+            topCreator: supabaseCreators.filter(c => (c.affiliateGMV || 0) > 0).sort((a,b) => b.affiliateGMV - a.affiliateGMV)[0]?.creatorUsername || '-',
+            topCreatorGMV: supabaseCreators.filter(c => (c.affiliateGMV || 0) > 0).sort((a,b) => b.affiliateGMV - a.affiliateGMV)[0]?.affiliateGMV || 0,
+          } : null,
+        }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'AI error'); }
+      const d = await res.json();
+      setAiContent(d.content);
+      setAiCacheKey(cacheKey);
+    } catch (e: any) {
+      setAiError(e.message || 'Gagal menghubungi AI');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiSettings, activePeriod, aiCacheKey, aiContent, lhData, agg, momGrowth, supabaseCreators, targetGMV, targetProgress]);
 
   useEffect(() => {
     if (!activeStores.length || !activePeriod) return;
@@ -610,9 +684,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           <div className="flex items-center gap-2">
             <span className="text-lg">📋</span>
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">
-                Laporan Harian — FreshVision
-              </h2>
+              <h2 className="text-sm font-semibold text-gray-900">Laporan Harian — FreshVision</h2>
               <p className="text-xs text-gray-400 mt-0.5">
                 {lhData?.period ? `Periode: ${formatPeriod(lhData.period)}` : `Sinkron dengan periode ${formatPeriod(activePeriod)}`}
               </p>
@@ -637,19 +709,30 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         ) : (() => {
           const s = lhData.summary;
           const ch = lhData.channels || {};
-          const roasColor = s.roas >= 3 ? "text-green-600" : s.roas >= 2 ? "text-yellow-600" : "text-red-500";
-          const marginColor = s.margin_after_cost >= 0 ? "text-green-600" : "text-red-500";
+
+          // ✔ Total omzet = jumlah semua channel (SHOP + Video + Live)
+          const totalOmzetChannel =
+            (ch.shop?.total_omzet || 0) +
+            (ch.video?.total_omzet || 0) +
+            (ch.live?.total_omzet || 0);
+          // Pakai channel sum jika tersedia (lebih akurat), fallback ke summary
+          const displayOmzet = totalOmzetChannel > 0 ? totalOmzetChannel : (s.total_omzet || 0);
+          const displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
+          const displayMargin = displayOmzet - (s.total_biaya_iklan || 0) - (s.total_komisi_aff || 0);
+
+          const roasColor = displayRoas >= 3 ? "text-green-600" : displayRoas >= 2 ? "text-yellow-600" : "text-red-500";
+          const marginColor = displayMargin >= 0 ? "text-green-600" : "text-red-500";
 
           return (
             <>
               {/* KPI Utama */}
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
                 {[
-                  { label: "Omzet FreshVision", value: fRp(s.total_omzet || 0), icon: "💰", color: "text-emerald-700", bg: "bg-white" },
+                  { label: "Total Omzet FreshVision", value: fRp(displayOmzet), icon: "💰", color: "text-emerald-700", bg: "bg-white" },
                   { label: "Biaya Iklan", value: fRp(s.total_biaya_iklan || 0), icon: "📣", color: "text-blue-700", bg: "bg-white" },
-                  { label: "ROAS", value: `${(s.roas || 0).toFixed(1)}×`, icon: "🎯", color: roasColor, bg: "bg-white" },
+                  { label: "ROAS", value: `${displayRoas.toFixed(2)}×`, icon: "🎯", color: roasColor, bg: "bg-white" },
                   { label: "CAC Ads", value: fRp(s.rata_cac_ads || 0), icon: "💸", color: "text-purple-700", bg: "bg-white" },
-                  { label: "Margin Bersih", value: fRp(s.margin_after_cost || 0), icon: "📈", color: marginColor, bg: "bg-white" },
+                  { label: "Estimasi Margin", value: fRp(displayMargin), icon: "📈", color: marginColor, bg: "bg-white" },
                 ].map((item) => (
                   <div key={item.label} className={`${item.bg} rounded-xl p-3 border border-emerald-100`}>
                     <div className="text-base mb-1">{item.icon}</div>
@@ -687,15 +770,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                       { key: "live", label: "🔴 Live", color: "#ef4444" },
                     ] as const).filter(c => ch[c.key]?.total_omzet > 0).map(({ key, label, color }) => {
                       const cData = ch[key];
-                      const total = (ch.shop?.total_omzet || 0) + (ch.video?.total_omzet || 0) + (ch.live?.total_omzet || 0);
-                      const pct = total > 0 ? (cData.total_omzet / total) * 100 : 0;
+                      const pct = displayOmzet > 0 ? (cData.total_omzet / displayOmzet) * 100 : 0;
                       return (
                         <div key={key} className="flex items-center gap-2">
                           <span className="text-xs text-gray-600 w-24 flex-shrink-0">{label}</span>
                           <div className="flex-1 bg-gray-100 rounded-full h-1.5">
                             <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
                           </div>
-                          <span className="text-xs font-medium text-gray-700 w-24 text-right">{fRp(cData.total_omzet)}</span>
+                          <span className="text-xs font-medium text-gray-700 w-28 text-right">{fRp(cData.total_omzet)}</span>
                           <span className="text-[10px] text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
                         </div>
                       );
@@ -1119,6 +1201,78 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             <p className="text-xs text-gray-400 mt-2">
               💡 Target disimpan per periode. Ganti periode di atas untuk set target periode lain.
             </p>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ ZONA 7.5: AI EVALUASI ═══ */}
+      <div className="bg-gradient-to-br from-violet-50 via-purple-50 to-indigo-50 rounded-2xl border border-violet-100 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-base">🤖</span>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">AI Evaluasi &amp; Rekomendasi</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Analisis gabungan Affiliate + Laporan Harian &mdash; {formatPeriod(activePeriod)}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => { setAiContent(""); setAiCacheKey(""); runAiEvaluasi(); }}
+            disabled={aiLoading}
+            className="flex items-center gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 disabled:bg-violet-400 text-white px-3 py-1.5 rounded-lg font-medium transition"
+          >
+            {aiLoading ? (
+              <><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Menganalisis...</>
+            ) : (
+              <>{aiContent ? '🔄 Refresh' : '✨ Analisis Sekarang'}</>
+            )}
+          </button>
+        </div>
+
+        {!aiContent && !aiLoading && !aiError && (
+          <div className="text-center py-8 bg-white/50 rounded-xl border border-violet-100">
+            <div className="text-3xl mb-3">🧠</div>
+            <p className="text-sm font-medium text-gray-700">Dapatkan Evaluasi &amp; Langkah Aksi dari AI</p>
+            <p className="text-xs text-gray-400 mt-1 mb-4">AI akan menganalisis performa bisnis Anda dan memberikan rekomendasi konkret</p>
+            {!aiSettings && (
+              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mx-auto max-w-xs">
+                ⚠️ Konfigurasikan AI terlebih dahulu di menu <strong>AI Analyst</strong>
+              </p>
+            )}
+          </div>
+        )}
+
+        {aiLoading && (
+          <div className="space-y-3">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="h-4 bg-violet-100 rounded animate-pulse" style={{ width: `${[90,75,85,60][i-1]}%` }} />
+            ))}
+          </div>
+        )}
+
+        {aiError && (
+          <div className="flex items-start gap-2 bg-red-50 rounded-xl p-4 border border-red-100">
+            <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+            <div>
+              <p className="text-sm font-medium text-red-700">Gagal menganalisis</p>
+              <p className="text-xs text-red-500 mt-0.5">{aiError}</p>
+              <button onClick={runAiEvaluasi} className="mt-2 text-xs text-red-600 hover:underline">Coba lagi →</button>
+            </div>
+          </div>
+        )}
+
+        {aiContent && !aiLoading && (
+          <div className="prose prose-sm max-w-none bg-white/70 rounded-xl p-4 border border-violet-100">
+            {aiContent.split('\n').map((line, i) => {
+              if (line.startsWith('## ')) return <h3 key={i} className="text-sm font-bold text-gray-900 mt-4 mb-2 first:mt-0 flex items-center gap-1">{line.slice(3)}</h3>;
+              if (line.startsWith('### ')) return <h4 key={i} className="text-xs font-bold text-gray-800 mt-3 mb-1">{line.slice(4)}</h4>;
+              if (line.match(/^\d+\. /)) return <p key={i} className="text-xs text-gray-700 ml-4 mb-1">{line}</p>;
+              if (line.startsWith('- ')) return <p key={i} className="text-xs text-gray-700 ml-4 mb-1 flex gap-1"><span className="text-violet-400 flex-shrink-0">•</span><span>{line.slice(2)}</span></p>;
+              if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="text-xs font-semibold text-gray-800 mb-1">{line.slice(2, -2)}</p>;
+              if (!line.trim()) return <div key={i} className="h-2" />;
+              return <p key={i} className="text-xs text-gray-700 mb-1 leading-relaxed">{line}</p>;
+            })}
           </div>
         )}
       </div>
