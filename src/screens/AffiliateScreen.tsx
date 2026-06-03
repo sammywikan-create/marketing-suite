@@ -16,7 +16,7 @@ import {
 // ═══════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════
-type ViewMode = "dashboard" | "creators" | "comparison";
+type ViewMode = "dashboard" | "creators" | "comparison" | "retention";
 type SortKey = "gmv" | "orders" | "refund" | "videos" | "commission" | "score";
 type StatusFilter = "all" | "top" | "active" | "needs-push" | "inactive" | "high-refund";
 
@@ -92,6 +92,17 @@ export default function AffiliateScreen() {
   const [isLoadingCreators, setIsLoadingCreators] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  // Fitur 5: Target manual per kreator (localStorage)
+  const [creatorTargets, setCreatorTargets] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('affiliateCreatorTargets') || '{}'); } catch { return {}; }
+  });
+  const saveCreatorTarget = (username: string, target: number) => {
+    setCreatorTargets((prev) => {
+      const next = { ...prev, [username]: target };
+      try { localStorage.setItem('affiliateCreatorTargets', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
 
   // ─── LOAD CREATORS FROM SUPABASE ────────────────────────
   useEffect(() => {
@@ -374,6 +385,80 @@ export default function AffiliateScreen() {
     return counts;
   }, [agg]);
 
+  // ─── FITUR 3: SPARKLINE DATA (GMV per kreator per bulan) ──
+  const sparklineData = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    const sorted = [...filteredData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+    sorted.forEach((d) => {
+      d.creators.forEach((c) => {
+        if (!map[c.creatorUsername]) map[c.creatorUsername] = [];
+        map[c.creatorUsername].push(c.affiliateGMV);
+      });
+    });
+    return map;
+  }, [filteredData]);
+
+  // ─── FITUR 2: ACTION ITEMS (kreator yang perlu tindakan) ──
+  const actionItems = useMemo(() => {
+    if (!agg || filteredData.length < 1) return [];
+    const items: { username: string; reason: string; severity: 'high' | 'medium' | 'low' }[] = [];
+    // Rule 1: High refund
+    agg.creators.filter((c) => c.refundRate > 30 && c.affiliateGMV > 0).slice(0, 5).forEach((c) => {
+      items.push({ username: c.creatorUsername, reason: `Refund rate ${c.refundRate.toFixed(0)}% — perlu investigasi produk yang dijual`, severity: 'high' });
+    });
+    // Rule 2: Product card GMV tapi 0 video (perlu didorong buat konten)
+    agg.creators.filter((c) => c.affiliateProductCardGMV > 0 && c.affiliateShoppableVideos === 0 && c.affiliateLiveStreams === 0).slice(0, 5).forEach((c) => {
+      items.push({ username: c.creatorUsername, reason: `GMV dari Product Card (${fRp(c.affiliateProductCardGMV)}) tapi 0 video & 0 LIVE — dorong untuk buat konten`, severity: 'medium' });
+    });
+    // Rule 3: Score rendah dengan GMV cukup besar
+    agg.creators.filter((c) => c.creatorScore < 40 && c.affiliateGMV > 500000).slice(0, 5).forEach((c) => {
+      items.push({ username: c.creatorUsername, reason: `Score rendah (${c.creatorScore}/100) padahal GMV ${fRp(c.affiliateGMV)} — evaluasi kualitas konten`, severity: 'medium' });
+    });
+    // Rule 4: Inactive padahal pernah top
+    const sorted = [...filteredData].sort((a, b) => b.periodRaw.localeCompare(a.periodRaw));
+    if (sorted.length >= 2) {
+      const latest = sorted[0].creators;
+      const prev = sorted[1].creators;
+      prev.filter((c) => c.affiliateGMV >= 5000000).forEach((c) => {
+        const inLatest = latest.find((lc) => lc.creatorUsername === c.creatorUsername);
+        if (!inLatest || inLatest.affiliateGMV === 0) {
+          items.push({ username: c.creatorUsername, reason: `Top creator bulan lalu (GMV ${fRp(c.affiliateGMV)}) tidak aktif bulan ini`, severity: 'high' });
+        }
+      });
+    }
+    return items.slice(0, 10);
+  }, [agg, filteredData]);
+
+  // ─── FITUR 1: EXPORT EXCEL ───────────────────────────────
+  const exportToExcel = useCallback(async () => {
+    if (!agg) return;
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+      // Sheet 1: Kreator
+      const headers = ['#','Username','Tier','Followers','GMV','Net GMV','Orders','AOV','Videos','LIVE','Items Sold','Refund GMV','Refund%','Komisi','Score','Status','Target GMV','Target %'];
+      const rows = creatorList.map((c, i) => {
+        const netGMV = c.affiliateGMV - c.affiliateRefundedGMV;
+        const target = creatorTargets[c.creatorUsername] || 0;
+        const targetPct = target > 0 ? ((c.affiliateGMV / target) * 100).toFixed(1) + '%' : '-';
+        return [i+1, '@'+c.creatorUsername, c.creatorTier, c.affiliateFollowers,
+          c.affiliateGMV, netGMV, c.affiliateOrders, Math.round(c.avgOrderValue),
+          c.affiliateShoppableVideos, c.affiliateLiveStreams, c.itemsSold,
+          c.affiliateRefundedGMV, +c.refundRate.toFixed(1), c.estCommission,
+          c.creatorScore, creatorStatusSimple(c), target, targetPct];
+      });
+      const ws1 = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws1['!cols'] = headers.map((h, i) => ({ wch: [3,20,8,12,14,14,8,12,8,6,10,12,8,12,6,12,12,8][i] || 12 }));
+      XLSX.utils.book_append_sheet(wb, ws1, 'Kreator');
+      // Sheet 2: Monthly Trend
+      const h2 = ['Periode','Platform','GMV','Kreator Aktif','Total Kreator','Videos','LIVE','Orders','Refund%','Komisi'];
+      const r2 = allMonths.map((d) => [d.period, d.platform||d.source, d.summary.totalGMV, d.summary.activeCreators, d.summary.totalCreators, d.summary.totalVideos, d.summary.totalLive, d.summary.totalOrders, +d.summary.refundRate.toFixed(1), d.summary.totalCommission]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([h2, ...r2]), 'Tren Bulanan');
+      const filename = `affiliate-kreator-${activeStore?.name || 'export'}-${new Date().toISOString().slice(0,10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (e) { console.error('Export failed:', e); alert('Export gagal. Pastikan library xlsx terinstall.'); }
+  }, [agg, creatorList, creatorTargets, allMonths, activeStore]);
+
   // ═══════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════
@@ -438,7 +523,7 @@ export default function AffiliateScreen() {
             })()}
           </select>
           <div className="flex border rounded-lg overflow-hidden">
-            {(["dashboard", "creators", "comparison"] as ViewMode[]).map((v) => (
+            {(["dashboard", "creators", "comparison", "retention"] as ViewMode[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -446,7 +531,7 @@ export default function AffiliateScreen() {
                   view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
                 }`}
               >
-                {v === "dashboard" ? "Dashboard" : v === "creators" ? "Kreator" : "Perbandingan"}
+                {v === "dashboard" ? "Dashboard" : v === "creators" ? "Kreator" : v === "comparison" ? "Perbandingan" : "Retensi"}
               </button>
             ))}
           </div>
@@ -1482,35 +1567,47 @@ export default function AffiliateScreen() {
                 );
               })()}
 
+              {/* ═══ FITUR 2: ACTION PLAN PANEL ═══ */}
+              {actionItems.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                  <h3 className="font-semibold text-amber-800 mb-3 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-amber-600" />
+                    Action Plan — {actionItems.length} Kreator Perlu Perhatian
+                  </h3>
+                  <div className="space-y-2">
+                    {actionItems.map((item, i) => (
+                      <div key={i} className={`flex items-start gap-3 p-3 rounded-lg ${
+                        item.severity === 'high' ? 'bg-red-50 border border-red-100' :
+                        item.severity === 'medium' ? 'bg-amber-50 border border-amber-100' :
+                        'bg-blue-50 border border-blue-100'
+                      }`}>
+                        <span className={`text-base ${
+                          item.severity === 'high' ? '🔴' : item.severity === 'medium' ? '🟡' : '🔵'
+                        }`}>{item.severity === 'high' ? '🔴' : item.severity === 'medium' ? '🟡' : '🔵'}</span>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">@{item.username}</p>
+                          <p className="text-xs text-gray-600 mt-0.5">{item.reason}</p>
+                        </div>
+                        <button
+                          onClick={() => { setView('creators'); setSearchCreator(item.username); }}
+                          className="ml-auto text-xs px-2 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 shrink-0"
+                        >
+                          Lihat →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* ═══ EXPORT BUTTON ═══ */}
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => {
-                    if (!agg) return;
-                    const rows: string[][] = [["Username", "Tier", "Followers", "GMV", "Net GMV", "Orders", "AOV", "Videos", "LIVE", "Items Sold", "Refund", "Refund%", "Komisi", "Score", "Status"]];
-                    agg.creators.forEach((c) => {
-                      rows.push([
-                        c.creatorUsername, c.creatorTier, String(c.affiliateFollowers),
-                        String(c.affiliateGMV), String(c.affiliateGMV - c.affiliateRefundedGMV),
-                        String(c.affiliateOrders), String(c.affiliateOrders > 0 ? Math.round(c.affiliateGMV / c.affiliateOrders) : 0),
-                        String(c.affiliateShoppableVideos), String(c.affiliateLiveStreams), String(c.itemsSold),
-                        String(c.affiliateRefundedGMV), String(c.refundRate.toFixed(1)),
-                        String(c.estCommission), String(c.creatorScore), creatorStatusSimple(c),
-                      ]);
-                    });
-                    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
-                    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `affiliate-report-${new Date().toISOString().slice(0, 10)}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="text-sm font-medium px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition-colors flex items-center gap-2"
+                  onClick={exportToExcel}
+                  className="text-sm font-medium px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  Export CSV Laporan Kreator
+                  Export Excel (.xlsx)
                 </button>
               </div>
             </div>
@@ -1583,6 +1680,13 @@ export default function AffiliateScreen() {
                 <span className="text-sm text-gray-500 ml-auto font-medium">{fN(creatorList.length)} kreator</span>
               </div>
 
+              {/* Creator Table — Header Export */}
+              <div className="flex justify-end mb-2">
+                <button onClick={exportToExcel} className="text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> Export Excel
+                </button>
+              </div>
+
               {/* Creator Table */}
               <div className="bg-white rounded-xl border overflow-hidden">
                 <div className="overflow-x-auto">
@@ -1591,7 +1695,9 @@ export default function AffiliateScreen() {
                       <tr>
                         <th className="px-3 py-3 text-left font-medium text-gray-600 w-10">#</th>
                         <th className="px-3 py-3 text-left font-medium text-gray-600">Kreator</th>
+                        <th className="px-3 py-3 text-right font-medium text-gray-600">GMV Trend</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">GMV</th>
+                        <th className="px-3 py-3 text-right font-medium text-gray-600">Target GMV</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">Net GMV</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">Orders</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">AOV</th>
@@ -1631,7 +1737,55 @@ export default function AffiliateScreen() {
                                 {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-blue-500 ml-auto flex-shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-300 ml-auto flex-shrink-0" />}
                               </div>
                             </td>
+                            {/* Fitur 3: Sparkline */}
+                            <td className="px-3 py-2.5">
+                              {(() => {
+                                const vals = sparklineData[c.creatorUsername];
+                                if (!vals || vals.length < 2) return <span className="text-gray-200 text-xs">—</span>;
+                                const max = Math.max(...vals, 1);
+                                const W = 48, H = 18, bW = Math.max(3, Math.floor(W / vals.length) - 1);
+                                const trend = vals[vals.length-1] > vals[0];
+                                const color = trend ? '#10b981' : '#ef4444';
+                                return (
+                                  <svg width={W} height={H} className="inline-block align-middle">
+                                    {vals.map((v, idx) => {
+                                      const bH = Math.max(2, Math.round((v / max) * (H - 2)));
+                                      return <rect key={idx} x={idx * (bW + 1)} y={H - bH} width={bW} height={bH} fill={color} rx="1" opacity="0.75" />;
+                                    })}
+                                  </svg>
+                                );
+                              })()}
+                            </td>
                             <td className="px-3 py-2.5 text-right font-bold text-blue-600">{fRp(c.affiliateGMV)}</td>
+                            {/* Fitur 5: Target per kreator */}
+                            <td className="px-3 py-2.5 text-right">
+                              {(() => {
+                                const target = creatorTargets[c.creatorUsername] || 0;
+                                const pct = target > 0 ? Math.min((c.affiliateGMV / target) * 100, 100) : 0;
+                                return (
+                                  <div className="min-w-[80px]">
+                                    {target > 0 ? (
+                                      <>
+                                        <p className={`text-xs font-bold ${pct >= 100 ? 'text-green-600' : pct >= 60 ? 'text-amber-600' : 'text-red-500'}`}>{pct.toFixed(0)}%</p>
+                                        <div className="h-1.5 bg-gray-100 rounded-full mt-0.5 overflow-hidden">
+                                          <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-400' : 'bg-red-400'}`} style={{width: `${pct}%`}} />
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-0.5">{fRp(target)}</p>
+                                      </>
+                                    ) : (
+                                      <input
+                                        type="number"
+                                        placeholder="Set target"
+                                        className="w-20 text-xs border rounded px-1.5 py-1 text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onBlur={(e) => { const v = parseInt(e.target.value); if (v > 0) saveCreatorTarget(c.creatorUsername, v); }}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { const v = parseInt((e.target as HTMLInputElement).value); if (v > 0) { saveCreatorTarget(c.creatorUsername, v); (e.target as HTMLInputElement).blur(); }}}}
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </td>
                             <td className={`px-3 py-2.5 text-right font-medium ${(c.affiliateGMV - c.affiliateRefundedGMV) < c.affiliateGMV * 0.5 ? "text-red-600" : "text-green-600"}`}>{fRp(c.affiliateGMV - c.affiliateRefundedGMV)}</td>
                             <td className="px-3 py-2.5 text-right">{fN(c.affiliateOrders)}</td>
                             <td className="px-3 py-2.5 text-right text-gray-500">{fRp(c.avgOrderValue)}</td>
@@ -1645,12 +1799,20 @@ export default function AffiliateScreen() {
                               {fP(c.refundRate)}
                             </td>
                             <td className="px-3 py-2.5 text-right text-purple-600">{fRp(c.estCommission)}</td>
-                            <td className="px-3 py-2.5 text-right">
-                              <span className={`inline-block w-8 text-center text-xs font-bold rounded py-0.5 ${
-                                c.creatorScore >= 70 ? "bg-green-100 text-green-700" :
-                                c.creatorScore >= 40 ? "bg-yellow-100 text-yellow-700" :
-                                "bg-red-100 text-red-700"
-                              }`}>{c.creatorScore}</span>
+                            {/* Fitur 2: Score bar */}
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-1.5 min-w-[56px]">
+                                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${
+                                    c.creatorScore >= 70 ? 'bg-green-500' :
+                                    c.creatorScore >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                                  }`} style={{width: `${c.creatorScore}%`}} />
+                                </div>
+                                <span className={`text-xs font-bold w-6 text-right ${
+                                  c.creatorScore >= 70 ? 'text-green-600' :
+                                  c.creatorScore >= 40 ? 'text-amber-600' : 'text-red-500'
+                                }`}>{c.creatorScore}</span>
+                              </div>
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <StatusBadge status={creatorStatusSimple(c)} />
@@ -1658,7 +1820,7 @@ export default function AffiliateScreen() {
                           </tr>
                           {isExpanded && (
                             <tr className="bg-blue-50/60">
-                              <td colSpan={14} className="px-4 py-4">
+                              <td colSpan={17} className="px-4 py-4">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                   {/* GMV Breakdown */}
                                   <div className="bg-white rounded-lg border p-3">
@@ -1756,6 +1918,156 @@ export default function AffiliateScreen() {
           {view === "comparison" && (
             <ComparisonView data={allMonths} />
           )}
+
+          {/* ═══════════════════════════════════════════ */}
+          {/* FITUR 4: RETENTION VIEW                     */}
+          {/* ═══════════════════════════════════════════ */}
+          {view === "retention" && (() => {
+            const sorted = [...filteredData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+            const periods = sorted.map((d) => d.period || d.periodRaw.slice(0,7));
+            // Build set of all creator usernames
+            const allUsernames = Array.from(new Set(sorted.flatMap((d) => d.creators.map((c) => c.creatorUsername))));
+            if (!allUsernames.length) {
+              return (
+                <div className="bg-white rounded-xl border p-8 text-center text-gray-400">
+                  <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">Data retensi tidak tersedia</p>
+                  <p className="text-sm mt-1">Data kreator per periode diperlukan. Data tersedia saat baru upload (belum refresh halaman) atau saat ada data in-memory.</p>
+                </div>
+              );
+            }
+            // Activity map: username → Set of period indices they were active
+            const activityMap: Record<string, Set<number>> = {};
+            sorted.forEach((d, pi) => {
+              d.creators.filter((c) => c.affiliateGMV > 0).forEach((c) => {
+                if (!activityMap[c.creatorUsername]) activityMap[c.creatorUsername] = new Set();
+                activityMap[c.creatorUsername].add(pi);
+              });
+            });
+            // Churn & retention stats
+            const monthStats = sorted.map((d, pi) => {
+              if (pi === 0) return null;
+              const prevActive = new Set(sorted[pi-1].creators.filter((c) => c.affiliateGMV > 0).map((c) => c.creatorUsername));
+              const currActive = new Set(d.creators.filter((c) => c.affiliateGMV > 0).map((c) => c.creatorUsername));
+              const retained = [...prevActive].filter((u) => currActive.has(u)).length;
+              const churned = [...prevActive].filter((u) => !currActive.has(u)).length;
+              const newOnes = [...currActive].filter((u) => !prevActive.has(u)).length;
+              const retentionRate = prevActive.size > 0 ? (retained / prevActive.size) * 100 : 0;
+              return { period: periods[pi], retained, churned, newOnes, retentionRate, total: currActive.size };
+            }).filter(Boolean) as { period: string; retained: number; churned: number; newOnes: number; retentionRate: number; total: number }[];
+            // Sort creators by total active months desc
+            const sortedCreators = [...allUsernames].sort((a, b) => (activityMap[b]?.size || 0) - (activityMap[a]?.size || 0)).slice(0, 50);
+            return (
+              <div className="space-y-6">
+                {/* Retention KPIs */}
+                {monthStats.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-white rounded-xl border p-4">
+                      <p className="text-xs text-gray-500 font-medium uppercase">Avg Retention Rate</p>
+                      <p className={`text-2xl font-bold mt-1 ${
+                        (monthStats.reduce((a, m) => a + m.retentionRate, 0) / monthStats.length) >= 70 ? 'text-green-600' :
+                        (monthStats.reduce((a, m) => a + m.retentionRate, 0) / monthStats.length) >= 50 ? 'text-amber-600' : 'text-red-500'
+                      }`}>{(monthStats.reduce((a, m) => a + m.retentionRate, 0) / monthStats.length).toFixed(1)}%</p>
+                      <p className="text-xs text-gray-400 mt-1">Rata-rata {monthStats.length} periode</p>
+                    </div>
+                    <div className="bg-white rounded-xl border p-4">
+                      <p className="text-xs text-gray-500 font-medium uppercase">Total Kreator Unik</p>
+                      <p className="text-2xl font-bold text-blue-600 mt-1">{allUsernames.length}</p>
+                      <p className="text-xs text-gray-400 mt-1">Lintas semua periode</p>
+                    </div>
+                    <div className="bg-white rounded-xl border p-4">
+                      <p className="text-xs text-gray-500 font-medium uppercase">Avg Churn per Bulan</p>
+                      <p className="text-2xl font-bold text-red-500 mt-1">{Math.round(monthStats.reduce((a,m) => a+m.churned,0)/monthStats.length)}</p>
+                      <p className="text-xs text-gray-400 mt-1">Kreator hilang rata-rata</p>
+                    </div>
+                    <div className="bg-white rounded-xl border p-4">
+                      <p className="text-xs text-gray-500 font-medium uppercase">Avg Kreator Baru</p>
+                      <p className="text-2xl font-bold text-green-600 mt-1">{Math.round(monthStats.reduce((a,m) => a+m.newOnes,0)/monthStats.length)}</p>
+                      <p className="text-xs text-gray-400 mt-1">Kreator baru rata-rata</p>
+                    </div>
+                  </div>
+                )}
+                {/* Retention Rate Chart */}
+                {monthStats.length > 0 && (
+                  <div className="bg-white rounded-xl border p-5">
+                    <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-indigo-600" />
+                      Retention Rate & Churn per Bulan
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead><tr className="border-b text-left text-gray-500">
+                          <th className="pb-2 font-medium">Periode</th>
+                          <th className="pb-2 font-medium text-right">Aktif</th>
+                          <th className="pb-2 font-medium text-right">Retained</th>
+                          <th className="pb-2 font-medium text-right text-green-600">+Baru</th>
+                          <th className="pb-2 font-medium text-right text-red-500">-Churn</th>
+                          <th className="pb-2 font-medium text-right">Retention %</th>
+                          <th className="pb-2 font-medium">Bar</th>
+                        </tr></thead>
+                        <tbody>
+                          {monthStats.map((m) => (
+                            <tr key={m.period} className="border-b hover:bg-gray-50">
+                              <td className="py-2.5 font-medium">{m.period}</td>
+                              <td className="py-2.5 text-right font-bold">{m.total}</td>
+                              <td className="py-2.5 text-right text-blue-600">{m.retained}</td>
+                              <td className="py-2.5 text-right text-green-600 font-medium">+{m.newOnes}</td>
+                              <td className="py-2.5 text-right text-red-500 font-medium">-{m.churned}</td>
+                              <td className={`py-2.5 text-right font-bold ${ m.retentionRate >= 70 ? 'text-green-600' : m.retentionRate >= 50 ? 'text-amber-600' : 'text-red-500'}`}>{m.retentionRate.toFixed(1)}%</td>
+                              <td className="py-2.5 w-32">
+                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${ m.retentionRate >= 70 ? 'bg-green-500' : m.retentionRate >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{width:`${m.retentionRate}%`}} />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                {/* Activity Heatmap */}
+                <div className="bg-white rounded-xl border p-5">
+                  <h3 className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                    <PieChart className="w-4 h-4 text-purple-600" />
+                    Heatmap Aktivitas Kreator
+                  </h3>
+                  <p className="text-xs text-gray-400 mb-4">Hijau = aktif (ada GMV), Abu = tidak aktif. Menampilkan top 50 kreator by total bulan aktif.</p>
+                  <div className="overflow-x-auto">
+                    <table className="text-xs w-full">
+                      <thead><tr className="border-b">
+                        <th className="pb-2 text-left font-medium text-gray-600 min-w-[140px] pr-3">Kreator</th>
+                        <th className="pb-2 font-medium text-center text-gray-500">Total</th>
+                        {periods.map((p) => <th key={p} className="pb-2 font-medium text-center text-gray-400 px-0.5 whitespace-nowrap">{p.replace(/\s.*/,'')}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {sortedCreators.map((username) => {
+                          const acts = activityMap[username] || new Set();
+                          return (
+                            <tr key={username} className="border-b hover:bg-gray-50">
+                              <td className="py-1.5 pr-3 font-medium text-gray-800 truncate max-w-[140px]">@{username}</td>
+                              <td className="py-1.5 text-center">
+                                <span className={`px-1.5 py-0.5 rounded font-bold ${ acts.size === sorted.length ? 'bg-green-100 text-green-700' : acts.size >= sorted.length * 0.7 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{acts.size}/{sorted.length}</span>
+                              </td>
+                              {sorted.map((_, pi) => (
+                                <td key={pi} className="py-1.5 px-0.5 text-center">
+                                  <div className={`w-5 h-5 rounded mx-auto ${ acts.has(pi) ? 'bg-green-400' : 'bg-gray-100'}`} title={acts.has(pi) ? 'Aktif' : 'Tidak aktif'} />
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-green-400" /> Aktif (ada GMV)</span>
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-gray-100 border" /> Tidak aktif</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 
