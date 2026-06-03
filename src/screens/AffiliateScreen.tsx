@@ -12,6 +12,7 @@ import {
   DollarSign, BarChart3, Package, Eye, ArrowUpRight, ArrowDownRight,
   Star, Filter, X, Zap, Target, Lightbulb, PieChart, Activity, Plus, Edit3, Save, CheckCircle, Download, RefreshCw
 } from "lucide-react";
+import AffiliateAIInsightsCard from "@/components/AffiliateAIInsightsCard";
 
 // ═══════════════════════════════════════════════════════
 // TYPES
@@ -669,6 +670,27 @@ export default function AffiliateScreen() {
                   icon={<Video className="w-5 h-5" />}
                 />
               </div>
+
+              {/* AI INSIGHTS CARD — sesudah KPI rows, sebelum detail charts */}
+              {(() => {
+                // Ambil data periode aktif terpilih (atau periode terbaru)
+                const currentMonthData = filteredData.length > 0
+                  ? filteredData[filteredData.length - 1]
+                  : null;
+                const prevMonthData = filteredData.length > 1
+                  ? filteredData[filteredData.length - 2]
+                  : null;
+                const aiPeriodKey = currentMonthData
+                  ? `${currentMonthData.period}:${currentMonthData.platform}`
+                  : `affiliate:${activeStore?.id || 'unknown'}`;
+                return (
+                  <AffiliateAIInsightsCard
+                    monthData={currentMonthData}
+                    prevMonthData={prevMonthData}
+                    periodKey={aiPeriodKey}
+                  />
+                );
+              })()}
 
               {/* DAILY AVERAGES (if TikTok core data available) */}
               {agg.coreSummary && (
