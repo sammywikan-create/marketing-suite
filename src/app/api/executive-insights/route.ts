@@ -133,24 +133,67 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { lh, aff, period, targetGMV, targetProgress, settings } = body;
 
-    if (!settings) return NextResponse.json({ error: 'Missing settings' }, { status: 400 });
-
     const userPrompt = buildExecPrompt({ lh, aff, period, targetGMV, targetProgress });
     const messages = [{ role: 'user' as const, content: userPrompt }];
 
+    // Resolve Ollama API key: settings > env var
+    const resolvedOllamaKey = settings?.ollamaApiKey || process.env.OLLAMA_API_KEY;
+
     let content: string;
-    switch (settings.provider) {
+    const provider = settings?.provider || 'gemini'; // fallback ke gemini jika settings kosong
+
+    switch (provider) {
       case 'gemini':
-        content = await callGemini(SYSTEM_PROMPT, messages, settings.geminiModel || 'gemini-1.5-flash', settings.temperature ?? 0.5, Math.max(settings.maxTokens || 2000, 2000));
+        content = await callGemini(
+          SYSTEM_PROMPT, messages,
+          settings?.geminiModel || 'gemini-1.5-flash',
+          settings?.temperature ?? 0.5,
+          Math.max(settings?.maxTokens || 2000, 2000)
+        );
         break;
-      case 'ollama':
-        content = await callOllama(SYSTEM_PROMPT, messages, settings.ollamaModel || 'llama3.2', settings.ollamaBaseUrl || 'http://localhost:11434', settings.temperature ?? 0.5, Math.max(settings.maxTokens || 2000, 2000), settings.ollamaMode || 'local', settings.ollamaApiKey);
+
+      case 'ollama': {
+        // Jika ada API key (env atau settings), paksa mode cloud
+        const isCloud = resolvedOllamaKey
+          ? 'cloud'
+          : (settings?.ollamaMode || 'local');
+
+        if (isCloud === 'local') {
+          throw new Error(
+            'Ollama mode "local" tidak dapat diakses dari Vercel. ' +
+            'Masukkan Ollama API Key di AI Analyst settings untuk menggunakan Ollama Cloud, ' +
+            'atau gunakan provider Gemini.'
+          );
+        }
+
+        content = await callOllama(
+          SYSTEM_PROMPT, messages,
+          settings?.ollamaModel || 'llama3.2',
+          settings?.ollamaBaseUrl || 'http://localhost:11434',
+          settings?.temperature ?? 0.5,
+          Math.max(settings?.maxTokens || 2000, 2000),
+          'cloud',
+          resolvedOllamaKey
+        );
         break;
+      }
+
       case 'openrouter':
-        content = await callOpenRouter(SYSTEM_PROMPT, messages, settings.openrouterModel || 'google/gemini-flash-1.5', settings.temperature ?? 0.5, Math.max(settings.maxTokens || 2000, 2000));
+        content = await callOpenRouter(
+          SYSTEM_PROMPT, messages,
+          settings?.openrouterModel || 'google/gemini-flash-1.5',
+          settings?.temperature ?? 0.5,
+          Math.max(settings?.maxTokens || 2000, 2000)
+        );
         break;
+
       default:
-        return NextResponse.json({ error: `Provider '${settings.provider}' tidak dikenal` }, { status: 400 });
+        // Last resort: gunakan Gemini jika GEMINI_API_KEY ada
+        if (process.env.GEMINI_API_KEY) {
+          content = await callGemini(SYSTEM_PROMPT, messages, 'gemini-1.5-flash', 0.5, 2000);
+        } else {
+          return NextResponse.json({ error: `Provider '${provider}' tidak dikenal. Konfigurasikan AI di menu AI Analyst.` }, { status: 400 });
+        }
     }
 
     return NextResponse.json({ content });
