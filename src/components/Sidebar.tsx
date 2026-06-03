@@ -5,9 +5,15 @@ import {
   Target, Filter, DollarSign, Layers, CalendarCheck, CalendarDays, BarChart3,
   ChevronLeft, ChevronRight, Upload, PieChart, Package, Sparkles, Award,
   ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode, ClipboardList,
-  X,
+  X, ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+
+// Menu yang boleh dilihat oleh role 'viewer'
+const VIEWER_ALLOWED_TABS = new Set<TabKey>(['home', 'affiliate', 'laporan-harian']);
+
+export type UserRole = 'admin' | 'viewer';
+
 
 interface TabGroup {
   title: string;
@@ -93,10 +99,23 @@ interface SidebarProps {
   onSelect: (t: TabKey) => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  userRole?: UserRole;
 }
 
-export default function Sidebar({ active, onSelect, mobileOpen = false, onMobileClose }: SidebarProps) {
+
+export default function Sidebar({ active, onSelect, mobileOpen = false, onMobileClose, userRole = 'admin' }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const isViewer = userRole === 'viewer';
+
+  // Viewer hanya boleh akses tab tertentu
+  const canView = (key: TabKey) => !isViewer || VIEWER_ALLOWED_TABS.has(key);
+
+  // Jika active tab tidak diizinkan, paksa ke home
+  useEffect(() => {
+    if (isViewer && !VIEWER_ALLOWED_TABS.has(active)) {
+      onSelect('home');
+    }
+  }, [isViewer, active, onSelect]);
 
   // Close mobile sidebar on Escape key
   useEffect(() => {
@@ -133,33 +152,52 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
           </button>
         )}
       </div>
+
+      {/* Viewer badge */}
+      {isViewer && (!collapsed || isMobile) && (
+        <div className="mx-3 mt-3 mb-1 px-3 py-2 bg-amber-500/20 border border-amber-400/30 rounded-lg flex items-center gap-2">
+          <ShieldCheck size={14} className="text-amber-300 shrink-0" />
+          <span className="text-[11px] text-amber-200 font-medium">Akses Terbatas</span>
+        </div>
+      )}
+      {isViewer && collapsed && !isMobile && (
+        <div className="flex justify-center mt-3 mb-1" title="Akses Terbatas">
+          <ShieldCheck size={16} className="text-amber-300" />
+        </div>
+      )}
+
       <nav className="flex-1 overflow-y-auto py-1">
-        {tabGroups.map((group) => (
-          <div key={group.title}>
-            {(!collapsed || isMobile) && (
-              <div className="px-4 pt-4 pb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">{group.title}</span>
-              </div>
-            )}
-            {collapsed && !isMobile && <div className="border-t border-white/10 my-1" />}
-            {group.items.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => onSelect(tab.key)}
-                className={`w-full flex items-center gap-3 px-4 py-2 text-[13px] transition-colors ${
-                  active === tab.key
-                    ? "bg-white/20 text-white font-semibold border-r-3 border-white"
-                    : "text-white/70 hover:bg-sidebar-hover hover:text-white"
-                } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
-                title={tab.label}
-                aria-label={tab.label}
-              >
-                {tab.icon}
-                {(!collapsed || isMobile) && <span className="truncate">{tab.label}</span>}
-              </button>
-            ))}
-          </div>
-        ))}
+        {tabGroups.map((group) => {
+          // Filter items berdasarkan role
+          const visibleItems = group.items.filter(tab => canView(tab.key));
+          if (visibleItems.length === 0) return null; // sembunyikan grup kosong
+          return (
+            <div key={group.title}>
+              {(!collapsed || isMobile) && (
+                <div className="px-4 pt-4 pb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">{group.title}</span>
+                </div>
+              )}
+              {collapsed && !isMobile && <div className="border-t border-white/10 my-1" />}
+              {visibleItems.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => onSelect(tab.key)}
+                  className={`w-full flex items-center gap-3 px-4 py-2 text-[13px] transition-colors ${
+                    active === tab.key
+                      ? "bg-white/20 text-white font-semibold border-r-3 border-white"
+                      : "text-white/70 hover:bg-sidebar-hover hover:text-white"
+                  } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
+                  title={tab.label}
+                  aria-label={tab.label}
+                >
+                  {tab.icon}
+                  {(!collapsed || isMobile) && <span className="truncate">{tab.label}</span>}
+                </button>
+              ))}
+            </div>
+          );
+        })}
       </nav>
       {(!collapsed || isMobile) && (
         <div className="px-4 py-3 text-xs text-white/40 border-t border-white/10">
@@ -168,6 +206,7 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
       )}
     </>
   );
+
 
   return (
     <>

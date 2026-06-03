@@ -3,6 +3,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { TabKey } from "@/lib/types";
 import Sidebar from "@/components/Sidebar";
+import type { UserRole } from "@/components/Sidebar";
 import StoreSelector from "@/components/StoreSelector";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import CommandPalette from "@/components/CommandPalette";
@@ -95,6 +96,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [hydrated, setHydrated] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>('admin');
   const { dark, toggle: toggleDark } = useDarkMode();
   const { fileName, setData: setGMVData } = useGMVStore();
   const { stores, activeStoreId, getActiveStore, addStore, setActiveStore, saveOverviewData, saveVideoData, migrated, setMigrated, initFromSupabase, loadAffiliateFromSupabase } = useStoreManager();
@@ -106,6 +108,10 @@ export default function Home() {
   useEffect(() => {
     setActiveTab(getTabFromHash());
     setHydrated(true);
+    // Fetch role from auth API
+    fetch('/api/auth').then(r => r.json()).then(d => {
+      if (d.authenticated && d.role) setUserRole(d.role as UserRole);
+    }).catch(() => {});
   }, []);
 
   // Sync hash ↔ tab (back/forward browser buttons)
@@ -291,7 +297,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar active={activeTab} onSelect={handleTabSelect} mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
+      <Sidebar active={activeTab} onSelect={handleTabSelect} mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} userRole={userRole} />
       <main className="flex-1 overflow-y-auto min-w-0">
         {/* Store selector header */}
         <div className="bg-white dark:bg-gray-900 border-b border-border dark:border-gray-700 px-4 md:px-6 py-2.5 flex items-center justify-between gap-2 md:gap-4">
