@@ -216,13 +216,16 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     setAiError("");
     try {
       const ch = lhData?.channels || {};
-      // Sumber utama: evaluasi_per_brand.freshvision
+      const s2 = lhData?.summary;
+      // Prioritas: summary.total_omzet_fv > evaluasi_per_brand.freshvision > shop_tab > total_omzet
       const displayOmzet =
-        (lhData?.evaluasi_per_brand?.freshvision || 0) > 0
+        (s2?.total_omzet_fv || 0) > 0
+          ? (s2!.total_omzet_fv)
+          : (lhData?.evaluasi_per_brand?.freshvision || 0) > 0
           ? (lhData.evaluasi_per_brand.freshvision as number)
           : (ch.shop_tab?.total_omzet || 0) > 0
           ? ch.shop_tab!.total_omzet
-          : (lhData?.summary?.total_omzet_fv || lhData?.summary?.total_omzet || 0);
+          : (s2?.total_omzet || 0);
       const res = await fetch('/api/executive-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -715,14 +718,19 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           const s = lhData.summary;
           const ch = lhData.channels || {};
 
-          // ✔ Sumber utama: evaluasi_per_brand.freshvision (dari sheet Evaluasi Harian)
-          // Fallback bertingkat: shop_tab → total_omzet_fv → total_omzet
+          // ✔ Sumber omzet FreshVision (prioritas dari atas):
+          // 1. summary.total_omzet_fv  = dari sheet Evaluasi Harian FreshVision (selalu ada)
+          // 2. evaluasi_per_brand.freshvision = sama, versi terstruktur
+          // 3. channels.shop_tab = gabungan tab SHOP
+          // 4. summary.total_omzet = fallback terakhir
           const displayOmzet =
-            (lhData.evaluasi_per_brand?.freshvision || 0) > 0
+            (s.total_omzet_fv || 0) > 0
+              ? s.total_omzet_fv
+              : (lhData.evaluasi_per_brand?.freshvision || 0) > 0
               ? (lhData.evaluasi_per_brand.freshvision as number)
               : (ch.shop_tab?.total_omzet || 0) > 0
-              ? (ch.shop_tab!.total_omzet)
-              : (s.total_omzet_fv || s.total_omzet || 0);
+              ? ch.shop_tab!.total_omzet
+              : (s.total_omzet || 0);
           const displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
           const displayMargin = displayOmzet - (s.total_biaya_iklan || 0) - (s.total_komisi_aff || 0);
 
