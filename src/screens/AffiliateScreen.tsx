@@ -90,6 +90,8 @@ export default function AffiliateScreen() {
   const [drillDownCreator, setDrillDownCreator] = useState<string | null>(null);
   const [supabaseCreators, setSupabaseCreators] = useState<AffiliateCreatorItem[]>([]);
   const [isLoadingCreators, setIsLoadingCreators] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   // ─── LOAD CREATORS FROM SUPABASE ────────────────────────
   useEffect(() => {
@@ -126,10 +128,19 @@ export default function AffiliateScreen() {
     const fileList = e.target.files;
     if (!fileList?.length || !activeStore) return;
     setIsUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
     try {
       const files = Array.from(fileList);
       const monthData = await parseAffiliateFiles(files, period, platform);
+
+      // Validate parsed data has at least some content
+      if (!monthData.summary.totalCreators && !monthData.summary.totalGMV && !monthData.coreSummary) {
+        throw new Error('File tidak terbaca dengan benar. Pastikan format file sesuai (TikTok Creator List / Core Metrics, atau Tokopedia Creator List / Core Stats).');
+      }
+
       await saveAffiliateData(activeStore.id, { ...monthData, storeId: activeStore.id });
+
       // Reload creators from Supabase after save
       try {
         const p = monthData.periodRaw?.split(" ~ ")[0]?.slice(0, 7) || period;
@@ -142,6 +153,7 @@ export default function AffiliateScreen() {
           return [...otherCreators, ...fresh];
         });
       } catch { /* creators will load on next filter change */ }
+
       // Save raw files for PDF report generation
       files.forEach((file) => {
         const n = file.name.toLowerCase();
@@ -157,8 +169,28 @@ export default function AffiliateScreen() {
             setRawFile(activeStore.id, "affiliateTokopedia", file);
         }
       });
-    } catch (err) {
-      console.error("Error parsing affiliate files:", err);
+
+      const creatorCount = monthData.summary.totalCreators;
+      const gmv = monthData.summary.totalGMV;
+      setUploadSuccess(`✅ Berhasil disimpan ke Supabase! ${creatorCount} kreator, GMV ${Math.round(gmv).toLocaleString('id-ID')} untuk periode ${monthData.period || period} (${platform}).`);
+      // Auto-dismiss success after 8 seconds
+      setTimeout(() => setUploadSuccess(null), 8000);
+
+    } catch (err: any) {
+      console.error("Error uploading affiliate files:", err);
+      const msg = err?.message || err?.details || String(err) || 'Unknown error';
+      // Detect common Supabase errors and give actionable messages
+      if (msg.includes('violates') || msg.includes('policy') || msg.includes('RLS') || msg.includes('permission')) {
+        setUploadError(`❌ Gagal menyimpan ke database: Izin ditolak (RLS policy). Pastikan Supabase RLS policy sudah dikonfigurasi untuk tabel affiliate_summaries dan affiliate_creators.`);
+      } else if (msg.includes('duplicate') || msg.includes('unique') || msg.includes('conflict')) {
+        setUploadError(`⚠️ Data periode ini sudah ada di database. Coba hapus data lama terlebih dahulu lalu upload ulang.`);
+      } else if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('42P01')) {
+        setUploadError(`❌ Tabel database tidak ditemukan. Jalankan migrasi Supabase terlebih dahulu.`);
+      } else if (msg.includes('tidak terbaca')) {
+        setUploadError(`⚠️ ${msg}`);
+      } else {
+        setUploadError(`❌ Gagal menyimpan ke Supabase: ${msg}`);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -447,8 +479,35 @@ export default function AffiliateScreen() {
         </div>
       </div>
 
+      {/* ── UPLOAD ERROR BANNER ──────────────────────── */}
+      {uploadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-red-700 text-sm">Upload Gagal Disimpan ke Database</p>
+            <p className="text-sm text-red-600 mt-1">{uploadError}</p>
+            <p className="text-xs text-red-400 mt-2">
+              Data mungkin tersimpan di browser lokal saja. Buka DevTools (F12) → Console untuk melihat detail error teknis.
+            </p>
+          </div>
+          <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-red-600 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+      {uploadSuccess && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+          <p className="text-sm text-green-700 flex-1">{uploadSuccess}</p>
+          <button onClick={() => setUploadSuccess(null)} className="text-green-400 hover:text-green-600 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* ── EMPTY STATE ─────────────────────────────── */}
       {!agg && <EmptyAffiliate onUpload={handleUpload} />}
+
 
       {agg && (
         <>

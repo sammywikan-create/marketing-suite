@@ -197,18 +197,36 @@ export const useStoreManager = create<StoreManagerState>()(
 
       // ─── AFFILIATE DATA (Supabase + Zustand summary) ──
       saveAffiliateData: async (storeId, data) => {
-        const period = data.periodRaw?.split(' ~ ')[0]?.slice(0, 7) || data.period
+        // Fix: always produce a clean YYYY-MM period key.
+        // data.periodRaw is like "2025-01-01 ~ 2025-01-31" → slice to "2025-01"
+        // data.period is a human-readable label like "Januari 2025" — NOT safe as DB key.
+        const rawPeriod = data.periodRaw?.split(' ~ ')[0]?.slice(0, 7)
+        // Fallback: if periodRaw is missing, attempt to parse data.period (e.g. "Januari 2025")
+        // by reversing toLocaleDateString, but use ISO format only.
+        const period = rawPeriod && /^\d{4}-\d{2}$/.test(rawPeriod)
+          ? rawPeriod
+          : (() => {
+              // Try to extract YYYY-MM from whatever is available
+              const match = (data.periodRaw || '').match(/^(\d{4}-\d{2})/)
+              if (match) return match[1]
+              // Last resort: current month
+              return new Date().toISOString().slice(0, 7)
+            })()
         const platform = data.platform || 'tiktok'
 
-        // 1. Save to Supabase
+        // 1. Save to Supabase — propagate errors so the upload handler can show user feedback
         try {
           await saveAffiliateSummary(storeId, data.summary, period, platform, data.coreSummary)
           if (data.creators?.length) {
             await saveAffiliateCreators(storeId, period, platform, data.creators)
           }
         } catch (err: any) {
-          if (err?.message !== '__SUPABASE_NOT_CONFIGURED__') {
-            console.error('Supabase save failed, keeping in Zustand:', err)
+          if (err?.message === '__SUPABASE_NOT_CONFIGURED__') {
+            // Supabase not configured — silent fallback to local only is intentional
+          } else {
+            // Real error — log AND re-throw so the caller (handleUpload) can show user feedback
+            console.error('Supabase save failed:', err)
+            throw err
           }
         }
 
@@ -233,6 +251,7 @@ export const useStoreManager = create<StoreManagerState>()(
           }),
         }))
       },
+
 
       deleteAffiliateData: async (storeId, periodRaw, platform) => {
         const period = periodRaw.split(' ~ ')[0]?.slice(0, 7) || periodRaw
