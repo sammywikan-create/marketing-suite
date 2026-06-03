@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
 import { loadAffiliateCreators } from "@/lib/db";
+import { listLaporanHarianPeriods, loadLaporanHarianData } from "@/lib/db";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -160,6 +161,33 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   }, [activePeriod, targetVersion, getTarget]);
   const targetProgress = targetGMV > 0 ? (agg.totalGMV / targetGMV) * 100 : 0;
   const targetRemaining = Math.max(0, targetGMV - agg.totalGMV);
+
+  // ─── LAPORAN HARIAN DATA ──────────────────────────────
+  const [lhData, setLhData] = useState<any | null>(null);
+  const [lhLoading, setLhLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activePeriod) return;
+    let cancelled = false;
+    async function fetchLh() {
+      setLhLoading(true);
+      try {
+        // Cari period Laporan Harian yang cocok dengan periode affiliate aktif
+        const periods = await listLaporanHarianPeriods();
+        const match = periods.find((p) => p.period === activePeriod);
+        const targetPeriod = match ? match.period : (periods[0]?.period || null);
+        if (!targetPeriod) { if (!cancelled) setLhData(null); return; }
+        const data = await loadLaporanHarianData(targetPeriod);
+        if (!cancelled) setLhData(data);
+      } catch {
+        if (!cancelled) setLhData(null);
+      } finally {
+        if (!cancelled) setLhLoading(false);
+      }
+    }
+    fetchLh();
+    return () => { cancelled = true; };
+  }, [activePeriod]);
 
   // ─── CREATORS (load from Supabase directly) ───────────
   const [supabaseCreators, setSupabaseCreators] = useState<AffiliateCreatorItem[]>([]);
@@ -574,6 +602,110 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             );
           })}
         </div>
+      </div>
+
+      {/* ═══ ZONA 3.6: LAPORAN HARIAN SUMMARY ═══ */}
+      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📋</span>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">
+                Laporan Harian — FreshVision
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {lhData?.period ? `Periode: ${formatPeriod(lhData.period)}` : `Sinkron dengan periode ${formatPeriod(activePeriod)}`}
+              </p>
+            </div>
+          </div>
+          <button onClick={() => onNavigate("laporan-harian")} className="text-xs text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition">
+            Lihat Detail →
+          </button>
+        </div>
+
+        {lhLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-400 py-4">
+            <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin" />
+            Memuat data laporan harian...
+          </div>
+        ) : !lhData?.summary ? (
+          <div className="text-center py-5 bg-white/60 rounded-xl border border-emerald-100">
+            <span className="text-2xl block mb-2">📂</span>
+            <p className="text-xs text-gray-500">Belum ada data Laporan Harian untuk periode ini.</p>
+            <button onClick={() => onNavigate("laporan-harian")} className="mt-2 text-xs text-emerald-600 hover:underline">Upload Sekarang →</button>
+          </div>
+        ) : (() => {
+          const s = lhData.summary;
+          const ch = lhData.channels || {};
+          const roasColor = s.roas >= 3 ? "text-green-600" : s.roas >= 2 ? "text-yellow-600" : "text-red-500";
+          const marginColor = s.margin_after_cost >= 0 ? "text-green-600" : "text-red-500";
+
+          return (
+            <>
+              {/* KPI Utama */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+                {[
+                  { label: "Omzet FreshVision", value: fRp(s.total_omzet || 0), icon: "💰", color: "text-emerald-700", bg: "bg-white" },
+                  { label: "Biaya Iklan", value: fRp(s.total_biaya_iklan || 0), icon: "📣", color: "text-blue-700", bg: "bg-white" },
+                  { label: "ROAS", value: `${(s.roas || 0).toFixed(1)}×`, icon: "🎯", color: roasColor, bg: "bg-white" },
+                  { label: "CAC Ads", value: fRp(s.rata_cac_ads || 0), icon: "💸", color: "text-purple-700", bg: "bg-white" },
+                  { label: "Margin Bersih", value: fRp(s.margin_after_cost || 0), icon: "📈", color: marginColor, bg: "bg-white" },
+                ].map((item) => (
+                  <div key={item.label} className={`${item.bg} rounded-xl p-3 border border-emerald-100`}>
+                    <div className="text-base mb-1">{item.icon}</div>
+                    <div className={`text-sm font-bold ${item.color} leading-tight`}>{item.value}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Metrik tambahan */}
+              <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+                {[
+                  { label: "Closing", value: fN(s.total_closing || 0) },
+                  { label: "Botol Terjual", value: fN(s.total_botol || 0) },
+                  { label: "Avg Upsell", value: `${(s.rata_upsell || 0).toFixed(1)}×` },
+                  { label: "Cost/Closing", value: fRp(s.cost_per_closing || 0) },
+                  { label: "Cost/Botol", value: fRp(s.cost_per_botol || 0) },
+                  { label: "Hari Data", value: `${s.hari || 0} hari` },
+                ].map((item) => (
+                  <div key={item.label} className="bg-white/70 rounded-lg p-2 text-center border border-emerald-50">
+                    <div className="text-xs font-bold text-gray-800">{item.value}</div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Channel Breakdown */}
+              {Object.keys(ch).length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 font-medium mb-2">Breakdown per Channel</p>
+                  <div className="space-y-1.5">
+                    {([
+                      { key: "shop", label: "📦 SHOP", color: "#059669" },
+                      { key: "video", label: "📹 Video", color: "#1a237e" },
+                      { key: "live", label: "🔴 Live", color: "#ef4444" },
+                    ] as const).filter(c => ch[c.key]?.total_omzet > 0).map(({ key, label, color }) => {
+                      const cData = ch[key];
+                      const total = (ch.shop?.total_omzet || 0) + (ch.video?.total_omzet || 0) + (ch.live?.total_omzet || 0);
+                      const pct = total > 0 ? (cData.total_omzet / total) * 100 : 0;
+                      return (
+                        <div key={key} className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-24 flex-shrink-0">{label}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                            <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+                          </div>
+                          <span className="text-xs font-medium text-gray-700 w-24 text-right">{fRp(cData.total_omzet)}</span>
+                          <span className="text-[10px] text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* ═══ ZONA 3.5: RATA-RATA HARIAN ═══ */}
