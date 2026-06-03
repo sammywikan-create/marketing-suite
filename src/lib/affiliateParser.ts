@@ -140,14 +140,28 @@ function parseTikTokCreators(rows: any[][]): AffiliateCreatorItem[] {
     const itemsSold = Number(g(r, 'produk yang terjual melalui afiliasi')) || 0
     const refundItems = Number(g(r, 'produk yang dikembalikan dananya')) || 0
     const sampleSent = Number(g(r, 'sampel terkirim')) || 0
+
+    // FIX: Read followers from 'Pengikut' column (TikTok Indonesian export)
+    const followersRaw = g(r, 'pengikut') ?? g(r, 'followers') ?? g(r, 'jumlah pengikut')
+    const followers = parseInt(String(followersRaw ?? '0').replace(/[^0-9]/g, '')) || 0
+
+    // FIX: Use 'Nama Kreator' column if exists, fallback to column 0
+    const usernameRaw = g(r, 'nama kreator') ?? String(r[0] ?? '')
+    const username = String(usernameRaw).trim()
+
+    // FIX: Parse channel GMV breakdown if present in TikTok file
+    const liveGMV = parseRpStr(g(r, 'gmv dari siaran live') ?? g(r, 'live gmv') ?? null)
+    const videoGMV = parseRpStr(g(r, 'gmv dari video') ?? g(r, 'video shoppable gmv') ?? null)
+    const productCardGMV = parseRpStr(g(r, 'gmv kartu produk') ?? g(r, 'product card gmv') ?? null)
+
     const refundRate = gmv > 0 ? (refund / gmv) * 100 : 0
     const commissionRate = gmv > 0 ? (commission / gmv) * 100 : 0
     return {
-      creatorUsername: String(r[0] || '').trim(),
+      creatorUsername: username,
       affiliateGMV: gmv,
-      affiliateLiveGMV: 0,
-      affiliateShoppableVideoGMV: 0,
-      affiliateProductCardGMV: 0,
+      affiliateLiveGMV: liveGMV,
+      affiliateShoppableVideoGMV: videoGMV,
+      affiliateProductCardGMV: productCardGMV,
       affiliateProductsSold: itemsSold,
       itemsSold,
       estCommission: commission,
@@ -166,8 +180,8 @@ function parseTikTokCreators(rows: any[][]): AffiliateCreatorItem[] {
       openCollabEstCommission: 0,
       affiliateRefundedGMV: refund,
       affiliateItemsRefunded: refundItems,
-      affiliateFollowers: 0,
-      creatorTier: 'Micro' as const,
+      affiliateFollowers: followers,
+      creatorTier: getFollowerTier(followers),
       refundRate,
       commissionRate,
       gmvPerVideo: videos > 0 ? gmv / videos : 0,
