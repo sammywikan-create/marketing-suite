@@ -178,18 +178,22 @@ export default function AffiliateScreen() {
 
     } catch (err: any) {
       console.error("Error uploading affiliate files:", err);
-      const msg = err?.message || err?.details || String(err) || 'Unknown error';
+      const msg = (err?.message || err?.details || String(err) || '').toLowerCase();
       // Detect common Supabase errors and give actionable messages
-      if (msg.includes('violates') || msg.includes('policy') || msg.includes('RLS') || msg.includes('permission')) {
+      if (msg.includes('connect') || msg.includes('network') || msg.includes('fetch failed') ||
+          msg.includes('econnrefused') || msg.includes('timeout') || msg.includes('paused') ||
+          msg.includes('unavailable') || msg.includes('503') || msg.includes('502')) {
+        setUploadError(`⚠️ Database Supabase tidak dapat dijangkau. Kemungkinan database sedang PAUSE karena tidak aktif selama 7+ hari. Buka https://supabase.com/dashboard, pilih project Anda, lalu klik “Resume”. Setelah database aktif kembali, upload ulang file ini.`);
+      } else if (msg.includes('violates') || msg.includes('policy') || msg.includes('rls') || msg.includes('permission')) {
         setUploadError(`❌ Gagal menyimpan ke database: Izin ditolak (RLS policy). Pastikan Supabase RLS policy sudah dikonfigurasi untuk tabel affiliate_summaries dan affiliate_creators.`);
       } else if (msg.includes('duplicate') || msg.includes('unique') || msg.includes('conflict')) {
         setUploadError(`⚠️ Data periode ini sudah ada di database. Coba hapus data lama terlebih dahulu lalu upload ulang.`);
-      } else if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('42P01')) {
-        setUploadError(`❌ Tabel database tidak ditemukan. Jalankan migrasi Supabase terlebih dahulu.`);
+      } else if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('42p01')) {
+        setUploadError(`❌ Tabel database tidak ditemukan. Jalankan migration.sql di Supabase SQL Editor terlebih dahulu.`);
       } else if (msg.includes('tidak terbaca')) {
-        setUploadError(`⚠️ ${msg}`);
+        setUploadError(`⚠️ ${err?.message || msg}`);
       } else {
-        setUploadError(`❌ Gagal menyimpan ke Supabase: ${msg}`);
+        setUploadError(`❌ Gagal menyimpan ke Supabase: ${err?.message || msg || 'Unknown error'}`);
       }
     } finally {
       setIsUploading(false);
