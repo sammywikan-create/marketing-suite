@@ -216,10 +216,10 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     setAiError("");
     try {
       const ch = lhData?.channels || {};
-      // Total Omzet FreshVision = SHOP tab (sudah mencakup semua produk FreshVision)
-      const displayOmzet = (ch.shop?.total_omzet || 0) > 0
-        ? (ch.shop?.total_omzet || 0)
-        : (lhData?.summary?.total_omzet || 0);
+      // shop_tab = gabungan semua tab SHOP (ADV Saeful + 130ml + 200ml)
+      const displayOmzet = (ch.shop_tab?.total_omzet || 0) > 0
+        ? (ch.shop_tab?.total_omzet || 0)
+        : (lhData?.summary?.total_omzet_fv || lhData?.summary?.total_omzet || 0);
       const res = await fetch('/api/executive-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -712,11 +712,12 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           const s = lhData.summary;
           const ch = lhData.channels || {};
 
-          // ✔ Total omzet FreshVision = channels.shop.total_omzet
-          // (SHOP tab sudah mencakup semua produk FreshVision; Video & Live adalah channel terpisah)
-          const displayOmzet = (ch.shop?.total_omzet || 0) > 0
-            ? (ch.shop?.total_omzet || 0)
-            : (s.total_omzet || 0);
+          // ✔ Total omzet FreshVision = channels.shop_tab.total_omzet
+          // (shop_tab = gabungan semua tab SHOP: ADV Saeful + 130ml + 200ml)
+          // 'shop' (kecil) hanya dari sheet ADV Saeful saja — JANGAN dipakai
+          const displayOmzet = (ch.shop_tab?.total_omzet || 0) > 0
+            ? (ch.shop_tab?.total_omzet || 0)
+            : (s.total_omzet_fv || s.total_omzet || 0);
           const displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
           const displayMargin = displayOmzet - (s.total_biaya_iklan || 0) - (s.total_komisi_aff || 0);
 
