@@ -106,8 +106,9 @@ export default function AffiliateScreen() {
   };
 
   // ─── LOAD CREATORS FROM SUPABASE ────────────────────────
+  // Di combined mode: load kreator dari SEMUA toko secara paralel.
+  // Di single mode: load hanya dari toko aktif (perilaku lama).
   useEffect(() => {
-    if (!activeStore?.id) return;
     let cancelled = false;
     async function fetchCreators() {
       setIsLoadingCreators(true);
@@ -116,8 +117,25 @@ export default function AffiliateScreen() {
           ? (selectedPeriod.split(" ~ ")[0]?.slice(0, 7) || selectedPeriod)
           : undefined;
         const plt = platformFilter !== "all" ? platformFilter : undefined;
-        const creators = await loadAffiliateCreators(activeStore!.id, period, plt);
-        if (!cancelled) setSupabaseCreators(creators);
+
+        if (combinedMode) {
+          // Fetch dari semua toko secara paralel, lalu tag tiap kreator dengan _storeKey
+          const results = await Promise.all(
+            stores.map(async (s) => {
+              try {
+                const list = await loadAffiliateCreators(s.id, period, plt);
+                return list.map((c) => ({ ...c, _storeKey: s.name }));
+              } catch {
+                return [];
+              }
+            })
+          );
+          if (!cancelled) setSupabaseCreators(results.flat() as AffiliateCreatorItem[]);
+        } else {
+          if (!activeStore?.id) return;
+          const creators = await loadAffiliateCreators(activeStore.id, period, plt);
+          if (!cancelled) setSupabaseCreators(creators);
+        }
       } catch (err: any) {
         if (err?.message !== '__SUPABASE_NOT_CONFIGURED__') {
           console.error("Failed to load creators from Supabase:", err);
@@ -129,7 +147,7 @@ export default function AffiliateScreen() {
     }
     fetchCreators();
     return () => { cancelled = true; };
-  }, [activeStore?.id, selectedPeriod, platformFilter]);
+  }, [activeStore?.id, selectedPeriod, platformFilter, combinedMode, stores]);
 
   // ─── UPLOAD HANDLER ───────────────────────────────────
   const handleUpload = useCallback(async (
@@ -223,36 +241,36 @@ export default function AffiliateScreen() {
 
   // ─── AGGREGATED METRICS ───────────────────────────────
   const agg = useMemo(() => {
-    // Di combined mode, supabaseCreators tidak dipakai → hanya cek filteredData.
-    // Di single mode, salah satu sumber cukup (supabaseCreators atau filteredData).
-    if (combinedMode ? !filteredData.length : (!filteredData.length && !supabaseCreators.length)) return null;
+    if (!filteredData.length && !supabaseCreators.length) return null;
 
     // ── CREATOR SOURCE SELECTION ──
-    // Combined mode (gabungan toko):
-    //   - supabaseCreators hanya berisi data toko aktif → TIDAK dipakai
-    //   - Gunakan localCreators dari filteredData (allMonths sudah mencakup semua toko)
-    //   - Key = "storeName::username" agar kreator yang sama di toko berbeda tidak di-merge
+    // supabaseCreators sekarang berisi kreator dari SEMUA toko saat combined mode
+    // (di-fetch secara paralel oleh useEffect di atas, masing-masing dengan _storeKey).
+    // Di single mode: supabaseCreators = kreator toko aktif saja (perilaku lama).
     //
-    // Single-store mode:
-    //   - Supabase creators tetap jadi sumber utama (canonical)
-    //   - Local creators mengisi gap yang tidak ada di Supabase
-    //   - Key = "username" (merge lintas periode dalam satu toko, perilaku lama)
+    // Key kreator:
+    //   - Combined mode → "storeName::username" agar kreator yang sama di dua toko terpisah
+    //   - Single mode   → "username" (merge lintas periode, perilaku lama)
     const localCreators = filteredData.flatMap((d) =>
       d.creators.map((c) => ({ ...c, _storeKey: (d as any)._storeName as string || '' }))
     );
     type CreatorWithStore = AffiliateCreatorItem & { _months: number; _storeKey: string };
     let creatorSource: (AffiliateCreatorItem & { _storeKey: string })[];
 
-    if (combinedMode) {
-      // Bug fix: di combined mode, bypass supabaseCreators (hanya toko aktif).
-      // filteredData sudah berisi data semua toko dari allMonths.
-      creatorSource = localCreators;
-    } else if (supabaseCreators.length > 0) {
-      // Single mode: Supabase takes priority, local fills gaps
-      const supabaseUsernames = new Set(supabaseCreators.map((c) => c.creatorUsername));
-      const localOnly = localCreators.filter((c) => !supabaseUsernames.has(c.creatorUsername));
+    if (supabaseCreators.length > 0) {
+      // Supabase takes priority (sudah mencakup semua toko di combined mode)
+      const supabaseKeys = new Set(
+        supabaseCreators.map((c) => {
+          const sk = (c as any)._storeKey || '';
+          return combinedMode ? `${sk}::${c.creatorUsername}` : c.creatorUsername;
+        })
+      );
+      const localOnly = localCreators.filter((c) => {
+        const key = combinedMode ? `${c._storeKey}::${c.creatorUsername}` : c.creatorUsername;
+        return !supabaseKeys.has(key);
+      });
       creatorSource = [
-        ...supabaseCreators.map((c) => ({ ...c, _storeKey: '' })),
+        ...supabaseCreators.map((c) => ({ ...c, _storeKey: (c as any)._storeKey || '' })),
         ...localOnly,
       ];
     } else {
@@ -261,10 +279,8 @@ export default function AffiliateScreen() {
 
     const creatorMap: Record<string, CreatorWithStore> = {};
     creatorSource.forEach((c) => {
-      // Bug fix: di combined mode gunakan composite key agar kreator yang sama
-      // di toko berbeda tetap terpisah (affiliate per-toko memang independen).
       const key = combinedMode
-        ? `${c._storeKey}::${c.creatorUsername}`
+        ? `${(c as any)._storeKey || ''}::${c.creatorUsername}`
         : c.creatorUsername;
 
       if (!creatorMap[key]) {
@@ -572,18 +588,33 @@ export default function AffiliateScreen() {
           </div>
           <button
             onClick={async () => {
-              if (!activeStore?.id) return;
               setIsLoadingCreators(true);
               try {
-                // Pull latest summary + creators from Supabase so viewers on other
-                // devices see uploads made elsewhere without needing a full reload.
-                await useStoreManager.getState().loadAffiliateFromSupabase(activeStore.id);
                 const period = selectedPeriod !== "all"
                   ? (selectedPeriod.split(" ~ ")[0]?.slice(0, 7) || selectedPeriod)
                   : undefined;
                 const plt = platformFilter !== "all" ? platformFilter : undefined;
-                const fresh = await loadAffiliateCreators(activeStore.id, period, plt);
-                setSupabaseCreators(fresh);
+
+                if (combinedMode) {
+                  // Refresh semua toko secara paralel
+                  await Promise.all(stores.map((s) =>
+                    useStoreManager.getState().loadAffiliateFromSupabase(s.id).catch(() => {})
+                  ));
+                  const results = await Promise.all(
+                    stores.map(async (s) => {
+                      try {
+                        const list = await loadAffiliateCreators(s.id, period, plt);
+                        return list.map((c) => ({ ...c, _storeKey: s.name }));
+                      } catch { return []; }
+                    })
+                  );
+                  setSupabaseCreators(results.flat() as AffiliateCreatorItem[]);
+                } else {
+                  if (!activeStore?.id) return;
+                  await useStoreManager.getState().loadAffiliateFromSupabase(activeStore.id);
+                  const fresh = await loadAffiliateCreators(activeStore.id, period, plt);
+                  setSupabaseCreators(fresh);
+                }
               } catch (err: any) {
                 if (err?.message !== '__SUPABASE_NOT_CONFIGURED__') {
                   console.error("Refresh failed:", err);
@@ -592,7 +623,7 @@ export default function AffiliateScreen() {
                 setIsLoadingCreators(false);
               }
             }}
-            disabled={isLoadingCreators || !activeStore?.id}
+            disabled={isLoadingCreators || (!activeStore?.id && !combinedMode)}
             className="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
             title="Ambil data terbaru dari server (device lain)"
           >
