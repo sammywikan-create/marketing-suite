@@ -124,38 +124,54 @@ function parseTikTokCore(rows: any[][]): AffiliateCoreSummary {
 // ─── PARSE TIKTOK CREATOR LIST ────────────────────────────
 function parseTikTokCreators(rows: any[][]): AffiliateCreatorItem[] {
   const headers = (rows[0] || []).map((h: any) => String(h || '').toLowerCase())
-  const g = (row: any[], kw: string) => {
-    const i = headers.findIndex((h) => h.includes(kw))
+
+  // g() — cari kolom berdasarkan keyword.
+  // excludeKw: opsional, jika diisi maka header yang mengandung excludeKw akan diabaikan.
+  // Ini penting agar 'video' tidak match 'gmv dari video', dll.
+  const g = (row: any[], kw: string, excludeKw?: string) => {
+    const i = headers.findIndex((h) =>
+      h.includes(kw) && (!excludeKw || !h.includes(excludeKw))
+    )
     return i >= 0 ? row[i] : null
   }
+
   const dataRows = rows.slice(1).filter((r) => r[0] && String(r[0]).trim())
   return dataRows.map((r) => {
-    const gmv = parseRpStr(g(r, 'gmv dari kreator'))
-    const refund = parseRpStr(g(r, 'pengembalian dana'))
+    const gmv        = parseRpStr(g(r, 'gmv dari kreator'))
+    const refund     = parseRpStr(g(r, 'pengembalian dana'))
     const commission = parseRpStr(g(r, 'perkiraan komisi'))
-    const aov = parseRpStr(g(r, 'aov'))
-    const orders = Number(g(r, 'pesanan teratribusi')) || 0
-    const videos = Number(g(r, 'video')) || 0
-    const live = Number(g(r, 'siaran live')) || 0
-    const itemsSold = Number(g(r, 'produk yang terjual melalui afiliasi')) || 0
-    const refundItems = Number(g(r, 'produk yang dikembalikan dananya')) || 0
-    const sampleSent = Number(g(r, 'sampel terkirim')) || 0
+    const aov        = parseRpStr(g(r, 'aov'))
 
-    // FIX: Read followers from 'Pengikut' column (TikTok Indonesian export)
+    // Bug fix: pakai parseRp (bukan Number()) agar aman untuk cell text dengan
+    // thousand separator Indonesia (titik). Number("1.234") = 1.234 (SALAH),
+    // parseRp("1.234") = 1234 (BENAR).
+    // Bug fix: filter 'gmv' agar 'video' tidak match 'gmv dari video',
+    //          dan 'siaran live' tidak match 'gmv dari siaran live'.
+    const orders      = Math.round(parseRp(g(r, 'pesanan teratribusi')))
+    const videos      = Math.round(parseRp(g(r, 'video',       'gmv')))
+    const live        = Math.round(parseRp(g(r, 'siaran live',  'gmv')))
+    const itemsSold   = Math.round(parseRp(g(r, 'produk yang terjual melalui afiliasi', 'dikembalikan')))
+    const refundItems = Math.round(parseRp(g(r, 'produk yang dikembalikan dananya')))
+    const sampleSent  = Math.round(parseRp(g(r, 'sampel terkirim')))
+
+    // Followers: cari kolom 'Pengikut' (TikTok Indonesian export)
     const followersRaw = g(r, 'pengikut') ?? g(r, 'followers') ?? g(r, 'jumlah pengikut')
-    const followers = parseInt(String(followersRaw ?? '0').replace(/[^0-9]/g, '')) || 0
+    const followers = typeof followersRaw === 'number'
+      ? Math.round(followersRaw)
+      : parseInt(String(followersRaw ?? '0').replace(/[^0-9]/g, '')) || 0
 
-    // FIX: Use 'Nama Kreator' column if exists, fallback to column 0
+    // Username: kolom 'Nama Kreator' atau fallback ke kolom pertama
     const usernameRaw = g(r, 'nama kreator') ?? String(r[0] ?? '')
     const username = String(usernameRaw).trim()
 
-    // FIX: Parse channel GMV breakdown if present in TikTok file
-    const liveGMV = parseRpStr(g(r, 'gmv dari siaran live') ?? g(r, 'live gmv') ?? null)
-    const videoGMV = parseRpStr(g(r, 'gmv dari video') ?? g(r, 'video shoppable gmv') ?? null)
-    const productCardGMV = parseRpStr(g(r, 'gmv kartu produk') ?? g(r, 'product card gmv') ?? null)
+    // Channel GMV breakdown (kolom opsional, tidak selalu ada di semua export)
+    const liveGMV        = parseRpStr(g(r, 'gmv dari siaran live'))
+    const videoGMV       = parseRpStr(g(r, 'gmv dari video'))
+    const productCardGMV = parseRpStr(g(r, 'gmv kartu produk') ?? g(r, 'product card gmv'))
 
-    const refundRate = gmv > 0 ? (refund / gmv) * 100 : 0
+    const refundRate     = gmv > 0 ? (refund / gmv) * 100 : 0
     const commissionRate = gmv > 0 ? (commission / gmv) * 100 : 0
+
     return {
       creatorUsername: username,
       affiliateGMV: gmv,
@@ -243,7 +259,9 @@ function parseTokopediaCreators(rows: any[][]): AffiliateCreatorItem[] {
     const live = parseRp(g(r, 'affiliate live streams'))
     const itemsSold = parseRp(g(r, 'items sold'))
     const followersRaw = g(r, 'affiliate followers')
-    const followers = parseInt(String(followersRaw || '0').replace(/[^0-9]/g, '')) || 0
+    const followers = typeof followersRaw === 'number'
+      ? Math.round(followersRaw)
+      : parseInt(String(followersRaw || '0').replace(/[^0-9]/g, '')) || 0
     const ctrRaw = g(r, 'ctr')
     const ctr = parseFloat(String(ctrRaw || '0').replace('%', '')) || 0
     const productImpressions = parseRp(g(r, 'product impressions'))
@@ -308,9 +326,11 @@ function buildSummary(
   const liveGMV = (coreStats?.affiliateLiveGMV ?? 0) > 0 ? coreStats!.affiliateLiveGMV : creators.reduce((a, c) => a + c.affiliateLiveGMV, 0)
   const productCardGMV = (coreStats?.affiliateProductCardGMV ?? 0) > 0 ? coreStats!.affiliateProductCardGMV : creators.reduce((a, c) => a + c.affiliateProductCardGMV, 0)
 
-  // Ensure totalGMV is at least the sum of channel GMVs (channels should never exceed total)
+  // totalGMV: jika ada channel GMV breakdown dan rawTotalGMV = 0 (tidak ada data dari
+  // core file maupun kreator), gunakan channelSum sebagai fallback.
+  // Jangan gunakan Math.max karena bisa mengelembungkan GMV jika ada inconsistency data.
   const channelSum = videoGMV + liveGMV + productCardGMV
-  const totalGMV = Math.max(rawTotalGMV, channelSum)
+  const totalGMV = rawTotalGMV > 0 ? rawTotalGMV : channelSum
 
   return {
     totalCreators: creators.length,
