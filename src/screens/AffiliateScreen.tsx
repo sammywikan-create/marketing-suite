@@ -223,24 +223,50 @@ export default function AffiliateScreen() {
 
   // ─── AGGREGATED METRICS ───────────────────────────────
   const agg = useMemo(() => {
-    if (!filteredData.length && !supabaseCreators.length) return null;
+    // Di combined mode, supabaseCreators tidak dipakai → hanya cek filteredData.
+    // Di single mode, salah satu sumber cukup (supabaseCreators atau filteredData).
+    if (combinedMode ? !filteredData.length : (!filteredData.length && !supabaseCreators.length)) return null;
 
-    // Bug #2 fix: Always merge supabase + local creators.
-    // Supabase creators take priority (they are the canonical persisted source).
-    // Local (in-memory) creators fill in any username not yet in Supabase.
-    const localCreators = filteredData.flatMap((d) => d.creators);
-    let creatorSource: typeof localCreators;
-    if (supabaseCreators.length > 0) {
+    // ── CREATOR SOURCE SELECTION ──
+    // Combined mode (gabungan toko):
+    //   - supabaseCreators hanya berisi data toko aktif → TIDAK dipakai
+    //   - Gunakan localCreators dari filteredData (allMonths sudah mencakup semua toko)
+    //   - Key = "storeName::username" agar kreator yang sama di toko berbeda tidak di-merge
+    //
+    // Single-store mode:
+    //   - Supabase creators tetap jadi sumber utama (canonical)
+    //   - Local creators mengisi gap yang tidak ada di Supabase
+    //   - Key = "username" (merge lintas periode dalam satu toko, perilaku lama)
+    const localCreators = filteredData.flatMap((d) =>
+      d.creators.map((c) => ({ ...c, _storeKey: (d as any)._storeName as string || '' }))
+    );
+    type CreatorWithStore = AffiliateCreatorItem & { _months: number; _storeKey: string };
+    let creatorSource: (AffiliateCreatorItem & { _storeKey: string })[];
+
+    if (combinedMode) {
+      // Bug fix: di combined mode, bypass supabaseCreators (hanya toko aktif).
+      // filteredData sudah berisi data semua toko dari allMonths.
+      creatorSource = localCreators;
+    } else if (supabaseCreators.length > 0) {
+      // Single mode: Supabase takes priority, local fills gaps
       const supabaseUsernames = new Set(supabaseCreators.map((c) => c.creatorUsername));
       const localOnly = localCreators.filter((c) => !supabaseUsernames.has(c.creatorUsername));
-      creatorSource = [...supabaseCreators, ...localOnly];
+      creatorSource = [
+        ...supabaseCreators.map((c) => ({ ...c, _storeKey: '' })),
+        ...localOnly,
+      ];
     } else {
       creatorSource = localCreators;
     }
 
-    const creatorMap: Record<string, AffiliateCreatorItem & { _months: number }> = {};
+    const creatorMap: Record<string, CreatorWithStore> = {};
     creatorSource.forEach((c) => {
-      const key = c.creatorUsername;
+      // Bug fix: di combined mode gunakan composite key agar kreator yang sama
+      // di toko berbeda tetap terpisah (affiliate per-toko memang independen).
+      const key = combinedMode
+        ? `${c._storeKey}::${c.creatorUsername}`
+        : c.creatorUsername;
+
       if (!creatorMap[key]) {
         creatorMap[key] = { ...c, _months: 0 };
       } else {
@@ -362,7 +388,7 @@ export default function AffiliateScreen() {
       // Impresi
       totalImpressions, totalCtr, gmvPerImpression,
     };
-  }, [filteredData, supabaseCreators]);
+  }, [filteredData, supabaseCreators, combinedMode]);
 
   // ─── CREATOR LIST (filtered, sorted) ──────────────────
   const creatorList = useMemo(() => {
