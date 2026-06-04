@@ -254,6 +254,7 @@ export default function AffiliateScreen() {
         creatorMap[key].affiliateLiveGMV += c.affiliateLiveGMV;
         creatorMap[key].affiliateShoppableVideoGMV += c.affiliateShoppableVideoGMV;
         creatorMap[key].affiliateProductCardGMV += c.affiliateProductCardGMV;
+        creatorMap[key].productImpressions += c.productImpressions || 0;
       }
       if (c.affiliateGMV > 0) creatorMap[key]._months++;
     });
@@ -277,6 +278,11 @@ export default function AffiliateScreen() {
     const productCardGMV = filteredData.reduce((a, d) => a + d.summary.productCardGMV, 0);
     const sampleSent = filteredData.reduce((a, d) => a + (d.coreSummary?.samplesSent || 0), 0);
     const activeCreators = creators.filter((c) => c.affiliateGMV > 0).length;
+
+    // ── TOTAL IMPRESI ──
+    const totalImpressions = creators.reduce((a, c) => a + (c.productImpressions || 0), 0);
+    const totalCtr = totalImpressions > 0 ? (totalOrders / totalImpressions) * 100 : 0;
+    const gmvPerImpression = totalImpressions > 0 ? totalGMV / totalImpressions : 0;
 
     // ── NET GMV ──
     const netGMV = totalGMV - totalRefund;
@@ -353,6 +359,8 @@ export default function AffiliateScreen() {
       segmentation, avgGMVThreshold, contentThreshold,
       netGMVAfterCommission, costPerOrder, revenuePerCreator,
       creatorsWithTarget, totalTargetGMV, totalTargetAchieved, targetAchievementRate,
+      // Impresi
+      totalImpressions, totalCtr, gmvPerImpression,
     };
   }, [filteredData, supabaseCreators]);
 
@@ -638,6 +646,33 @@ export default function AffiliateScreen() {
                   alert={agg.refundRate > 15}
                 />
               </div>
+
+              {/* ROW IMPRESI */}
+              {agg.totalImpressions > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <KPICard
+                    title="Total Impresi Produk"
+                    value={fN(agg.totalImpressions)}
+                    sub={`dari ${fN(agg.totalCreators)} kreator terdaftar`}
+                    color="indigo"
+                    icon={<Eye className="w-5 h-5" />}
+                  />
+                  <KPICard
+                    title="CTR (Impresi → Order)"
+                    value={fP(agg.totalCtr)}
+                    sub={`${fN(agg.totalOrders)} order dari ${fN(agg.totalImpressions)} impresi`}
+                    color={agg.totalCtr >= 1 ? "green" : agg.totalCtr >= 0.3 ? "orange" : "red"}
+                    icon={<ArrowUpRight className="w-5 h-5" />}
+                  />
+                  <KPICard
+                    title="GMV per Impresi"
+                    value={fRp(agg.gmvPerImpression)}
+                    sub={`Efisiensi impresi ke revenue`}
+                    color="teal"
+                    icon={<TrendingUp className="w-5 h-5" />}
+                  />
+                </div>
+              )}
 
               {/* ROW 2: 4 SECONDARY KPIs */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
