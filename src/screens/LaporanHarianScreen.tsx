@@ -42,6 +42,11 @@ interface HarianRow {
   omzet: number; cac_ads: number; cac_total: number; upsell: number;
   biaya_iklan: number; komisi_affiliate: number;
   omzet_total_brand: number; pct_kontribusi_fv: number;
+  // Cost breakdown columns (from Excel B-J, S-U)
+  biaya_gmv_max: number; biaya_non_gmv_max: number;
+  komisi_platform: number; shipping_cost: number; biaya_layanan_mall: number;
+  biaya_komisi_dinamis: number; program_growth_extra: number; biaya_pemrosesan: number;
+  roi_no_ppn: number; roi_ads: number; total_roi: number;
 }
 interface ChannelRow {
   tanggal: string; omzet: number; closing: number; botol: number;
@@ -70,6 +75,11 @@ interface Summary {
   total_omzet_all: number; total_omzet_fv: number; pct_kontribusi_fv: number;
   hari: number; avg_omzet_harian: number; avg_closing_harian: number;
   avg_botol_harian: number; nilai_per_txn: number;
+  // Cost breakdown totals
+  total_biaya_gmv_max: number; total_biaya_non_gmv_max: number;
+  total_komisi_platform: number; total_shipping_cost: number;
+  total_biaya_layanan_mall: number; total_biaya_komisi_dinamis: number;
+  total_program_growth_extra: number; total_biaya_pemrosesan: number;
 }
 interface Highlights {
   best_day: { tanggal: string; omzet: number } | null;
@@ -373,19 +383,30 @@ function parseShopSheet(rows: any[][]): { shop: HarianRow[]; period: string } {
     const { dateStr, period: p } = cleanDate(r[0]);
     if (!dateStr) continue;
     if (p && !period) period = p;
-    const omzet = cleanRp(r[14]); // O (dulu N=r[13], +1 karena kolom J baru)
+    const omzet = cleanRp(r[14]); // O
     if (omzet <= 0) continue;
     shop.push({
       tanggal: dateStr,
-      biaya_iklan:      cleanRp(r[3]),       // D = total biaya iklan+ppn (SAMA)
-      komisi_affiliate: cleanRp(r[10]),      // K (dulu J=r[9], +1)
-      closing:          cleanInt(r[11]),     // L (dulu K=r[10], +1)
-      botol:            cleanInt(r[12]),     // M (dulu L=r[11], +1)
-      nilai_per_txn:    cleanRp(r[13]),      // N (dulu M=r[12], +1)
-      omzet,                                  // O (dulu N=r[13], +1)
-      cac_ads:          cleanPct(r[15]),     // P (dulu O=r[14], +1)
-      cac_total:        cleanPct(r[16]),     // Q (dulu P=r[15], +1)
-      upsell:           cleanDecimal(r[17]), // R (dulu Q=r[16], +1)
+      biaya_gmv_max:        cleanRp(r[1]),       // B
+      biaya_non_gmv_max:    cleanRp(r[2]),       // C
+      biaya_iklan:          cleanRp(r[3]),       // D = total biaya iklan+ppn
+      komisi_platform:      cleanRp(r[4]),       // E
+      shipping_cost:        cleanRp(r[5]),       // F
+      biaya_layanan_mall:   cleanRp(r[6]),       // G
+      biaya_komisi_dinamis: cleanRp(r[7]),       // H
+      program_growth_extra: cleanRp(r[8]),       // I
+      biaya_pemrosesan:     cleanRp(r[9]),       // J
+      komisi_affiliate:     cleanRp(r[10]),      // K
+      closing:              cleanInt(r[11]),     // L
+      botol:                cleanInt(r[12]),     // M
+      nilai_per_txn:        cleanRp(r[13]),      // N
+      omzet,                                      // O
+      cac_ads:              cleanPct(r[15]),     // P
+      cac_total:            cleanPct(r[16]),     // Q
+      upsell:               cleanDecimal(r[17]), // R
+      roi_no_ppn:           cleanDecimal(r[18]), // S
+      roi_ads:              cleanDecimal(r[19]), // T
+      total_roi:            cleanDecimal(r[20]), // U
       omzet_total_brand: 0,
       pct_kontribusi_fv: 0,
     });
@@ -693,6 +714,15 @@ function buildFullApiResponse(
     avg_closing_harian: hari > 0 ? Math.round(totalClosing / hari) : 0,
     avg_botol_harian: hari > 0 ? Math.round(totalBotol / hari) : 0,
     nilai_per_txn: totalClosing > 0 ? Math.round(totalOmzet / totalClosing) : 0,
+    // Cost breakdown totals
+    total_biaya_gmv_max: sum(shop, (r) => r.biaya_gmv_max),
+    total_biaya_non_gmv_max: sum(shop, (r) => r.biaya_non_gmv_max),
+    total_komisi_platform: sum(shop, (r) => r.komisi_platform),
+    total_shipping_cost: sum(shop, (r) => r.shipping_cost),
+    total_biaya_layanan_mall: sum(shop, (r) => r.biaya_layanan_mall),
+    total_biaya_komisi_dinamis: sum(shop, (r) => r.biaya_komisi_dinamis),
+    total_program_growth_extra: sum(shop, (r) => r.program_growth_extra),
+    total_biaya_pemrosesan: sum(shop, (r) => r.biaya_pemrosesan),
   };
 
   // Weekly grouping (same as API route groupByWeek)
@@ -1077,10 +1107,9 @@ export default function LaporanHarianScreen() {
 
   // Load note count for badge
   useEffect(() => {
-    try {
-      const n = loadDailyNotes(activePeriod);
+    loadDailyNotes(activePeriod).then(n => {
       setNoteCount(Object.keys(n).length);
-    } catch { setNoteCount(0); }
+    }).catch(() => setNoteCount(0));
   }, [activePeriod, activeTab]);
 
   // ─── MoM comparison: previous month's data ───
@@ -2050,16 +2079,175 @@ function CostTab({ s, harian }: { s: Summary; harian: HarianRow[] }) {
     cac: r.cac_total,
   })), [harian]);
 
+  // Cost breakdown items for the structure panel
+  const costBreakdown = useMemo(() => {
+    const items = [
+      { label: "Biaya Iklan GMV Max", value: s.total_biaya_gmv_max, color: "#3b82f6", icon: "📣" },
+      { label: "Biaya Iklan Non GMV Max", value: s.total_biaya_non_gmv_max, color: "#8b5cf6", icon: "📢" },
+      { label: "Komisi Platform", value: s.total_komisi_platform, color: "#f97316", icon: "🏪" },
+      { label: "Shipping Cost", value: s.total_shipping_cost, color: "#10b981", icon: "🚚" },
+      { label: "Biaya Layanan Mall", value: s.total_biaya_layanan_mall, color: "#ef4444", icon: "🏬" },
+      { label: "Biaya Komisi Dinamis", value: s.total_biaya_komisi_dinamis, color: "#f59e0b", icon: "⚡" },
+      { label: "Program Growth Extra", value: s.total_program_growth_extra, color: "#6366f1", icon: "🌱" },
+      { label: "Biaya Pemrosesan Pesanan", value: s.total_biaya_pemrosesan, color: "#ec4899", icon: "📦" },
+      { label: "Komisi Affiliate", value: s.total_komisi_aff, color: "#14b8a6", icon: "🤝" },
+    ].filter(item => item.value > 0);
+    const totalAllCosts = items.reduce((a, i) => a + i.value, 0);
+    return items.map(item => ({
+      ...item,
+      pct: totalAllCosts > 0 ? (item.value / totalAllCosts) * 100 : 0,
+      avgDaily: s.hari > 0 ? Math.round(item.value / s.hari) : 0,
+    })).sort((a, b) => b.value - a.value);
+  }, [s]);
+
+  const totalPlatformFees = s.total_komisi_platform + s.total_shipping_cost +
+    s.total_biaya_layanan_mall + s.total_biaya_komisi_dinamis +
+    s.total_program_growth_extra + s.total_biaya_pemrosesan;
+  const grandTotalCost = s.total_biaya_iklan + s.total_komisi_aff + totalPlatformFees;
+  const netProfit = s.total_omzet - grandTotalCost;
+  const netMargin = s.total_omzet > 0 ? (netProfit / s.total_omzet) * 100 : 0;
+
   return (
     <div className="space-y-5">
       {/* Cost KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <CostKpiCard label="Total Biaya Iklan" value={fR(s.total_biaya_iklan)} icon="📣" />
         <CostKpiCard label="Total Komisi Affiliate" value={fR(s.total_komisi_aff)} icon="🤝" />
-        <CostKpiCard label="Total Cost" value={fR(s.total_cost)} icon="💸" />
+        <CostKpiCard label="Total Biaya Platform" value={fR(totalPlatformFees)} icon="🏪" />
         <CostKpiCard label="ROAS" value={`${s.roas.toFixed(1)}x`} icon="📈" highlight={s.roas >= 3} />
         <CostKpiCard label="Cost/Closing" value={fR(s.cost_per_closing)} icon="🏷️" />
-        <CostKpiCard label="Margin Setelah Biaya" value={`${s.margin_after_cost}%`} icon="💰" highlight={s.margin_after_cost > 50} />
+        <CostKpiCard label="Net Margin" value={`${netMargin.toFixed(1)}%`} icon="💰" highlight={netMargin > 30} />
+      </div>
+
+      {/* ═══ COST STRUCTURE BREAKDOWN ═══ */}
+      <div className="bg-gradient-to-br from-slate-900 via-gray-900 to-zinc-900 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.02] rounded-full -mr-24 -mt-24" />
+        <div className="absolute bottom-0 left-0 w-40 h-40 bg-white/[0.02] rounded-full -ml-16 -mb-16" />
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="bg-white/10 p-2 rounded-xl"><DollarSign size={20} /></div>
+            <div>
+              <h3 className="text-base font-bold">Cost Structure Breakdown</h3>
+              <p className="text-xs text-white/50">Detail seluruh komponen biaya bulanan</p>
+            </div>
+          </div>
+
+          {/* Summary boxes */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <div className="text-[10px] text-white/40 uppercase">Total Omzet</div>
+              <div className="text-lg font-black text-number text-emerald-400">{fR(s.total_omzet)}</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <div className="text-[10px] text-white/40 uppercase">Total Biaya</div>
+              <div className="text-lg font-black text-number text-rose-400">{fR(grandTotalCost)}</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <div className="text-[10px] text-white/40 uppercase">Net Profit</div>
+              <div className={`text-lg font-black text-number ${netProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fR(netProfit)}</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <div className="text-[10px] text-white/40 uppercase">Net Margin</div>
+              <div className={`text-lg font-black text-number ${netMargin >= 30 ? "text-emerald-400" : netMargin >= 15 ? "text-amber-400" : "text-rose-400"}`}>{netMargin.toFixed(1)}%</div>
+            </div>
+          </div>
+
+          {/* Horizontal bar breakdown */}
+          <div className="space-y-2.5">
+            {costBreakdown.map((item, i) => (
+              <div key={i} className="group">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span>{item.icon}</span>
+                    <span className="text-white/80 font-medium">{item.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-white/40">{fR(item.avgDaily)}/hari</span>
+                    <span className="font-bold text-white">{fR(item.value)}</span>
+                    <span className="text-white/50 w-12 text-right">{item.pct.toFixed(1)}%</span>
+                  </div>
+                </div>
+                <div className="w-full bg-white/5 rounded-full h-2.5 overflow-hidden">
+                  <div className="h-2.5 rounded-full transition-all duration-700 group-hover:opacity-80"
+                    style={{ width: `${Math.min(item.pct, 100)}%`, backgroundColor: item.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ DAILY COST BREAKDOWN TABLE ═══ */}
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5">
+          📋 Detail Biaya Harian
+          <span className="text-[10px] text-gray-400 font-normal ml-1">(scroll horizontal →)</span>
+        </h3>
+        <div className="overflow-x-auto -mx-2 px-2">
+          <table className="w-full text-xs min-w-[900px]">
+            <thead>
+              <tr className="border-b-2 border-gray-100">
+                <th className="py-2 px-2 text-left font-bold text-gray-600 sticky left-0 bg-white">Tanggal</th>
+                <th className="py-2 px-2 text-right font-bold text-blue-600">GMV Max</th>
+                <th className="py-2 px-2 text-right font-bold text-purple-600">Non GMV</th>
+                <th className="py-2 px-2 text-right font-bold text-orange-600">Iklan+PPN</th>
+                <th className="py-2 px-2 text-right font-bold text-orange-500">Komisi Plt</th>
+                <th className="py-2 px-2 text-right font-bold text-emerald-600">Shipping</th>
+                <th className="py-2 px-2 text-right font-bold text-red-500">Mall</th>
+                <th className="py-2 px-2 text-right font-bold text-amber-600">K. Dinamis</th>
+                <th className="py-2 px-2 text-right font-bold text-indigo-600">Growth</th>
+                <th className="py-2 px-2 text-right font-bold text-pink-600">Proses</th>
+                <th className="py-2 px-2 text-right font-bold text-teal-600">Affiliate</th>
+                <th className="py-2 px-2 text-right font-bold text-gray-800">Total</th>
+                <th className="py-2 px-2 text-right font-bold text-emerald-700">Omzet</th>
+                <th className="py-2 px-2 text-right font-bold text-gray-600">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {harian.map((r, i) => {
+                const rowTotal = r.biaya_iklan + r.komisi_affiliate + r.komisi_platform +
+                  r.shipping_cost + r.biaya_layanan_mall + r.biaya_komisi_dinamis +
+                  r.program_growth_extra + r.biaya_pemrosesan;
+                const rowNet = r.omzet - rowTotal;
+                return (
+                  <tr key={i} className={`border-b border-gray-50 hover:bg-gray-50/50 transition ${i % 2 === 0 ? "" : "bg-gray-50/30"}`}>
+                    <td className="py-1.5 px-2 font-bold text-gray-700 sticky left-0 bg-white">{r.tanggal}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.biaya_gmv_max > 0 ? fR(r.biaya_gmv_max) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.biaya_non_gmv_max > 0 ? fR(r.biaya_non_gmv_max) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number font-medium">{fR(r.biaya_iklan)}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.komisi_platform > 0 ? fR(r.komisi_platform) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.shipping_cost > 0 ? fR(r.shipping_cost) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.biaya_layanan_mall > 0 ? fR(r.biaya_layanan_mall) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.biaya_komisi_dinamis > 0 ? fR(r.biaya_komisi_dinamis) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.program_growth_extra > 0 ? fR(r.program_growth_extra) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.biaya_pemrosesan > 0 ? fR(r.biaya_pemrosesan) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number">{r.komisi_affiliate > 0 ? fR(r.komisi_affiliate) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-number font-bold text-gray-800">{fR(rowTotal)}</td>
+                    <td className="py-1.5 px-2 text-right text-number font-bold text-emerald-700">{fR(r.omzet)}</td>
+                    <td className={`py-1.5 px-2 text-right text-number font-bold ${rowNet >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{fR(rowNet)}</td>
+                  </tr>
+                );
+              })}
+              {/* Totals row */}
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
+                <td className="py-2 px-2 sticky left-0 bg-gray-50 text-gray-800">TOTAL</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_biaya_gmv_max)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_biaya_non_gmv_max)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_biaya_iklan)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_komisi_platform)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_shipping_cost)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_biaya_layanan_mall)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_biaya_komisi_dinamis)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_program_growth_extra)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_biaya_pemrosesan)}</td>
+                <td className="py-2 px-2 text-right text-number">{fR(s.total_komisi_aff)}</td>
+                <td className="py-2 px-2 text-right text-number text-gray-800">{fR(grandTotalCost)}</td>
+                <td className="py-2 px-2 text-right text-number text-emerald-700">{fR(s.total_omzet)}</td>
+                <td className={`py-2 px-2 text-right text-number ${netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{fR(netProfit)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Cost vs Omzet Chart */}
@@ -2943,12 +3131,13 @@ function HeatmapWithNotes({ harian, target, daysInPeriod, activePeriod }: {
   const [noteModal, setNoteModal] = useState<{ date: string } | null>(null);
 
   useEffect(() => {
-    setNotes(loadDailyNotes(activePeriod));
+    loadDailyNotes(activePeriod).then(setNotes).catch(() => setNotes({}));
   }, [activePeriod]);
 
-  const handleSaveNote = useCallback((date: string, text: string) => {
-    saveDailyNote(activePeriod, date, text);
-    setNotes(loadDailyNotes(activePeriod));
+  const handleSaveNote = useCallback(async (date: string, text: string) => {
+    await saveDailyNote(activePeriod, date, text);
+    const updated = await loadDailyNotes(activePeriod);
+    setNotes(updated);
   }, [activePeriod]);
 
   const getColor = (omzet: number): string => {
@@ -4094,15 +4283,15 @@ function DailyNotesJournal({ harian, activePeriod }: { harian: HarianRow[]; acti
 
   // Load notes on mount / period change
   useEffect(() => {
-    setNotes(loadDailyNotes(activePeriod));
+    loadDailyNotes(activePeriod).then(setNotes).catch(() => setNotes({}));
   }, [activePeriod]);
 
-  const refreshNotes = () => setNotes(loadDailyNotes(activePeriod));
+  const refreshNotes = () => loadDailyNotes(activePeriod).then(setNotes).catch(() => {});
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editDate || !noteText.trim()) return;
-    saveDailyNote(activePeriod, editDate, noteText, noteTag, noteMood);
-    refreshNotes();
+    await saveDailyNote(activePeriod, editDate, noteText, noteTag, noteMood);
+    await refreshNotes();
     setShowForm(false);
     setEditDate("");
     setNoteText("");
@@ -4110,9 +4299,9 @@ function DailyNotesJournal({ harian, activePeriod }: { harian: HarianRow[]; acti
     setNoteMood("neutral");
   };
 
-  const handleDelete = (date: string) => {
-    deleteDailyNote(activePeriod, date);
-    refreshNotes();
+  const handleDelete = async (date: string) => {
+    await deleteDailyNote(activePeriod, date);
+    await refreshNotes();
     setConfirmDelete(null);
   };
 

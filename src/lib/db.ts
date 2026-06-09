@@ -704,8 +704,8 @@ export async function saveLiveSessions(
 }
 
 // ─── DAILY NOTES (LAPORAN HARIAN) ────────────────────────
-// Stores per-day notes for laporan harian. Uses localStorage only
-// (no Supabase migration needed — lightweight feature).
+// Dual-write: localStorage (instant) + Supabase (persistent).
+// Same pattern as saveLaporanHarianData.
 const DN_KEY = 'ms_daily_notes_'
 
 export interface DailyNote {
@@ -717,29 +717,102 @@ export interface DailyNote {
   created_at: string
 }
 
-export function saveDailyNote(period: string, date: string, text: string, tag?: string, mood?: string) {
+function dnLocalSave(period: string, notes: Record<string, DailyNote>) {
   if (typeof window === 'undefined') return
-  const key = DN_KEY + period
-  const existing: Record<string, DailyNote> = JSON.parse(localStorage.getItem(key) || '{}')
-  if (text.trim()) {
-    existing[date] = { date, period, text: text.trim(), tag: tag || 'catatan', mood: mood || 'neutral', created_at: new Date().toISOString() }
-  } else {
-    delete existing[date]
-  }
-  localStorage.setItem(key, JSON.stringify(existing))
+  localStorage.setItem(DN_KEY + period, JSON.stringify(notes))
 }
 
-export function loadDailyNotes(period: string): Record<string, DailyNote> {
+function dnLocalLoad(period: string): Record<string, DailyNote> {
   if (typeof window === 'undefined') return {}
   const raw = localStorage.getItem(DN_KEY + period)
   if (!raw) return {}
   try { return JSON.parse(raw) } catch { return {} }
 }
 
-export function deleteDailyNote(period: string, date: string) {
+export async function saveDailyNote(period: string, date: string, text: string, tag?: string, mood?: string) {
   if (typeof window === 'undefined') return
-  const key = DN_KEY + period
-  const existing: Record<string, DailyNote> = JSON.parse(localStorage.getItem(key) || '{}')
-  delete existing[date]
-  localStorage.setItem(key, JSON.stringify(existing))
+  // Always save to localStorage first (instant)
+  const existing = dnLocalLoad(period)
+  if (text.trim()) {
+    existing[date] = { date, period, text: text.trim(), tag: tag || 'catatan', mood: mood || 'neutral', created_at: new Date().toISOString() }
+  } else {
+    delete existing[date]
+  }
+  dnLocalSave(period, existing)
+
+  // Also try Supabase if configured
+  if (isSupabaseConfigured) {
+    try {
+      if (text.trim()) {
+        await supabase
+          .from('daily_notes')
+          .upsert(
+            { period, date, text: text.trim(), tag: tag || 'catatan', mood: mood || 'neutral', created_at: new Date().toISOString() },
+            { onConflict: 'period,date' },
+          )
+      } else {
+        await supabase
+          .from('daily_notes')
+          .delete()
+          .eq('period', period)
+          .eq('date', date)
+      }
+    } catch (e) {
+      console.warn('[daily-notes] Supabase save skipped:', e)
+    }
+  }
 }
+
+export async function loadDailyNotes(period: string): Promise<Record<string, DailyNote>> {
+  // Try Supabase first
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('daily_notes')
+        .select('*')
+        .eq('period', period)
+      if (!error && data && data.length > 0) {
+        const result: Record<string, DailyNote> = {}
+        for (const row of data) {
+          result[row.date] = {
+            date: row.date,
+            period: row.period,
+            text: row.text,
+            tag: row.tag || 'catatan',
+            mood: row.mood || 'neutral',
+            created_at: row.created_at,
+          }
+        }
+        // Also update localStorage as cache
+        dnLocalSave(period, result)
+        return result
+      }
+    } catch {
+      // Supabase failed, fall through to localStorage
+    }
+  }
+  // Fallback to localStorage
+  return dnLocalLoad(period)
+}
+
+export async function deleteDailyNote(period: string, date: string) {
+  if (typeof window === 'undefined') return
+  // Always delete from localStorage
+  const existing = dnLocalLoad(period)
+  delete existing[date]
+  dnLocalSave(period, existing)
+
+  // Also try Supabase
+  if (isSupabaseConfigured) {
+    try {
+      await supabase
+        .from('daily_notes')
+        .delete()
+        .eq('period', period)
+        .eq('date', date)
+    } catch (e) {
+      console.warn('[daily-notes] Supabase delete skipped:', e)
+    }
+  }
+}
+

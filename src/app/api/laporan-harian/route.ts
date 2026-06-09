@@ -175,6 +175,15 @@ export async function GET() {
       avg_closing_harian: hari > 0 ? Math.round(totalClosing / hari) : 0,
       avg_botol_harian: hari > 0 ? Math.round(totalBotol / hari) : 0,
       nilai_per_txn: totalClosing > 0 ? Math.round(totalOmzet / totalClosing) : 0,
+      // Cost breakdown totals (from Google Sheets FVShopRow)
+      total_biaya_gmv_max: 0,       // only available from Excel import
+      total_biaya_non_gmv_max: 0,   // only available from Excel import
+      total_komisi_platform: sum(shop, r => r.komisi_platform),
+      total_shipping_cost: sum(shop, r => r.shipping_cost),
+      total_biaya_layanan_mall: sum(shop, r => r.biaya_layanan_mall),
+      total_biaya_komisi_dinamis: sum(shop, r => r.biaya_komisi_dinamis),
+      total_program_growth_extra: sum(shop, r => r.program_growth_extra),
+      total_biaya_pemrosesan: sum(shop, r => r.biaya_pemrosesan),
     };
 
     // ─── Weekly ───
