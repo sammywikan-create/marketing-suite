@@ -13,7 +13,7 @@ import {
   Target, DollarSign, Zap, BarChart3, ArrowUpRight, ArrowDownRight,
   FileDown, Presentation, Download, Upload, Calendar, ChevronLeft, ChevronRight,
   Trash2, Database, Check, MessageSquare, Flame, Award, Eye, StickyNote,
-  Rocket, Activity, Brain, Clock, Star, Sun, Moon, CloudRain, Gauge, Trophy,
+  Rocket, Activity, Brain, Clock, Star, Sun, CloudRain, Trophy,
 } from "lucide-react";
 import { generatePdf } from "@/lib/exportPdf";
 import { generatePpt } from "@/lib/exportPpt";
@@ -1061,6 +1061,7 @@ export default function LaporanHarianScreen() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [showSettings, setShowSettings] = useState(false);
+  const [noteCount, setNoteCount] = useState(0);
 
   // ─── Determine active data & period (needed for target lookup) ───
   const isLive = selectedPeriod === "live";
@@ -1073,6 +1074,14 @@ export default function LaporanHarianScreen() {
   // Target is now period-scoped: loading a historical month shows that month's target.
   const { target, setTarget } = useTarget(activePeriod);
   const daysInCurrentPeriod = daysInPeriod(activePeriod);
+
+  // Load note count for badge
+  useEffect(() => {
+    try {
+      const n = loadDailyNotes(activePeriod);
+      setNoteCount(Object.keys(n).length);
+    } catch { setNoteCount(0); }
+  }, [activePeriod, activeTab]);
 
   // ─── MoM comparison: previous month's data ───
   const [prevMonthData, setPrevMonthData] = useState<ApiResponse | null>(null);
@@ -1298,7 +1307,7 @@ export default function LaporanHarianScreen() {
     { key: "channels", label: "Per Channel", icon: <Zap size={14} /> },
     { key: "weekly", label: "Evaluasi Mingguan", icon: <Target size={14} /> },
     { key: "scorecard", label: "Scorecard", icon: <Trophy size={14} /> },
-    { key: "notes", label: "Notes", icon: <StickyNote size={14} /> },
+    { key: "notes", label: "Notes", icon: <StickyNote size={14} />, badge: noteCount },
   ];
 
   return (
@@ -1382,13 +1391,20 @@ export default function LaporanHarianScreen() {
       <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} harian={harian} />
 
       {/* ═══ TAB BAR ═══ */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
-        {tabs.map((t) => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${activeTab === t.key ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
-            {t.icon} {t.label}
-          </button>
-        ))}
+      <div className="relative">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto scrollbar-hide">
+          {tabs.map((t) => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${activeTab === t.key ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
+              {t.icon} {t.label}
+              {(t as any).badge > 0 && (
+                <span className="bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{(t as any).badge}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Scroll gradient indicator for mobile */}
+        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-gray-100 to-transparent rounded-r-xl pointer-events-none sm:hidden" />
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
@@ -3216,7 +3232,7 @@ function ForecastTab({ s, target, harian, daysInPeriod }: {
             <p className="text-xs text-white/70">Proyeksi omzet akhir bulan berdasarkan tren aktual</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-white/10 rounded-xl p-3">
             <div className="text-[10px] text-white/60 uppercase tracking-wide">Sisa Hari</div>
             <div className="text-2xl font-black text-number">{sisaHari}</div>
@@ -3228,6 +3244,12 @@ function ForecastTab({ s, target, harian, daysInPeriod }: {
           <div className="bg-white/10 rounded-xl p-3">
             <div className="text-[10px] text-white/60 uppercase tracking-wide">Avg 7-Day</div>
             <div className="text-lg font-bold text-number">{fR(avgLast7)}</div>
+          </div>
+          <div className="bg-white/10 rounded-xl p-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide">Butuh/Hari</div>
+            <div className={`text-lg font-bold text-number ${sisaHari > 0 && (target - s.total_omzet) / sisaHari > avgLast7 ? 'text-rose-300' : 'text-emerald-300'}`}>
+              {sisaHari > 0 ? fR(Math.round(Math.max(0, (target - s.total_omzet)) / sisaHari)) : '—'}
+            </div>
           </div>
           <div className="bg-white/10 rounded-xl p-3">
             <div className="text-[10px] text-white/60 uppercase tracking-wide">Confidence</div>
@@ -3312,7 +3334,7 @@ function ForecastTab({ s, target, harian, daysInPeriod }: {
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           {weeks.map((w, i) => {
             const prevWeek = i > 0 ? weeks[i - 1] : null;
-            const change = prevWeek ? ((w.avgDaily - prevWeek.avgDaily) / prevWeek.avgDaily * 100) : 0;
+            const change = prevWeek && prevWeek.avgDaily > 0 ? ((w.avgDaily - prevWeek.avgDaily) / prevWeek.avgDaily * 100) : 0;
             return (
               <div key={w.label} className="bg-gradient-to-br from-gray-50 to-white rounded-xl border p-3 text-center">
                 <div className="text-xs font-bold text-indigo-600">{w.label}</div>
@@ -3344,7 +3366,7 @@ function ForecastTab({ s, target, harian, daysInPeriod }: {
               ? " 🎉 Target diperkirakan akan tercapai dengan pace saat ini!"
               : pctNormal >= 85
               ? ` Masih ada peluang untuk mencapai target jika pace dijaga di ${fR(Math.round((target - s.total_omzet) / sisaHari))}/hari.`
-              : ` ⚠️ Perlu effort tambahan — pace harus naik ${((target / daysInPeriod / avgLast7 - 1) * 100).toFixed(0)}% dari rata-rata 7 hari terakhir.`
+              : ` ⚠️ Perlu effort tambahan — ${avgLast7 > 0 ? `pace harus naik ${((target / daysInPeriod / avgLast7 - 1) * 100).toFixed(0)}% dari rata-rata 7 hari terakhir.` : `butuh ${sisaHari > 0 ? fR(Math.round((target - s.total_omzet) / sisaHari)) : '—'}/hari untuk mencapai target.`}`
             }
           </p>
           <p>
@@ -3361,20 +3383,20 @@ function ForecastTab({ s, target, harian, daysInPeriod }: {
 // 📅 DAY-OF-WEEK ANALYSIS
 // ═══════════════════════════════════════════════════════════
 const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-const HARI_SHORT_MAP: Record<string, number> = {
+const BULAN_SHORT_MAP: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, mei: 4, jun: 5,
   jul: 6, agu: 7, sep: 8, okt: 9, nov: 10, des: 11,
 };
 
 function parseTanggalToDate(tanggal: string): Date | null {
-  // "1 Apr" → Date(2026, 3, 1)
+  // "1 Apr" → Date(currentYear, 3, 1)
   const m = tanggal.match(/^(\d{1,2})\s+(\w+)/);
   if (!m) return null;
   const day = parseInt(m[1]);
   const monStr = m[2].toLowerCase().slice(0, 3);
-  const month = HARI_SHORT_MAP[monStr];
+  const month = BULAN_SHORT_MAP[monStr];
   if (month === undefined) return null;
-  return new Date(2026, month, day);
+  return new Date(new Date().getFullYear(), month, day);
 }
 
 function DayOfWeekAnalysis({ harian }: { harian: HarianRow[] }) {
@@ -3713,8 +3735,8 @@ function SmartAnomalyPanel({ harian, s }: { harian: HarianRow[]; s: Summary }) {
           cacAnomaly, upsellAnomaly,
         };
       })
-      .filter(Boolean)
-      .sort((a, b) => Math.abs(b!.zScore) - Math.abs(a!.zScore));
+      .filter((x): x is NonNullable<typeof x> => x != null)
+      .sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore));
   }, [harian, s]);
 
   if (anomalies.length === 0) {
@@ -4125,10 +4147,16 @@ function DailyNotesJournal({ harian, activePeriod }: { harian: HarianRow[]; acti
     });
   }, [notes, harian, filterTag, searchQuery]);
 
-  // Available dates that don't have notes yet
+  // Available dates that don't have notes yet — sorted chronologically (newest first)
   const availableDates = harian
     .map((h) => h.tanggal)
-    .filter((d) => !notes[d]);
+    .filter((d) => !notes[d])
+    .sort((a, b) => {
+      const da = parseTanggalToDate(a);
+      const db = parseTanggalToDate(b);
+      if (da && db) return db.getTime() - da.getTime();
+      return b.localeCompare(a);
+    });
 
   const totalNotes = Object.keys(notes).length;
   const tagCounts = useMemo(() => {
