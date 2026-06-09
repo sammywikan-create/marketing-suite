@@ -702,3 +702,44 @@ export async function saveLiveSessions(
     if (error) throw error
   }
 }
+
+// ─── DAILY NOTES (LAPORAN HARIAN) ────────────────────────
+// Stores per-day notes for laporan harian. Uses localStorage only
+// (no Supabase migration needed — lightweight feature).
+const DN_KEY = 'ms_daily_notes_'
+
+export interface DailyNote {
+  date: string      // e.g. "1 Apr"
+  period: string    // e.g. "2026-04"
+  text: string
+  tag?: string      // e.g. "flash-sale", "campaign", "libur", "evaluasi", "catatan"
+  mood?: string     // e.g. "great", "good", "neutral", "bad"
+  created_at: string
+}
+
+export function saveDailyNote(period: string, date: string, text: string, tag?: string, mood?: string) {
+  if (typeof window === 'undefined') return
+  const key = DN_KEY + period
+  const existing: Record<string, DailyNote> = JSON.parse(localStorage.getItem(key) || '{}')
+  if (text.trim()) {
+    existing[date] = { date, period, text: text.trim(), tag: tag || 'catatan', mood: mood || 'neutral', created_at: new Date().toISOString() }
+  } else {
+    delete existing[date]
+  }
+  localStorage.setItem(key, JSON.stringify(existing))
+}
+
+export function loadDailyNotes(period: string): Record<string, DailyNote> {
+  if (typeof window === 'undefined') return {}
+  const raw = localStorage.getItem(DN_KEY + period)
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
+export function deleteDailyNote(period: string, date: string) {
+  if (typeof window === 'undefined') return
+  const key = DN_KEY + period
+  const existing: Record<string, DailyNote> = JSON.parse(localStorage.getItem(key) || '{}')
+  delete existing[date]
+  localStorage.setItem(key, JSON.stringify(existing))
+}

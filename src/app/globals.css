@@ -64,6 +64,88 @@ html.dark body {
 /* ─── Responsive table wrapper ─── */
 .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+/* ─── Premium Animations ─── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.6), 0 0 40px rgba(59, 130, 246, 0.2); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes fade-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes progress-fill {
+  from { width: 0%; }
+}
+@keyframes score-reveal {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.animate-fade-slide-up { animation: fade-slide-up 0.4s ease-out both; }
+.animate-float { animation: float-gentle 3s ease-in-out infinite; }
+.animate-gradient-shift {
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease infinite;
+}
+.animate-progress-fill { animation: progress-fill 1s ease-out; }
+.animate-score-reveal { animation: score-reveal 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* ─── Glassmorphism ─── */
+.glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.glass-dark {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Premium gradient cards ─── */
+.gradient-card-blue {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 30%, #bfdbfe 100%);
+}
+.gradient-card-green {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 30%, #bbf7d0 100%);
+}
+.gradient-card-amber {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 30%, #fde68a 100%);
+}
+.gradient-card-purple {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 30%, #e9d5ff 100%);
+}
+.gradient-card-rose {
+  background: linear-gradient(135deg, #fff1f2 0%, #fecdd3 30%, #fda4af 100%);
+}
+
+/* ─── Premium number typography ─── */
+.text-number {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
 @media print {
   body { background: white !important; }
   aside, nav, .print\:hidden, button, [class*="AIAssistant"] { display: none !important; }

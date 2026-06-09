@@ -12,7 +12,8 @@ import {
   ShoppingBag, Video, Radio, Store, Users, AlertTriangle, CheckCircle2,
   Target, DollarSign, Zap, BarChart3, ArrowUpRight, ArrowDownRight,
   FileDown, Presentation, Download, Upload, Calendar, ChevronLeft, ChevronRight,
-  Trash2, Database, Check,
+  Trash2, Database, Check, MessageSquare, Flame, Award, Eye, StickyNote,
+  Rocket, Activity, Brain, Clock, Star, Sun, Moon, CloudRain, Gauge, Trophy,
 } from "lucide-react";
 import { generatePdf } from "@/lib/exportPdf";
 import { generatePpt } from "@/lib/exportPpt";
@@ -21,6 +22,10 @@ import {
   loadLaporanHarianData,
   listLaporanHarianPeriods,
   deleteLaporanHarianData,
+  saveDailyNote,
+  loadDailyNotes,
+  deleteDailyNote,
+  type DailyNote,
 } from "@/lib/db";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import * as XLSX from "xlsx";
@@ -1287,9 +1292,13 @@ export default function LaporanHarianScreen() {
   };
   const tabs = [
     { key: "overview", label: "Overview", icon: <BarChart3 size={14} /> },
+    { key: "insights", label: "Insights", icon: <Eye size={14} /> },
+    { key: "forecast", label: "Forecast", icon: <Rocket size={14} /> },
     { key: "cost", label: "Cost Analysis", icon: <DollarSign size={14} /> },
     { key: "channels", label: "Per Channel", icon: <Zap size={14} /> },
     { key: "weekly", label: "Evaluasi Mingguan", icon: <Target size={14} /> },
+    { key: "scorecard", label: "Scorecard", icon: <Trophy size={14} /> },
+    { key: "notes", label: "Notes", icon: <StickyNote size={14} /> },
   ];
 
   return (
@@ -1321,8 +1330,8 @@ export default function LaporanHarianScreen() {
               </div>
             </div>
             {/* Health Score Badge */}
-            <div className="hidden sm:flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 relative group cursor-help">
-              <div className={`text-2xl font-black ${health.color}`}>{health.score}</div>
+            <div className={`hidden sm:flex items-center gap-2 rounded-xl px-3.5 py-2.5 relative group cursor-help transition-all duration-300 ${health.score >= 80 ? 'bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 animate-pulse-glow' : health.score >= 60 ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200' : health.score >= 40 ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200' : 'bg-gradient-to-r from-red-50 to-rose-50 border border-red-200'}`}>
+              <div className={`text-2xl font-black ${health.color} animate-score-reveal text-number`}>{health.score}</div>
               <div className="text-[10px] leading-tight">
                 <div className="font-bold text-gray-600">Health Score</div>
                 <div className={`font-semibold ${health.color}`}>{health.label}</div>
@@ -1370,7 +1379,7 @@ export default function LaporanHarianScreen() {
       {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
-      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} />
+      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} harian={harian} />
 
       {/* ═══ TAB BAR ═══ */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
@@ -1383,6 +1392,7 @@ export default function LaporanHarianScreen() {
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
+      <div className="animate-fade-slide-up" key={activeTab}>
       {activeTab === "overview" && (
         <OverviewTab
           s={s}
@@ -1395,9 +1405,45 @@ export default function LaporanHarianScreen() {
           daysInPeriod={daysInCurrentPeriod}
         />
       )}
+      {activeTab === "insights" && (
+        <InsightsTab
+          s={s}
+          target={target}
+          harian={harian}
+          channels={channels}
+          channelData={channel_data}
+          daysInPeriod={daysInCurrentPeriod}
+          activePeriod={activePeriod}
+        />
+      )}
+      {activeTab === "forecast" && (
+        <ForecastTab
+          s={s}
+          target={target}
+          harian={harian}
+          daysInPeriod={daysInCurrentPeriod}
+        />
+      )}
       {activeTab === "cost" && <CostTab s={s} harian={harian} />}
       {activeTab === "channels" && <ChannelsTab channels={channels} channelData={channel_data} />}
       {activeTab === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} daysInPeriod={daysInCurrentPeriod} />}
+      {activeTab === "scorecard" && (
+        <ScorecardTab
+          s={s}
+          target={target}
+          harian={harian}
+          channels={channels}
+          daysInPeriod={daysInCurrentPeriod}
+          prevMonthData={prevMonthData}
+        />
+      )}
+      {activeTab === "notes" && (
+        <DailyNotesJournal
+          harian={harian}
+          activePeriod={activePeriod}
+        />
+      )}
+      </div>
     </div>
   );
 }
@@ -1674,7 +1720,15 @@ function pctDelta(curr: number, prev: number): number | null {
   return parseFloat((((curr - prev) / prev) * 100).toFixed(1));
 }
 
-function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMonthPeriod, daysInPeriod }: { s: Summary; target: number; health: { score: number; label: string; color: string }; highlights: Highlights; prevMonthData?: ApiResponse | null; prevMonthPeriod?: string; daysInPeriod: number }) {
+function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMonthPeriod, daysInPeriod, harian = [] }: { s: Summary; target: number; health: { score: number; label: string; color: string }; highlights: Highlights; prevMonthData?: ApiResponse | null; prevMonthPeriod?: string; daysInPeriod: number; harian?: HarianRow[] }) {
+  // Sparkline data: last 7 data points for each metric
+  const sparkLen = Math.min(7, harian.length);
+  const tail = harian.slice(-sparkLen);
+  const sparkOmzet = tail.map(r => r.omzet);
+  const sparkBotol = tail.map(r => r.botol);
+  const sparkUpsell = tail.map(r => r.upsell);
+  const sparkCac = tail.map(r => r.cac_total);
+  const sparkRoas = tail.map(r => r.biaya_iklan > 0 ? r.omzet / r.biaya_iklan : 0);
   const pctTarget = (s.total_omzet / target) * 100;
   const sisaTarget = Math.max(0, target - s.total_omzet);
   const sisaHari = Math.max(1, daysInPeriod - s.hari);
@@ -1724,15 +1778,15 @@ function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMo
   const alertColors = { success: "bg-green-50 border-green-200 text-green-800", warning: "bg-yellow-50 border-yellow-200 text-yellow-800", danger: "bg-red-50 border-red-200 text-red-800" };
 
   return (
-    <div className="bg-white rounded-2xl border p-5 space-y-4">
+    <div className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 rounded-2xl border border-blue-100/50 p-5 space-y-4 shadow-sm">
       {/* Progress bar */}
       <div>
         <div className="flex items-center justify-between text-sm mb-1.5">
           <span className="font-medium text-gray-700">Progress Target: <strong>{fR(s.total_omzet)}</strong> / {fR(target)}</span>
           <span className={`font-bold ${pctTarget >= 100 ? "text-green-600" : pctTarget >= 70 ? "text-blue-600" : "text-orange-600"}`}>{pctTarget.toFixed(1)}%</span>
         </div>
-        <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
-          <div className={`h-3 rounded-full transition-all duration-700 ${pctTarget >= 100 ? "bg-green-500" : pctTarget >= 70 ? "bg-blue-500" : "bg-orange-500"}`}
+        <div className="w-full bg-gray-100 rounded-full h-3.5 overflow-hidden shadow-inner">
+          <div className={`h-3.5 rounded-full transition-all duration-1000 animate-progress-fill ${pctTarget >= 100 ? "bg-gradient-to-r from-green-400 to-emerald-500" : pctTarget >= 70 ? "bg-gradient-to-r from-blue-400 to-blue-600" : "bg-gradient-to-r from-orange-400 to-orange-600"}`}
             style={{ width: `${Math.min(pctTarget, 100)}%` }} />
         </div>
       </div>
@@ -1745,13 +1799,13 @@ function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMo
       )}
       {/* KPI Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <MiniKpi label="Omzet" value={fR(s.total_omzet)} sub={`${s.hari} hari`} delta={deltas?.omzet} />
-        <MiniKpi label="Avg/Hari" value={fR(s.avg_omzet_harian)} sub={`${fN(s.avg_closing_harian)} closing`} delta={deltas?.avgDay} />
-        <MiniKpi label="Botol" value={fN(s.total_botol)} sub={`~${fN(s.avg_botol_harian)}/hari`} delta={deltas?.botol} />
+        <MiniKpi label="Omzet" value={fR(s.total_omzet)} sub={`${s.hari} hari`} delta={deltas?.omzet} sparkData={sparkOmzet} />
+        <MiniKpi label="Avg/Hari" value={fR(s.avg_omzet_harian)} sub={`${fN(s.avg_closing_harian)} closing`} delta={deltas?.avgDay} sparkData={sparkOmzet} />
+        <MiniKpi label="Botol" value={fN(s.total_botol)} sub={`~${fN(s.avg_botol_harian)}/hari`} delta={deltas?.botol} sparkData={sparkBotol} />
         <MiniKpi label="Nilai/Txn" value={fR(s.nilai_per_txn)} sub={`${fN(s.total_closing)} txn`} delta={deltas?.nilai} />
-        <MiniKpi label="Upsell" value={`${s.rata_upsell.toFixed(2)}x`} sub={s.rata_upsell >= 1.3 ? "🟢 Baik" : s.rata_upsell >= 1.1 ? "🟡 Cukup" : "🔴 Rendah"} delta={deltas?.upsell} />
-        <MiniKpi label="CAC" value={`${s.rata_cac.toFixed(1)}%`} sub={s.rata_cac <= 50 ? "🟢 Efisien" : s.rata_cac <= 60 ? "🟡 Normal" : "🔴 Tinggi"} delta={deltas?.cac} isInverse />
-        <MiniKpi label="ROAS" value={`${s.roas.toFixed(1)}x`} sub={s.roas >= 4 ? "🟢 Excellent" : s.roas >= 3 ? "🟡 OK" : "🔴 Low"} delta={deltas?.roas} />
+        <MiniKpi label="Upsell" value={`${s.rata_upsell.toFixed(2)}x`} sub={s.rata_upsell >= 1.3 ? "🟢 Baik" : s.rata_upsell >= 1.1 ? "🟡 Cukup" : "🔴 Rendah"} delta={deltas?.upsell} sparkData={sparkUpsell} />
+        <MiniKpi label="CAC" value={`${s.rata_cac.toFixed(1)}%`} sub={s.rata_cac <= 50 ? "🟢 Efisien" : s.rata_cac <= 60 ? "🟡 Normal" : "🔴 Tinggi"} delta={deltas?.cac} isInverse sparkData={sparkCac} />
+        <MiniKpi label="ROAS" value={`${s.roas.toFixed(1)}x`} sub={s.roas >= 4 ? "🟢 Excellent" : s.roas >= 3 ? "🟡 OK" : "🔴 Low"} delta={deltas?.roas} sparkData={sparkRoas} />
       </div>
       {/* Alerts */}
       {alerts.length > 0 && (
@@ -1772,14 +1826,31 @@ function ExecutiveSummary({ s, target, health, highlights, prevMonthData, prevMo
     </div>
   );
 }
-function MiniKpi({ label, value, sub, delta, isInverse }: { label: string; value: string; sub: string; delta?: number | null; isInverse?: boolean }) {
-  // For inverse metrics (CAC), down is good. For normal metrics, up is good.
+function MiniKpi({ label, value, sub, delta, isInverse, sparkData }: { label: string; value: string; sub: string; delta?: number | null; isInverse?: boolean; sparkData?: number[] }) {
   const isUp = delta != null && delta > 0;
   const isDown = delta != null && delta < 0;
   const isPositive = isInverse ? isDown : isUp;
   const isNegative = isInverse ? isUp : isDown;
   const deltaColor = isPositive ? "text-green-600" : isNegative ? "text-red-600" : "text-gray-400";
   const arrow = isUp ? "↑" : isDown ? "↓" : "—";
+  const sparkSvg = useMemo(() => {
+    if (!sparkData || sparkData.length < 2) return null;
+    const w = 56, h = 16;
+    const mn = Math.min(...sparkData), mx = Math.max(...sparkData);
+    const range = mx - mn || 1;
+    const points = sparkData.map((v, i) => {
+      const x = (i / (sparkData.length - 1)) * w;
+      const y = h - ((v - mn) / range) * (h - 2) - 1;
+      return `${x},${y}`;
+    }).join(" ");
+    const trend = sparkData[sparkData.length - 1] >= sparkData[0];
+    const color = isInverse ? (trend ? "#ef4444" : "#22c55e") : (trend ? "#22c55e" : "#ef4444");
+    return (
+      <svg width={w} height={h} className="mx-auto mt-0.5">
+        <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+      </svg>
+    );
+  }, [sparkData, isInverse]);
   return (
     <div className="text-center">
       <div className="text-[10px] text-gray-400 font-medium">{label}</div>
@@ -1790,6 +1861,7 @@ function MiniKpi({ label, value, sub, delta, isInverse }: { label: string; value
           {arrow} {Math.abs(delta)}%
         </div>
       )}
+      {sparkSvg}
     </div>
   );
 }
@@ -2510,3 +2582,1885 @@ function HarianTable({ harian, s }: { harian: HarianRow[]; s: Summary }) {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════
+// 🏆 TOP DAYS LEADERBOARD
+// ═══════════════════════════════════════════════════════════
+function TopDaysLeaderboard({ harian, s }: { harian: HarianRow[]; s: Summary }) {
+  const top5 = useMemo(() =>
+    [...harian].sort((a, b) => b.omzet - a.omzet).slice(0, 5).map((r, i) => ({
+      ...r, rank: i + 1,
+      pctOfTotal: s.total_omzet > 0 ? ((r.omzet / s.total_omzet) * 100) : 0,
+    })),
+    [harian, s]
+  );
+  const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+  const barMax = top5[0]?.omzet || 1;
+
+  return (
+    <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 rounded-2xl border border-amber-200 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="bg-amber-500 text-white p-1.5 rounded-lg"><Award size={16} /></div>
+        <h3 className="text-sm font-bold text-gray-900">Top 5 Hari Terbaik</h3>
+      </div>
+      <div className="space-y-2.5">
+        {top5.map((r) => (
+          <div key={r.tanggal} className="flex items-center gap-3 group">
+            <span className="text-lg w-8 text-center">{medals[r.rank - 1]}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-xs font-semibold text-gray-800">{r.tanggal}</span>
+                <span className="text-xs font-bold text-amber-700">{fR(r.omzet)}</span>
+              </div>
+              <div className="w-full bg-amber-100 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-2 rounded-full transition-all duration-700"
+                  style={{
+                    width: `${(r.omzet / barMax) * 100}%`,
+                    background: r.rank === 1 ? 'linear-gradient(90deg, #f59e0b, #ef4444)' :
+                      r.rank === 2 ? 'linear-gradient(90deg, #f59e0b, #f97316)' :
+                        r.rank === 3 ? 'linear-gradient(90deg, #fbbf24, #f59e0b)' : '#fbbf24',
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
+                <span>{fN(r.closing)} closing</span>
+                <span>·</span>
+                <span>{fN(r.botol)} btl</span>
+                <span>·</span>
+                <span>{r.pctOfTotal.toFixed(1)}% total</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📊 CUMULATIVE TRACKER
+// ═══════════════════════════════════════════════════════════
+function CumulativeTracker({ harian, target, daysInPeriod }: { harian: HarianRow[]; target: number; daysInPeriod: number }) {
+  const chartData = useMemo(() => {
+    let cumulative = 0;
+    return harian.map((r, i) => {
+      cumulative += r.omzet;
+      const idealPace = (target / daysInPeriod) * (i + 1);
+      return {
+        tgl: r.tanggal,
+        cumulative,
+        target_pace: Math.round(idealPace),
+        gap: cumulative - idealPace,
+      };
+    });
+  }, [harian, target, daysInPeriod]);
+
+  const lastData = chartData[chartData.length - 1];
+  const isAhead = lastData && lastData.gap >= 0;
+
+  return (
+    <div className="bg-white rounded-2xl border p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">
+          📊 Akumulasi Omzet vs Target Pace
+        </h3>
+        {lastData && (
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isAhead ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            {isAhead ? '▲' : '▼'} {fR(Math.abs(lastData.gap))} {isAhead ? 'ahead' : 'behind'}
+          </span>
+        )}
+      </div>
+      <ResponsiveContainer width="100%" height={280}>
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="gradCumulative" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="tgl" tick={{ fontSize: 10 }} />
+          <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fR(Number(v))} />
+          <Tooltip content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const d = payload[0]?.payload;
+            return (
+              <div className="bg-white border rounded-xl shadow-lg p-3 text-xs space-y-1">
+                <div className="font-bold">{d.tgl}</div>
+                <div>📊 Akumulasi: <strong>{fR(d.cumulative)}</strong></div>
+                <div>🎯 Target Pace: <strong>{fR(d.target_pace)}</strong></div>
+                <div className={d.gap >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  {d.gap >= 0 ? '▲' : '▼'} Gap: <strong>{fR(Math.abs(d.gap))}</strong>
+                </div>
+              </div>
+            );
+          }} />
+          <Legend />
+          <Area type="monotone" dataKey="cumulative" name="Akumulasi Omzet" stroke="#3b82f6" fill="url(#gradCumulative)" strokeWidth={2.5} />
+          <Line type="monotone" dataKey="target_pace" name="Target Pace" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🔥 STREAK & CONSISTENCY TRACKER
+// ═══════════════════════════════════════════════════════════
+function StreakTracker({ harian, target, daysInPeriod }: { harian: HarianRow[]; target: number; daysInPeriod: number }) {
+  const stats = useMemo(() => {
+    const dailyTarget = target / daysInPeriod;
+    const avgOmzet = harian.length > 0 ? harian.reduce((a, r) => a + r.omzet, 0) / harian.length : 0;
+
+    // Streaks (consecutive days above average)
+    let currentStreak = 0;
+    let bestStreak = 0;
+    let tempStreak = 0;
+    for (const r of harian) {
+      if (r.omzet >= avgOmzet) {
+        tempStreak++;
+        bestStreak = Math.max(bestStreak, tempStreak);
+      } else {
+        tempStreak = 0;
+      }
+    }
+    currentStreak = tempStreak;
+
+    // Consistency: % days meeting daily target
+    const daysAboveTarget = harian.filter(r => r.omzet >= dailyTarget).length;
+    const consistency = harian.length > 0 ? (daysAboveTarget / harian.length) * 100 : 0;
+
+    // Volatility: coefficient of variation
+    const stdDev = Math.sqrt(
+      harian.reduce((sum, r) => sum + Math.pow(r.omzet - avgOmzet, 2), 0) / (harian.length || 1)
+    );
+    const volatility = avgOmzet > 0 ? (stdDev / avgOmzet) * 100 : 0;
+
+    return { currentStreak, bestStreak, consistency, volatility, daysAboveTarget, avgOmzet, dailyTarget };
+  }, [harian, target, daysInPeriod]);
+
+  const consistencyColor = stats.consistency >= 70 ? '#22c55e' : stats.consistency >= 50 ? '#f59e0b' : '#ef4444';
+  const circlePerimeter = 2 * Math.PI * 38;
+  const dashOffset = circlePerimeter * (1 - stats.consistency / 100);
+
+  return (
+    <div className="bg-gradient-to-br from-orange-50 via-red-50 to-pink-50 rounded-2xl border border-orange-200 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="bg-orange-500 text-white p-1.5 rounded-lg"><Flame size={16} /></div>
+        <h3 className="text-sm font-bold text-gray-900">Streak & Konsistensi</h3>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Consistency Gauge */}
+        <div className="flex flex-col items-center">
+          <div className="relative w-24 h-24">
+            <svg width="96" height="96" viewBox="0 0 96 96">
+              <circle cx="48" cy="48" r="38" fill="none" stroke="#e5e7eb" strokeWidth="6" />
+              <circle cx="48" cy="48" r="38" fill="none" stroke={consistencyColor} strokeWidth="6"
+                strokeLinecap="round" strokeDasharray={circlePerimeter} strokeDashoffset={dashOffset}
+                transform="rotate(-90 48 48)" className="transition-all duration-1000" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-lg font-black" style={{ color: consistencyColor }}>{stats.consistency.toFixed(0)}%</div>
+                <div className="text-[8px] text-gray-400">Konsistensi</div>
+              </div>
+            </div>
+          </div>
+          <div className="text-[10px] text-gray-500 mt-1">{stats.daysAboveTarget}/{harian.length} hari on target</div>
+        </div>
+        {/* Current Streak */}
+        <div className="flex flex-col items-center justify-center bg-white/60 rounded-xl p-3">
+          <Flame size={20} className="text-orange-500 mb-1" />
+          <div className="text-2xl font-black text-orange-600">{stats.currentStreak}</div>
+          <div className="text-[10px] text-gray-500 text-center">Current Streak</div>
+          <div className="text-[9px] text-gray-400 mt-0.5">hari berturut-turut ≥ rata²</div>
+        </div>
+        {/* Best Streak */}
+        <div className="flex flex-col items-center justify-center bg-white/60 rounded-xl p-3">
+          <Award size={20} className="text-amber-500 mb-1" />
+          <div className="text-2xl font-black text-amber-600">{stats.bestStreak}</div>
+          <div className="text-[10px] text-gray-500 text-center">Best Streak</div>
+          <div className="text-[9px] text-gray-400 mt-0.5">rekor terpanjang bulan ini</div>
+        </div>
+        {/* Volatility */}
+        <div className="flex flex-col items-center justify-center bg-white/60 rounded-xl p-3">
+          <TrendingUp size={20} className={`mb-1 ${stats.volatility <= 20 ? 'text-green-500' : stats.volatility <= 35 ? 'text-yellow-500' : 'text-red-500'}`} />
+          <div className={`text-2xl font-black ${stats.volatility <= 20 ? 'text-green-600' : stats.volatility <= 35 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {stats.volatility.toFixed(0)}%
+          </div>
+          <div className="text-[10px] text-gray-500 text-center">Volatility</div>
+          <div className="text-[9px] text-gray-400 mt-0.5">
+            {stats.volatility <= 20 ? '🟢 Stabil' : stats.volatility <= 35 ? '🟡 Fluktuatif' : '🔴 Volatile'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🎯 DAILY TARGET GAUGE (SVG Speedometer)
+// ═══════════════════════════════════════════════════════════
+function DailyTargetGauge({ harian, target, daysInPeriod }: { harian: HarianRow[]; target: number; daysInPeriod: number }) {
+  const dailyTarget = target / daysInPeriod;
+  const lastDay = harian[harian.length - 1];
+  const todayOmzet = lastDay?.omzet || 0;
+  const pct = Math.min((todayOmzet / dailyTarget) * 100, 150);
+
+  // SVG gauge arc parameters
+  const cx = 120, cy = 110, r = 80;
+  const startAngle = -210; // degrees (from bottom left)
+  const endAngle = 30;
+  const totalAngle = endAngle - startAngle;
+  const currentAngle = startAngle + (pct / 150) * totalAngle;
+
+  const polarToXY = (angle: number, radius: number) => {
+    const rad = (angle * Math.PI) / 180;
+    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+  };
+
+  const arcStart = polarToXY(startAngle, r);
+  const arcEnd = polarToXY(endAngle, r);
+  const needleEnd = polarToXY(currentAngle, r - 10);
+
+  const gaugeColor = pct >= 100 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#ef4444';
+
+  // Arc path for background
+  const bgArc = `M ${arcStart.x} ${arcStart.y} A ${r} ${r} 0 1 1 ${arcEnd.x} ${arcEnd.y}`;
+
+  // Arc path for filled portion
+  const filledEnd = polarToXY(currentAngle, r);
+  const largeArc = (currentAngle - startAngle) > 180 ? 1 : 0;
+  const filledArc = `M ${arcStart.x} ${arcStart.y} A ${r} ${r} 0 ${largeArc} 1 ${filledEnd.x} ${filledEnd.y}`;
+
+  return (
+    <div className="bg-white rounded-2xl border p-5">
+      <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+        🎯 Omzet Hari Terakhir vs Target Harian
+      </h3>
+      <div className="flex items-center justify-center">
+        <svg width="240" height="150" viewBox="0 0 240 150">
+          {/* Background arc */}
+          <path d={bgArc} fill="none" stroke="#e5e7eb" strokeWidth="12" strokeLinecap="round" />
+          {/* Filled arc */}
+          <path d={filledArc} fill="none" stroke={gaugeColor} strokeWidth="12" strokeLinecap="round" className="transition-all duration-1000" />
+          {/* Needle */}
+          <line x1={cx} y1={cy} x2={needleEnd.x} y2={needleEnd.y} stroke="#374151" strokeWidth="2.5" strokeLinecap="round" />
+          <circle cx={cx} cy={cy} r="5" fill="#374151" />
+          {/* Labels */}
+          <text x={cx} y={cy + 25} textAnchor="middle" className="text-xs font-bold" fill={gaugeColor}>
+            {pct.toFixed(0)}%
+          </text>
+          <text x={cx} y={cy + 38} textAnchor="middle" className="text-[9px]" fill="#6b7280">
+            {fR(todayOmzet)} / {fR(dailyTarget)}
+          </text>
+          {/* 0%, 100%, 150% markers */}
+          <text x={arcStart.x - 10} y={arcStart.y + 15} textAnchor="middle" className="text-[8px]" fill="#9ca3af">0%</text>
+          <text x={arcEnd.x + 10} y={arcEnd.y + 15} textAnchor="middle" className="text-[8px]" fill="#9ca3af">150%</text>
+        </svg>
+      </div>
+      <div className="text-center text-[10px] text-gray-400 -mt-2">
+        {lastDay ? `Data hari: ${lastDay.tanggal}` : 'Belum ada data'}
+        {pct >= 100 && ' · ✅ Target harian tercapai!'}
+        {pct >= 70 && pct < 100 && ' · 🟡 Hampir tercapai'}
+        {pct < 70 && pct > 0 && ' · 🔴 Di bawah target'}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🗒️ DAILY NOTES MODAL
+// ═══════════════════════════════════════════════════════════
+function DailyNotesModal({ date, period, existingNote, onSave, onClose }: {
+  date: string; period: string; existingNote?: string;
+  onSave: (date: string, text: string) => void; onClose: () => void;
+}) {
+  const [text, setText] = useState(existingNote || "");
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 flex items-center gap-1.5">
+            <StickyNote size={16} className="text-amber-500" /> Catatan — {date}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Tambahkan catatan untuk hari ini... (contoh: flash sale, libur, ganti iklan)"
+          className="w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none resize-none h-28"
+          autoFocus
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={() => { onSave(date, text); onClose(); }}
+            className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 transition"
+          >
+            <Save size={14} /> Simpan
+          </button>
+          {existingNote && (
+            <button
+              onClick={() => { onSave(date, ""); onClose(); }}
+              className="px-3 py-2 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium transition"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📅 ENHANCED HEATMAP WITH NOTES
+// ═══════════════════════════════════════════════════════════
+function HeatmapWithNotes({ harian, target, daysInPeriod, activePeriod }: {
+  harian: HarianRow[]; target: number; daysInPeriod: number; activePeriod: string;
+}) {
+  const dailyTarget = target / daysInPeriod;
+  const maxOmzet = Math.max(...harian.map((r) => r.omzet));
+  const [notes, setNotes] = useState<Record<string, DailyNote>>({});
+  const [noteModal, setNoteModal] = useState<{ date: string } | null>(null);
+
+  useEffect(() => {
+    setNotes(loadDailyNotes(activePeriod));
+  }, [activePeriod]);
+
+  const handleSaveNote = useCallback((date: string, text: string) => {
+    saveDailyNote(activePeriod, date, text);
+    setNotes(loadDailyNotes(activePeriod));
+  }, [activePeriod]);
+
+  const getColor = (omzet: number): string => {
+    if (omzet >= dailyTarget * 1.2) return "bg-green-500 text-white";
+    if (omzet >= dailyTarget) return "bg-green-300 text-green-900";
+    if (omzet >= dailyTarget * 0.7) return "bg-yellow-300 text-yellow-900";
+    if (omzet > 0) return "bg-red-300 text-red-900";
+    return "bg-gray-100 text-gray-400";
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">📅 Heatmap Omzet Harian <span className="text-gray-400 font-normal text-[10px]">(klik untuk catatan)</span></h3>
+        {Object.keys(notes).length > 0 && (
+          <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+            📝 {Object.keys(notes).length} catatan
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-7 sm:grid-cols-10 lg:grid-cols-15 gap-1.5">
+        {harian.map((r, i) => {
+          const hasNote = !!notes[r.tanggal];
+          return (
+            <div key={i}
+              onClick={() => setNoteModal({ date: r.tanggal })}
+              className={`rounded-lg p-1.5 text-center cursor-pointer transition hover:scale-105 hover:ring-2 hover:ring-blue-400 ${getColor(r.omzet)} ${r.omzet === maxOmzet ? "ring-2 ring-blue-500" : ""} ${hasNote ? "ring-1 ring-amber-400" : ""}`}
+              title={`${r.tanggal}: ${fR(r.omzet)}${hasNote ? ` — 📝 ${notes[r.tanggal].text}` : ''}`}>
+              <div className="text-[9px] font-bold leading-tight">{r.tanggal}</div>
+              <div className="text-[8px] leading-tight mt-0.5">{fR(r.omzet)}</div>
+              {hasNote && <div className="text-[7px] mt-0.5">📝</div>}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-3 mt-3 text-[10px] text-gray-500">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> &gt;120% target</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-300 inline-block" /> On target</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-300 inline-block" /> 70-99%</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-300 inline-block" /> &lt;70%</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-200 ring-1 ring-amber-400 inline-block" /> Ada catatan</span>
+      </div>
+      {noteModal && (
+        <DailyNotesModal
+          date={noteModal.date}
+          period={activePeriod}
+          existingNote={notes[noteModal.date]?.text}
+          onSave={handleSaveNote}
+          onClose={() => setNoteModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🌊 CHANNEL MIX STACKED AREA CHART
+// ═══════════════════════════════════════════════════════════
+function ChannelMixAreaChart({ harian, channelData }: {
+  harian: HarianRow[];
+  channelData: { video: ChannelRow[]; live: ChannelRow[]; shop_tab: ChannelRow[]; affiliate: ChannelRow[] };
+}) {
+  const chartData = useMemo(() => {
+    // Build a date-indexed map for each channel
+    const videoMap = new Map(channelData.video.map(r => [r.tanggal, r.omzet]));
+    const liveMap = new Map(channelData.live.map(r => [r.tanggal, r.omzet]));
+    const shopTabMap = new Map(channelData.shop_tab.map(r => [r.tanggal, r.omzet]));
+    const affiliateMap = new Map(channelData.affiliate.map(r => [r.tanggal, r.omzet]));
+
+    return harian.map(r => ({
+      tgl: r.tanggal,
+      shop: r.omzet - (videoMap.get(r.tanggal) || 0) - (liveMap.get(r.tanggal) || 0) - (shopTabMap.get(r.tanggal) || 0) - (affiliateMap.get(r.tanggal) || 0),
+      video: videoMap.get(r.tanggal) || 0,
+      live: liveMap.get(r.tanggal) || 0,
+      shop_tab: shopTabMap.get(r.tanggal) || 0,
+      affiliate: affiliateMap.get(r.tanggal) || 0,
+    })).map(d => ({
+      ...d,
+      shop: Math.max(0, d.shop), // prevent negative from subtraction rounding
+    }));
+  }, [harian, channelData]);
+
+  const hasMultiChannel = channelData.video.length > 0 || channelData.live.length > 0 || channelData.shop_tab.length > 0 || channelData.affiliate.length > 0;
+
+  if (!hasMultiChannel) {
+    return (
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5">🌊 Channel Mix Harian</h3>
+        <div className="text-center py-8 text-xs text-gray-400">
+          Data per-channel belum tersedia. Import file Excel dengan sheet Video/Live/Shop Tab/Affiliate.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border p-5">
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5">🌊 Channel Mix Harian</h3>
+      <ResponsiveContainer width="100%" height={300}>
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="gradShop" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.6} />
+              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+            </linearGradient>
+            <linearGradient id="gradVideo" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.6} />
+              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1} />
+            </linearGradient>
+            <linearGradient id="gradLive" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.6} />
+              <stop offset="95%" stopColor="#ef4444" stopOpacity={0.1} />
+            </linearGradient>
+            <linearGradient id="gradShopTab" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#10b981" stopOpacity={0.6} />
+              <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
+            </linearGradient>
+            <linearGradient id="gradAffiliate" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#f97316" stopOpacity={0.6} />
+              <stop offset="95%" stopColor="#f97316" stopOpacity={0.1} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="tgl" tick={{ fontSize: 10 }} />
+          <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fR(Number(v))} />
+          <Tooltip content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const d = payload[0]?.payload;
+            const total = (d.shop || 0) + (d.video || 0) + (d.live || 0) + (d.shop_tab || 0) + (d.affiliate || 0);
+            return (
+              <div className="bg-white border rounded-xl shadow-lg p-3 text-xs space-y-1">
+                <div className="font-bold">{d.tgl}</div>
+                <div><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1" />Shop: <strong>{fR(d.shop)}</strong></div>
+                <div><span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1" />Video: <strong>{fR(d.video)}</strong></div>
+                <div><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1" />Live: <strong>{fR(d.live)}</strong></div>
+                <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1" />Shop Tab: <strong>{fR(d.shop_tab)}</strong></div>
+                <div><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1" />Affiliate: <strong>{fR(d.affiliate)}</strong></div>
+                <div className="pt-1 border-t font-bold">Total: {fR(total)}</div>
+              </div>
+            );
+          }} />
+          <Legend />
+          <Area type="monotone" dataKey="shop" name="Shop" stackId="1" stroke="#3b82f6" fill="url(#gradShop)" strokeWidth={1.5} />
+          <Area type="monotone" dataKey="video" name="Video" stackId="1" stroke="#8b5cf6" fill="url(#gradVideo)" strokeWidth={1.5} />
+          <Area type="monotone" dataKey="live" name="Live" stackId="1" stroke="#ef4444" fill="url(#gradLive)" strokeWidth={1.5} />
+          <Area type="monotone" dataKey="shop_tab" name="Shop Tab" stackId="1" stroke="#10b981" fill="url(#gradShopTab)" strokeWidth={1.5} />
+          <Area type="monotone" dataKey="affiliate" name="Affiliate" stackId="1" stroke="#f97316" fill="url(#gradAffiliate)" strokeWidth={1.5} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📊 INSIGHTS TAB (enhanced with new features)
+// ═══════════════════════════════════════════════════════════
+function InsightsTab({ s, target, harian, channels, channelData, daysInPeriod, activePeriod }: {
+  s: Summary;
+  target: number;
+  harian: HarianRow[];
+  channels: Record<string, ChannelSummary>;
+  channelData: { video: ChannelRow[]; live: ChannelRow[]; shop_tab: ChannelRow[]; affiliate: ChannelRow[] };
+  daysInPeriod: number;
+  activePeriod: string;
+}) {
+  return (
+    <div className="space-y-5">
+      {/* Row 1: Gauge + Streak side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <DailyTargetGauge harian={harian} target={target} daysInPeriod={daysInPeriod} />
+        <StreakTracker harian={harian} target={target} daysInPeriod={daysInPeriod} />
+      </div>
+
+      {/* Growth Momentum */}
+      <GrowthMomentum harian={harian} />
+
+      {/* Cumulative Tracker */}
+      <CumulativeTracker harian={harian} target={target} daysInPeriod={daysInPeriod} />
+
+      {/* Row 2: Leaderboard + Day-of-Week Analysis */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <TopDaysLeaderboard harian={harian} s={s} />
+        <DayOfWeekAnalysis harian={harian} />
+      </div>
+
+      {/* Smart Anomaly Detection */}
+      <SmartAnomalyPanel harian={harian} s={s} />
+
+      {/* Channel Mix */}
+      <ChannelMixAreaChart harian={harian} channelData={channelData} />
+
+      {/* Heatmap with Notes */}
+      <HeatmapWithNotes harian={harian} target={target} daysInPeriod={daysInPeriod} activePeriod={activePeriod} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🚀 FORECAST TAB
+// ═══════════════════════════════════════════════════════════
+function ForecastTab({ s, target, harian, daysInPeriod }: {
+  s: Summary; target: number; harian: HarianRow[]; daysInPeriod: number;
+}) {
+  const forecast = useMemo(() => {
+    if (harian.length < 3) return null;
+
+    const last7 = harian.slice(-Math.min(7, harian.length));
+    const last3 = harian.slice(-Math.min(3, harian.length));
+    const avgAll = s.avg_omzet_harian;
+    const avgLast7 = last7.reduce((a, r) => a + r.omzet, 0) / last7.length;
+    const avgLast3 = last3.reduce((a, r) => a + r.omzet, 0) / last3.length;
+    const sisaHari = Math.max(0, daysInPeriod - s.hari);
+
+    // 3 scenarios
+    const conservative = s.total_omzet + (Math.min(avgAll, avgLast7) * 0.85) * sisaHari;
+    const normal = s.total_omzet + avgLast7 * sisaHari;
+    const optimistic = s.total_omzet + (Math.max(avgLast3, avgLast7) * 1.15) * sisaHari;
+
+    // Confidence: based on consistency (low std dev = high confidence)
+    const stdDev = Math.sqrt(harian.reduce((sum, r) => sum + Math.pow(r.omzet - avgAll, 2), 0) / harian.length);
+    const cv = avgAll > 0 ? (stdDev / avgAll) * 100 : 100;
+    const confidence = Math.round(Math.max(30, Math.min(95, 100 - cv)));
+
+    // Weekly run rates
+    const weeks: { label: string; avgDaily: number; total: number }[] = [];
+    for (let i = 0; i < harian.length; i += 7) {
+      const chunk = harian.slice(i, i + 7);
+      const total = chunk.reduce((a, r) => a + r.omzet, 0);
+      weeks.push({ label: `W${weeks.length + 1}`, avgDaily: total / chunk.length, total });
+    }
+
+    // Trend line for forecast chart
+    const forecastChartData = harian.map((r, i) => {
+      let cum = 0;
+      for (let j = 0; j <= i; j++) cum += harian[j].omzet;
+      return { tgl: r.tanggal, actual: cum, targetPace: Math.round((target / daysInPeriod) * (i + 1)) };
+    });
+    // Extend forecast line to end of month
+    const lastCum = forecastChartData[forecastChartData.length - 1]?.actual || 0;
+    for (let d = 1; d <= sisaHari; d++) {
+      const dayIdx = s.hari + d;
+      forecastChartData.push({
+        tgl: `+${d}`,
+        actual: 0,
+        targetPace: Math.round((target / daysInPeriod) * dayIdx),
+      });
+    }
+
+    return {
+      conservative, normal, optimistic, confidence, weeks,
+      avgAll, avgLast7, avgLast3, sisaHari, forecastChartData, stdDev,
+    };
+  }, [s, harian, target, daysInPeriod]);
+
+  if (!forecast) {
+    return (
+      <div className="bg-white rounded-2xl border p-10 text-center">
+        <Rocket size={36} className="text-gray-300 mx-auto mb-3" />
+        <p className="text-sm text-gray-500">Minimal 3 hari data diperlukan untuk membuat forecast.</p>
+      </div>
+    );
+  }
+
+  const { conservative, normal, optimistic, confidence, weeks, avgAll, avgLast7, avgLast3, sisaHari, forecastChartData } = forecast;
+  const pctNormal = (normal / target) * 100;
+
+  const scenarios = [
+    { label: "Conservative", value: conservative, color: "from-amber-500 to-orange-600", bgCard: "gradient-card-amber", icon: <CloudRain size={18} />, desc: "85% pace terakhir", pct: (conservative / target) * 100 },
+    { label: "Normal", value: normal, color: "from-blue-500 to-indigo-600", bgCard: "gradient-card-blue", icon: <Sun size={18} />, desc: "Pace 7 hari terakhir", pct: (normal / target) * 100 },
+    { label: "Optimistic", value: optimistic, color: "from-emerald-500 to-green-600", bgCard: "gradient-card-green", icon: <Rocket size={18} />, desc: "115% pace terbaik", pct: (optimistic / target) * 100 },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* Forecast Header */}
+      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-purple-700 rounded-2xl p-6 text-white shadow-lg">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="bg-white/20 p-2 rounded-xl"><Rocket size={22} /></div>
+          <div>
+            <h2 className="text-lg font-bold">Revenue Forecast</h2>
+            <p className="text-xs text-white/70">Proyeksi omzet akhir bulan berdasarkan tren aktual</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-white/10 rounded-xl p-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide">Sisa Hari</div>
+            <div className="text-2xl font-black text-number">{sisaHari}</div>
+          </div>
+          <div className="bg-white/10 rounded-xl p-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide">Avg/Hari</div>
+            <div className="text-lg font-bold text-number">{fR(avgAll)}</div>
+          </div>
+          <div className="bg-white/10 rounded-xl p-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide">Avg 7-Day</div>
+            <div className="text-lg font-bold text-number">{fR(avgLast7)}</div>
+          </div>
+          <div className="bg-white/10 rounded-xl p-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide">Confidence</div>
+            <div className="text-2xl font-black text-number">{confidence}%</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3 Scenario Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {scenarios.map((sc) => (
+          <div key={sc.label} className={`${sc.bgCard} rounded-2xl p-5 border relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-8 -mt-8" />
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`bg-gradient-to-r ${sc.color} text-white p-1.5 rounded-lg`}>{sc.icon}</div>
+                <div>
+                  <div className="text-xs font-bold text-gray-700">{sc.label}</div>
+                  <div className="text-[10px] text-gray-400">{sc.desc}</div>
+                </div>
+              </div>
+              <div className="text-2xl font-black text-gray-900 text-number">{fR(Math.round(sc.value))}</div>
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex-1 bg-white/80 rounded-full h-2 overflow-hidden">
+                  <div className={`h-2 rounded-full bg-gradient-to-r ${sc.color} animate-progress-fill`}
+                    style={{ width: `${Math.min(sc.pct, 100)}%` }} />
+                </div>
+                <span className={`text-xs font-bold ${sc.pct >= 100 ? "text-green-600" : sc.pct >= 80 ? "text-blue-600" : "text-orange-600"}`}>
+                  {sc.pct.toFixed(0)}%
+                </span>
+              </div>
+              {sc.pct >= 100 && <div className="text-[10px] text-green-600 font-bold mt-1">✅ Target tercapai!</div>}
+              {sc.pct < 100 && <div className="text-[10px] text-gray-500 mt-1">Gap: {fR(Math.round(Math.max(0, target - sc.value)))}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Forecast Area Chart */}
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5">
+          📈 Akumulasi Aktual vs Target Pace
+          <span className="text-[10px] text-gray-400 font-normal ml-1">(area = aktual, garis = target)</span>
+        </h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <AreaChart data={forecastChartData}>
+            <defs>
+              <linearGradient id="gradForecast" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#6366f1" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="tgl" tick={{ fontSize: 9 }} />
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fR(Number(v))} />
+            <Tooltip content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const d = payload[0]?.payload;
+              return (
+                <div className="bg-white border rounded-xl shadow-lg p-3 text-xs space-y-1">
+                  <div className="font-bold">{d.tgl}</div>
+                  {d.actual > 0 && <div>📊 Aktual: <strong>{fR(d.actual)}</strong></div>}
+                  <div>🎯 Target: <strong>{fR(d.targetPace)}</strong></div>
+                </div>
+              );
+            }} />
+            <Legend />
+            <ReferenceLine y={target} stroke="#ef4444" strokeDasharray="8 4"
+              label={{ value: `Target ${fR(target)}`, fontSize: 10, fill: "#ef4444" }} />
+            <Area type="monotone" dataKey="actual" name="Akumulasi" stroke="#6366f1" fill="url(#gradForecast)" strokeWidth={2.5}
+              connectNulls={false} />
+            <Line type="monotone" dataKey="targetPace" name="Target Pace" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Weekly Run Rate */}
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5">
+          <Clock size={16} className="text-indigo-500" /> Weekly Run Rate
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+          {weeks.map((w, i) => {
+            const prevWeek = i > 0 ? weeks[i - 1] : null;
+            const change = prevWeek ? ((w.avgDaily - prevWeek.avgDaily) / prevWeek.avgDaily * 100) : 0;
+            return (
+              <div key={w.label} className="bg-gradient-to-br from-gray-50 to-white rounded-xl border p-3 text-center">
+                <div className="text-xs font-bold text-indigo-600">{w.label}</div>
+                <div className="text-lg font-black text-gray-900 text-number mt-1">{fR(Math.round(w.avgDaily))}</div>
+                <div className="text-[10px] text-gray-400">/hari</div>
+                <div className="text-xs font-bold text-gray-700 mt-1">{fR(w.total)}</div>
+                <div className="text-[10px] text-gray-400">total</div>
+                {i > 0 && (
+                  <div className={`text-[10px] font-bold mt-1 ${change >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    {change >= 0 ? "↑" : "↓"} {Math.abs(change).toFixed(0)}%
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Forecast Summary Box */}
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-5">
+        <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-1.5">
+          <Brain size={16} className="text-blue-600" /> Forecast Insights
+        </h3>
+        <div className="text-xs text-gray-700 leading-relaxed space-y-2">
+          <p>
+            Berdasarkan {s.hari} hari data, proyeksi <strong>skenario normal</strong> menunjukkan omzet akhir bulan
+            sebesar <strong>{fR(Math.round(normal))}</strong> ({pctNormal.toFixed(0)}% dari target {fR(target)}).
+            {pctNormal >= 100
+              ? " 🎉 Target diperkirakan akan tercapai dengan pace saat ini!"
+              : pctNormal >= 85
+              ? ` Masih ada peluang untuk mencapai target jika pace dijaga di ${fR(Math.round((target - s.total_omzet) / sisaHari))}/hari.`
+              : ` ⚠️ Perlu effort tambahan — pace harus naik ${((target / daysInPeriod / avgLast7 - 1) * 100).toFixed(0)}% dari rata-rata 7 hari terakhir.`
+            }
+          </p>
+          <p>
+            Confidence level forecast: <strong>{confidence}%</strong>
+            {confidence >= 80 ? " (data stabil dan konsisten)" : confidence >= 60 ? " (variasi sedang)" : " (data sangat fluktuatif — forecast kurang reliable)"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📅 DAY-OF-WEEK ANALYSIS
+// ═══════════════════════════════════════════════════════════
+const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const HARI_SHORT_MAP: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, mei: 4, jun: 5,
+  jul: 6, agu: 7, sep: 8, okt: 9, nov: 10, des: 11,
+};
+
+function parseTanggalToDate(tanggal: string): Date | null {
+  // "1 Apr" → Date(2026, 3, 1)
+  const m = tanggal.match(/^(\d{1,2})\s+(\w+)/);
+  if (!m) return null;
+  const day = parseInt(m[1]);
+  const monStr = m[2].toLowerCase().slice(0, 3);
+  const month = HARI_SHORT_MAP[monStr];
+  if (month === undefined) return null;
+  return new Date(2026, month, day);
+}
+
+function DayOfWeekAnalysis({ harian }: { harian: HarianRow[] }) {
+  const analysis = useMemo(() => {
+    const dayBuckets: { omzet: number[]; closing: number[]; botol: number[] }[] =
+      Array.from({ length: 7 }, () => ({ omzet: [], closing: [], botol: [] }));
+
+    for (const r of harian) {
+      const d = parseTanggalToDate(r.tanggal);
+      if (!d) continue;
+      const dow = d.getDay();
+      dayBuckets[dow].omzet.push(r.omzet);
+      dayBuckets[dow].closing.push(r.closing);
+      dayBuckets[dow].botol.push(r.botol);
+    }
+
+    const dayStats = dayBuckets.map((b, i) => {
+      const avgOmzet = b.omzet.length > 0 ? b.omzet.reduce((a, v) => a + v, 0) / b.omzet.length : 0;
+      const avgClosing = b.closing.length > 0 ? b.closing.reduce((a, v) => a + v, 0) / b.closing.length : 0;
+      return {
+        day: HARI_ID[i],
+        shortDay: HARI_ID[i].slice(0, 3),
+        avgOmzet,
+        avgClosing,
+        count: b.omzet.length,
+        totalOmzet: b.omzet.reduce((a, v) => a + v, 0),
+      };
+    }).filter(d => d.count > 0);
+
+    const maxOmzet = Math.max(...dayStats.map(d => d.avgOmzet));
+    const best = dayStats.reduce((a, b) => a.avgOmzet > b.avgOmzet ? a : b, dayStats[0]);
+    const worst = dayStats.reduce((a, b) => a.avgOmzet < b.avgOmzet ? a : b, dayStats[0]);
+
+    // Radar data (normalize to 0-100)
+    const radarData = dayStats.map(d => ({
+      ...d,
+      normalized: maxOmzet > 0 ? (d.avgOmzet / maxOmzet) * 100 : 0,
+    }));
+
+    return { dayStats, radarData, best, worst, maxOmzet };
+  }, [harian]);
+
+  if (analysis.dayStats.length < 3) {
+    return (
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Sun size={16} className="text-amber-500" /> Analisis Per Hari</h3>
+        <p className="text-xs text-gray-400 text-center py-6">Butuh minimal 3 hari berbeda untuk analisis.</p>
+      </div>
+    );
+  }
+
+  const { dayStats, best, worst, maxOmzet } = analysis;
+
+  // SVG Radar Chart
+  const radarSize = 200;
+  const cx = radarSize / 2, cy = radarSize / 2, rMax = 75;
+  const angleStep = (2 * Math.PI) / dayStats.length;
+
+  const getPoint = (idx: number, value: number) => {
+    const angle = -Math.PI / 2 + angleStep * idx;
+    const r = (value / maxOmzet) * rMax;
+    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  };
+
+  const polygonPoints = dayStats.map((d, i) => {
+    const p = getPoint(i, d.avgOmzet);
+    return `${p.x},${p.y}`;
+  }).join(" ");
+
+  const gridLevels = [0.25, 0.5, 0.75, 1];
+
+  return (
+    <div className="bg-gradient-to-br from-blue-50 via-indigo-50/30 to-purple-50/20 rounded-2xl border border-indigo-100 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+          <Sun size={16} className="text-amber-500" /> Performa Per Hari
+        </h3>
+        <div className="flex gap-2 text-[10px]">
+          <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">Best: {best?.day}</span>
+          <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">Worst: {worst?.day}</span>
+        </div>
+      </div>
+      <div className="flex flex-col lg:flex-row items-center gap-4">
+        {/* SVG Radar */}
+        <div className="shrink-0">
+          <svg width={radarSize} height={radarSize}>
+            {/* Grid */}
+            {gridLevels.map((level, li) => {
+              const points = dayStats.map((_, i) => {
+                const angle = -Math.PI / 2 + angleStep * i;
+                const r = rMax * level;
+                return `${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`;
+              }).join(" ");
+              return <polygon key={li} points={points} fill="none" stroke="#e5e7eb" strokeWidth="0.5" />;
+            })}
+            {/* Axes */}
+            {dayStats.map((d, i) => {
+              const angle = -Math.PI / 2 + angleStep * i;
+              const endX = cx + rMax * Math.cos(angle);
+              const endY = cy + rMax * Math.sin(angle);
+              const labelX = cx + (rMax + 14) * Math.cos(angle);
+              const labelY = cy + (rMax + 14) * Math.sin(angle);
+              return (
+                <g key={i}>
+                  <line x1={cx} y1={cy} x2={endX} y2={endY} stroke="#d1d5db" strokeWidth="0.5" />
+                  <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="middle"
+                    className="text-[9px] font-bold" fill={d.day === best?.day ? "#16a34a" : d.day === worst?.day ? "#dc2626" : "#6b7280"}>
+                    {d.shortDay}
+                  </text>
+                </g>
+              );
+            })}
+            {/* Data polygon */}
+            <polygon points={polygonPoints} fill="rgba(99, 102, 241, 0.2)" stroke="#6366f1" strokeWidth="2" />
+            {/* Data points */}
+            {dayStats.map((d, i) => {
+              const p = getPoint(i, d.avgOmzet);
+              return <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={d.day === best?.day ? "#22c55e" : d.day === worst?.day ? "#ef4444" : "#6366f1"} stroke="white" strokeWidth="1.5" />;
+            })}
+          </svg>
+        </div>
+        {/* Day Stats Table */}
+        <div className="flex-1 w-full">
+          <div className="space-y-1.5">
+            {[...dayStats].sort((a, b) => b.avgOmzet - a.avgOmzet).map((d) => (
+              <div key={d.day} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${d.day === best?.day ? "bg-green-50 border border-green-200" : d.day === worst?.day ? "bg-red-50 border border-red-200" : "bg-white/60"}`}>
+                <span className={`font-bold w-14 ${d.day === best?.day ? "text-green-700" : d.day === worst?.day ? "text-red-600" : "text-gray-700"}`}>
+                  {d.day === best?.day ? "🥇 " : d.day === worst?.day ? "📉 " : ""}{d.day}
+                </span>
+                <div className="flex-1">
+                  <div className="bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                    <div className={`h-1.5 rounded-full ${d.day === best?.day ? "bg-green-500" : d.day === worst?.day ? "bg-red-400" : "bg-indigo-400"}`}
+                      style={{ width: `${(d.avgOmzet / maxOmzet) * 100}%` }} />
+                  </div>
+                </div>
+                <span className="font-bold text-gray-800 w-24 text-right text-number">{fR(Math.round(d.avgOmzet))}</span>
+                <span className="text-gray-400 w-8 text-right">{d.count}×</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📈 GROWTH MOMENTUM INDICATOR
+// ═══════════════════════════════════════════════════════════
+function GrowthMomentum({ harian }: { harian: HarianRow[] }) {
+  const momentum = useMemo(() => {
+    if (harian.length < 5) return null;
+
+    const avgAll = harian.reduce((a, r) => a + r.omzet, 0) / harian.length;
+    const last7 = harian.slice(-Math.min(7, harian.length));
+    const first7 = harian.slice(0, Math.min(7, harian.length));
+    const avgLast7 = last7.reduce((a, r) => a + r.omzet, 0) / last7.length;
+    const avgFirst7 = first7.reduce((a, r) => a + r.omzet, 0) / first7.length;
+
+    // Velocity: recent trend direction (positive = growing)
+    const velocity = avgFirst7 > 0 ? ((avgLast7 - avgFirst7) / avgFirst7) * 100 : 0;
+
+    // Acceleration: is growth speeding up or slowing down?
+    const mid = Math.floor(harian.length / 2);
+    const firstHalf = harian.slice(0, mid);
+    const secondHalf = harian.slice(mid);
+    const avgFirstHalf = firstHalf.reduce((a, r) => a + r.omzet, 0) / firstHalf.length;
+    const avgSecondHalf = secondHalf.reduce((a, r) => a + r.omzet, 0) / secondHalf.length;
+    const accel = avgFirstHalf > 0 ? ((avgSecondHalf - avgFirstHalf) / avgFirstHalf) * 100 : 0;
+
+    // Consistency: std dev based
+    const stdDev = Math.sqrt(harian.reduce((sum, r) => sum + Math.pow(r.omzet - avgAll, 2), 0) / harian.length);
+    const cv = avgAll > 0 ? (stdDev / avgAll) * 100 : 100;
+    const consistency = Math.max(0, Math.min(100, 100 - cv));
+
+    // Momentum score: weighted combination
+    const velocityScore = Math.max(0, Math.min(100, 50 + velocity * 2));
+    const accelScore = Math.max(0, Math.min(100, 50 + accel * 2));
+    const score = Math.round(velocityScore * 0.4 + accelScore * 0.3 + consistency * 0.3);
+
+    // MA data for chart
+    const maData = harian.map((r, i) => {
+      const w7 = harian.slice(Math.max(0, i - 6), i + 1);
+      const w14 = harian.slice(Math.max(0, i - 13), i + 1);
+      return {
+        tgl: r.tanggal,
+        omzet: r.omzet,
+        ma7: Math.round(w7.reduce((s, d) => s + d.omzet, 0) / w7.length),
+        ma14: i >= 6 ? Math.round(w14.reduce((s, d) => s + d.omzet, 0) / w14.length) : null,
+      };
+    });
+
+    return {
+      score, velocity: Math.round(velocity), acceleration: Math.round(accel),
+      consistency: Math.round(consistency), maData,
+      label: score >= 80 ? "Strong 🚀" : score >= 60 ? "Moderate ⚡" : score >= 40 ? "Weak 🔻" : "Critical ⚠️",
+      color: score >= 80 ? "#22c55e" : score >= 60 ? "#3b82f6" : score >= 40 ? "#f59e0b" : "#ef4444",
+    };
+  }, [harian]);
+
+  if (!momentum) return null;
+
+  const { score, velocity, acceleration, consistency, maData, label, color } = momentum;
+
+  const dimensions = [
+    { name: "Velocity", value: Math.max(0, Math.min(100, 50 + velocity * 2)), desc: `Tren ${velocity >= 0 ? "naik" : "turun"} ${Math.abs(velocity)}%`, icon: <TrendingUp size={14} /> },
+    { name: "Acceleration", value: Math.max(0, Math.min(100, 50 + acceleration * 2)), desc: acceleration >= 0 ? "Pertumbuhan mempercepat" : "Pertumbuhan melambat", icon: <Activity size={14} /> },
+    { name: "Consistency", value: consistency, desc: consistency >= 70 ? "Sangat stabil" : consistency >= 50 ? "Cukup stabil" : "Fluktuatif", icon: <Target size={14} /> },
+  ];
+
+  // SVG circular gauge
+  const gaugeR = 50;
+  const gaugeCirc = 2 * Math.PI * gaugeR;
+  const gaugeDash = gaugeCirc * (score / 100);
+
+  return (
+    <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 rounded-2xl p-5 text-white shadow-xl">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="bg-white/10 p-1.5 rounded-lg"><Activity size={18} /></div>
+        <div>
+          <h3 className="text-sm font-bold">Growth Momentum</h3>
+          <p className="text-[10px] text-white/50">Seberapa kuat tren pertumbuhan Anda</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-center">
+        {/* Gauge */}
+        <div className="flex flex-col items-center">
+          <div className="relative">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r={gaugeR} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
+              <circle cx="60" cy="60" r={gaugeR} fill="none" stroke={color} strokeWidth="8"
+                strokeLinecap="round" strokeDasharray={`${gaugeDash} ${gaugeCirc}`}
+                transform="rotate(-90 60 60)" className="transition-all duration-1000" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-3xl font-black animate-score-reveal text-number" style={{ color }}>{score}</div>
+                <div className="text-[8px] text-white/50 uppercase tracking-widest">Momentum</div>
+              </div>
+            </div>
+          </div>
+          <div className="text-xs font-bold mt-2" style={{ color }}>{label}</div>
+        </div>
+        {/* 3 dimensions */}
+        {dimensions.map((dim) => (
+          <div key={dim.name} className="bg-white/5 rounded-xl p-3 border border-white/10">
+            <div className="flex items-center gap-1.5 mb-2 text-white/70">
+              {dim.icon}
+              <span className="text-[10px] font-bold uppercase tracking-wide">{dim.name}</span>
+            </div>
+            <div className="text-xl font-black text-number">{dim.value.toFixed(0)}</div>
+            <div className="mt-2 bg-white/10 rounded-full h-1.5 overflow-hidden">
+              <div className="h-1.5 rounded-full transition-all duration-700"
+                style={{ width: `${dim.value}%`, backgroundColor: dim.value >= 70 ? "#22c55e" : dim.value >= 50 ? "#f59e0b" : "#ef4444" }} />
+            </div>
+            <div className="text-[9px] text-white/40 mt-1">{dim.desc}</div>
+          </div>
+        ))}
+      </div>
+      {/* MA Crossover Chart */}
+      <div className="mt-4 bg-white/5 rounded-xl p-3 border border-white/10">
+        <div className="text-[10px] text-white/50 font-bold uppercase tracking-wide mb-2">MA-7 vs MA-14 Crossover</div>
+        <ResponsiveContainer width="100%" height={140}>
+          <LineChart data={maData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <XAxis dataKey="tgl" tick={{ fontSize: 8, fill: "rgba(255,255,255,0.3)" }} />
+            <YAxis tick={{ fontSize: 8, fill: "rgba(255,255,255,0.3)" }} tickFormatter={(v) => fR(Number(v))} />
+            <Tooltip content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const d = payload[0]?.payload;
+              return (
+                <div className="glass-dark rounded-lg p-2 text-[10px] text-white space-y-0.5">
+                  <div className="font-bold">{d.tgl}</div>
+                  <div>Omzet: {fR(d.omzet)}</div>
+                  <div style={{ color: "#60a5fa" }}>MA-7: {fR(d.ma7)}</div>
+                  {d.ma14 != null && <div style={{ color: "#f97316" }}>MA-14: {fR(d.ma14)}</div>}
+                </div>
+              );
+            }} />
+            <Line type="monotone" dataKey="ma7" name="MA-7" stroke="#60a5fa" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="ma14" name="MA-14" stroke="#f97316" strokeWidth={2} dot={false} strokeDasharray="4 3" connectNulls={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 💡 SMART ANOMALY DETECTION PANEL
+// ═══════════════════════════════════════════════════════════
+function SmartAnomalyPanel({ harian, s }: { harian: HarianRow[]; s: Summary }) {
+  const anomalies = useMemo(() => {
+    if (harian.length < 5) return [];
+
+    const avgOmzet = s.avg_omzet_harian;
+    const stdDev = Math.sqrt(harian.reduce((sum, r) => sum + Math.pow(r.omzet - avgOmzet, 2), 0) / harian.length);
+
+    if (stdDev === 0) return [];
+
+    return harian
+      .map((r) => {
+        const zScore = (r.omzet - avgOmzet) / stdDev;
+        if (Math.abs(zScore) < 1.3) return null;
+
+        const type = zScore > 0 ? "spike" as const : "drop" as const;
+        const severity = Math.abs(zScore) >= 2.5 ? "high" as const : Math.abs(zScore) >= 1.8 ? "medium" as const : "low" as const;
+        const deviation = ((r.omzet - avgOmzet) / avgOmzet * 100);
+
+        // Context analysis
+        const idx = harian.indexOf(r);
+        const prev = idx > 0 ? harian[idx - 1] : null;
+        const dayChange = prev ? ((r.omzet - prev.omzet) / prev.omzet * 100) : 0;
+
+        // CAC/Upsell correlation
+        const avgCac = s.rata_cac;
+        const cacAnomaly = Math.abs(r.cac_total - avgCac) > 15;
+        const avgUpsell = s.rata_upsell;
+        const upsellAnomaly = Math.abs(r.upsell - avgUpsell) > 0.3;
+
+        let context = "";
+        if (type === "spike") {
+          if (r.closing > s.avg_closing_harian * 1.3) context = "Closing tinggi → kemungkinan flash sale atau campaign efektif";
+          else if (upsellAnomaly && r.upsell > avgUpsell) context = "Upsell tinggi → bundling atau promo berhasil";
+          else context = "Traffic organic atau event khusus";
+        } else {
+          if (cacAnomaly && r.cac_total > avgCac) context = "CAC naik signifikan → biaya akuisisi mahal";
+          else if (r.closing < s.avg_closing_harian * 0.5) context = "Closing anjlok → kemungkinan hari libur atau gangguan teknis";
+          else context = "Penurunan tanpa pattern jelas — investigasi lebih lanjut";
+        }
+
+        return {
+          tanggal: r.tanggal, omzet: r.omzet, type, severity, zScore: +zScore.toFixed(2),
+          deviation: +deviation.toFixed(1), dayChange: +dayChange.toFixed(1),
+          context, closing: r.closing, upsell: r.upsell, cac: r.cac_total,
+          cacAnomaly, upsellAnomaly,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => Math.abs(b!.zScore) - Math.abs(a!.zScore));
+  }, [harian, s]);
+
+  if (anomalies.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border p-5">
+        <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+          <Brain size={16} className="text-purple-500" /> Anomaly Detection
+        </h3>
+        <div className="text-center py-6">
+          <CheckCircle2 size={28} className="text-green-400 mx-auto mb-2" />
+          <p className="text-xs text-gray-500">Tidak ada anomali terdeteksi — data berjalan normal 🎉</p>
+        </div>
+      </div>
+    );
+  }
+
+  const sevColors = {
+    high: { bg: "bg-red-50", border: "border-red-200", text: "text-red-700", badge: "bg-red-100 text-red-700" },
+    medium: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", badge: "bg-amber-100 text-amber-700" },
+    low: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", badge: "bg-blue-100 text-blue-700" },
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+          <Brain size={16} className="text-purple-500" /> Smart Anomaly Detection
+        </h3>
+        <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">
+          {anomalies.length} anomali
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {anomalies.slice(0, 6).map((a) => {
+          if (!a) return null;
+          const sc = sevColors[a.severity];
+          return (
+            <div key={a.tanggal} className={`${sc.bg} ${sc.border} border rounded-xl p-3.5 transition-all hover:scale-[1.02] hover:shadow-md`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-800">{a.tanggal}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sc.badge}`}>
+                    {a.type === "spike" ? "📈 Spike" : "📉 Drop"}
+                  </span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sc.badge}`}>
+                    {a.severity}
+                  </span>
+                </div>
+              </div>
+              <div className="text-lg font-black text-gray-900 text-number">{fR(a.omzet)}</div>
+              <div className={`text-xs font-bold ${a.type === "spike" ? "text-green-600" : "text-red-600"}`}>
+                {a.deviation >= 0 ? "+" : ""}{a.deviation}% dari rata-rata
+              </div>
+              <div className="mt-2 text-[10px] text-gray-600 leading-relaxed bg-white/60 rounded-lg p-2">
+                💡 {a.context}
+              </div>
+              <div className="flex gap-2 mt-2 text-[10px]">
+                <span className="text-gray-500">{fN(a.closing)} cls</span>
+                <span className="text-gray-500">{a.upsell.toFixed(2)}x ups</span>
+                <span className="text-gray-500">{a.cac.toFixed(1)}% cac</span>
+                {a.cacAnomaly && <span className="text-red-500 font-bold">⚠ CAC</span>}
+                {a.upsellAnomaly && <span className="text-purple-500 font-bold">⚡ Upsell</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📋 MONTHLY SCORECARD TAB
+// ═══════════════════════════════════════════════════════════
+function ScorecardTab({ s, target, harian, channels, daysInPeriod, prevMonthData }: {
+  s: Summary; target: number; harian: HarianRow[];
+  channels: Record<string, ChannelSummary>; daysInPeriod: number;
+  prevMonthData?: ApiResponse | null;
+}) {
+  const scorecard = useMemo(() => {
+    // === 5 Dimension Scoring ===
+    // 1. Revenue Achievement (0-100)
+    const pctTarget = Math.min((s.total_omzet / target) * 100, 100);
+    const revenueScore = Math.round(pctTarget);
+
+    // 2. Efficiency / CAC (0-100): ≤40%=100, 50%=75, 60%=50, ≥70%=0
+    const effScore = Math.round(Math.max(0, Math.min(100, ((70 - s.rata_cac) / 30) * 100)));
+
+    // 3. Upsell Quality (0-100): ≥1.5=100, 1.3=75, 1.1=40, 1.0=0
+    const upsScore = Math.round(Math.max(0, Math.min(100, ((s.rata_upsell - 1.0) / 0.5) * 100)));
+
+    // 4. Growth Momentum (0-100)
+    const first7 = harian.slice(0, Math.min(7, harian.length));
+    const last7 = harian.slice(-Math.min(7, harian.length));
+    const avgFirst = first7.reduce((a, r) => a + r.omzet, 0) / first7.length;
+    const avgLast = last7.reduce((a, r) => a + r.omzet, 0) / last7.length;
+    const growthPct = avgFirst > 0 ? ((avgLast - avgFirst) / avgFirst) * 100 : 0;
+    const growthScore = Math.round(Math.max(0, Math.min(100, 50 + growthPct * 2)));
+
+    // 5. Consistency (0-100): low volatility = high score
+    const avgOmzet = s.avg_omzet_harian;
+    const stdDev = Math.sqrt(harian.reduce((sum, r) => sum + Math.pow(r.omzet - avgOmzet, 2), 0) / (harian.length || 1));
+    const cv = avgOmzet > 0 ? (stdDev / avgOmzet) * 100 : 100;
+    const consistScore = Math.round(Math.max(0, Math.min(100, 100 - cv)));
+
+    // Overall score (weighted average)
+    const overall = Math.round(
+      revenueScore * 0.35 + effScore * 0.20 + upsScore * 0.15 + growthScore * 0.15 + consistScore * 0.15
+    );
+
+    // Grade
+    const grade = overall >= 90 ? "A+" : overall >= 80 ? "A" : overall >= 70 ? "B+"
+      : overall >= 60 ? "B" : overall >= 50 ? "C+" : overall >= 40 ? "C" : overall >= 30 ? "D" : "F";
+
+    const gradeColor = overall >= 80 ? "#22c55e" : overall >= 60 ? "#3b82f6"
+      : overall >= 40 ? "#f59e0b" : "#ef4444";
+
+    const dimensions = [
+      { key: "revenue", label: "Revenue Achievement", score: revenueScore, weight: 35, icon: <DollarSign size={16} />,
+        detail: `${pctTarget.toFixed(1)}% target tercapai (${fR(s.total_omzet)} / ${fR(target)})`,
+        color: "#3b82f6" },
+      { key: "efficiency", label: "Cost Efficiency", score: effScore, weight: 20, icon: <Target size={16} />,
+        detail: `CAC ${s.rata_cac.toFixed(1)}%, ROAS ${s.roas.toFixed(1)}x`,
+        color: "#10b981" },
+      { key: "upsell", label: "Upsell Quality", score: upsScore, weight: 15, icon: <TrendingUp size={16} />,
+        detail: `Rata-rata upsell ${s.rata_upsell.toFixed(2)}x`,
+        color: "#8b5cf6" },
+      { key: "growth", label: "Growth Momentum", score: growthScore, weight: 15, icon: <Rocket size={16} />,
+        detail: `Tren ${growthPct >= 0 ? "naik" : "turun"} ${Math.abs(growthPct).toFixed(0)}% (awal vs akhir)`,
+        color: "#f97316" },
+      { key: "consist", label: "Consistency", score: consistScore, weight: 15, icon: <Award size={16} />,
+        detail: `Volatility ${cv.toFixed(0)}% — ${cv <= 20 ? "sangat stabil" : cv <= 35 ? "cukup stabil" : "fluktuatif"}`,
+        color: "#ec4899" },
+    ];
+
+    return { overall, grade, gradeColor, dimensions, revenueScore, effScore, upsScore, growthScore, consistScore };
+  }, [s, target, harian, daysInPeriod]);
+
+  const { overall, grade, gradeColor, dimensions } = scorecard;
+
+  // Pentagon radar SVG
+  const radarSize = 220;
+  const cx = radarSize / 2, cy = radarSize / 2, rMax = 80;
+  const n = 5;
+  const angleStep = (2 * Math.PI) / n;
+
+  const getPoint = (idx: number, value: number) => {
+    const angle = -Math.PI / 2 + angleStep * idx;
+    const r = (value / 100) * rMax;
+    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  };
+
+  const dataPoints = dimensions.map((d, i) => getPoint(i, d.score));
+  const polygonPoints = dataPoints.map(p => `${p.x},${p.y}`).join(" ");
+  const gridLevels = [0.25, 0.5, 0.75, 1];
+
+  // Previous month comparison
+  const prev = prevMonthData?.summary;
+
+  return (
+    <div className="space-y-5">
+      {/* Grade Display */}
+      <div className="relative overflow-hidden rounded-2xl p-8 text-white shadow-xl"
+        style={{ background: `linear-gradient(135deg, ${gradeColor}dd, ${gradeColor}88, ${gradeColor}44)` }}>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-16 -mb-16" />
+        <div className="relative flex flex-col lg:flex-row items-center gap-8">
+          {/* Large Grade */}
+          <div className="flex flex-col items-center">
+            <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2 font-bold">Monthly Grade</div>
+            <div className="text-8xl font-black animate-score-reveal drop-shadow-lg">{grade}</div>
+            <div className="text-lg font-bold mt-1">{overall}/100</div>
+            <div className="text-xs text-white/70 mt-1">
+              {overall >= 80 ? "Outstanding Performance! 🏆" : overall >= 60 ? "Good Performance 👍" : overall >= 40 ? "Needs Improvement ⚡" : "Urgent Action Required ⚠️"}
+            </div>
+          </div>
+
+          {/* Pentagon Radar */}
+          <div className="flex-1 flex justify-center">
+            <svg width={radarSize} height={radarSize}>
+              {/* Grid */}
+              {gridLevels.map((level, li) => {
+                const pts = dimensions.map((_, i) => {
+                  const angle = -Math.PI / 2 + angleStep * i;
+                  const r = rMax * level;
+                  return `${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`;
+                }).join(" ");
+                return <polygon key={li} points={pts} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />;
+              })}
+              {/* Axes + labels */}
+              {dimensions.map((d, i) => {
+                const angle = -Math.PI / 2 + angleStep * i;
+                const endX = cx + rMax * Math.cos(angle);
+                const endY = cy + rMax * Math.sin(angle);
+                const labelR = rMax + 18;
+                const labelX = cx + labelR * Math.cos(angle);
+                const labelY = cy + labelR * Math.sin(angle);
+                return (
+                  <g key={i}>
+                    <line x1={cx} y1={cy} x2={endX} y2={endY} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
+                    <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="middle"
+                      fill="white" fontSize="8" fontWeight="bold" opacity="0.8">
+                      {d.label.split(" ")[0]}
+                    </text>
+                    <text x={labelX} y={labelY + 11} textAnchor="middle" dominantBaseline="middle"
+                      fill="white" fontSize="10" fontWeight="900" opacity="1">
+                      {d.score}
+                    </text>
+                  </g>
+                );
+              })}
+              {/* Data polygon */}
+              <polygon points={polygonPoints} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="2" />
+              {/* Data points */}
+              {dataPoints.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r="4" fill="white" stroke={dimensions[i].color} strokeWidth="2" />
+              ))}
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Dimension Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {dimensions.map((dim) => {
+          const circR = 28;
+          const circC = 2 * Math.PI * circR;
+          const dash = circC * (dim.score / 100);
+          return (
+            <div key={dim.key} className="bg-white rounded-2xl border p-4 hover:shadow-md transition-all duration-200">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 rounded-lg" style={{ backgroundColor: dim.color + "15", color: dim.color }}>{dim.icon}</div>
+                <div className="text-[11px] font-bold text-gray-700">{dim.label}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="relative shrink-0">
+                  <svg width="64" height="64" viewBox="0 0 64 64">
+                    <circle cx="32" cy="32" r={circR} fill="none" stroke="#f0f0f0" strokeWidth="5" />
+                    <circle cx="32" cy="32" r={circR} fill="none" stroke={dim.color} strokeWidth="5"
+                      strokeLinecap="round" strokeDasharray={`${dash} ${circC}`}
+                      transform="rotate(-90 32 32)" className="transition-all duration-1000" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-sm font-black text-number" style={{ color: dim.color }}>{dim.score}</span>
+                  </div>
+                </div>
+                <div className="text-[10px] text-gray-500 leading-relaxed">{dim.detail}</div>
+              </div>
+              <div className="text-[9px] text-gray-400 mt-2">Bobot: {dim.weight}%</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Previous Month Comparison */}
+      {prev && (
+        <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl border p-5">
+          <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-1.5">
+            <Star size={16} className="text-amber-500" /> Perbandingan vs Bulan Lalu
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: "Omzet", curr: s.total_omzet, prev: prev.total_omzet, format: fR, inverse: false },
+              { label: "Closing", curr: s.total_closing, prev: prev.total_closing, format: fN, inverse: false },
+              { label: "Botol", curr: s.total_botol, prev: prev.total_botol, format: fN, inverse: false },
+              { label: "CAC", curr: s.rata_cac, prev: prev.rata_cac, format: (v: number) => v.toFixed(1) + "%", inverse: true },
+              { label: "Upsell", curr: s.rata_upsell, prev: prev.rata_upsell, format: (v: number) => v.toFixed(2) + "x", inverse: false },
+              { label: "ROAS", curr: s.roas, prev: prev.roas, format: (v: number) => v.toFixed(1) + "x", inverse: false },
+            ].map((m) => {
+              const delta = m.prev > 0 ? ((m.curr - m.prev) / m.prev) * 100 : 0;
+              const isGood = m.inverse ? delta < 0 : delta > 0;
+              return (
+                <div key={m.label} className={`rounded-xl p-3 text-center border ${isGood ? "bg-green-50 border-green-200" : delta === 0 ? "bg-gray-50 border-gray-200" : "bg-red-50 border-red-200"}`}>
+                  <div className="text-[10px] text-gray-500 font-medium">{m.label}</div>
+                  <div className="text-sm font-black text-gray-900 mt-0.5 text-number">{m.format(m.curr)}</div>
+                  <div className={`text-[10px] font-bold mt-0.5 ${isGood ? "text-green-600" : delta === 0 ? "text-gray-400" : "text-red-600"}`}>
+                    {delta >= 0 ? "↑" : "↓"} {Math.abs(delta).toFixed(1)}%
+                  </div>
+                  <div className="text-[9px] text-gray-400">prev: {m.format(m.prev)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Action Items */}
+      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 p-5">
+        <h3 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-1.5">
+          <Brain size={16} className="text-indigo-600" /> Rekomendasi Aksi
+        </h3>
+        <div className="space-y-2">
+          {dimensions
+            .filter(d => d.score < 70)
+            .sort((a, b) => a.score - b.score)
+            .map((dim) => {
+              const recs: Record<string, string> = {
+                revenue: "Fokus pada peningkatan volume penjualan. Pertimbangkan flash sale, promo bundling, atau ekspansi ke channel baru.",
+                efficiency: "Evaluasi efisiensi iklan — kurangi audience yang tidak perform, optimasi bid, dan fokus pada produk ROI tinggi.",
+                upsell: "Tingkatkan rata-rata pembelian per transaksi. Bundling produk, promo beli 2, atau cross-sell complementary products.",
+                growth: "Pertumbuhan melambat — perlu campaign boost. Evaluasi creative yang mulai fatigue dan refresh konten iklan.",
+                consist: "Stabilkan operasional harian. Identifikasi faktor yang menyebabkan fluktuasi dan minimalisir downtime.",
+              };
+              return (
+                <div key={dim.key} className="flex items-start gap-2 bg-white/60 rounded-xl p-3 border border-indigo-100/50">
+                  <div className="p-1 rounded-lg shrink-0" style={{ backgroundColor: dim.color + "15", color: dim.color }}>{dim.icon}</div>
+                  <div>
+                    <div className="text-xs font-bold text-gray-800">{dim.label} — Score {dim.score}/100</div>
+                    <div className="text-[10px] text-gray-600 mt-0.5">{recs[dim.key] || "Perlu evaluasi lebih lanjut."}</div>
+                  </div>
+                </div>
+              );
+            })}
+          {dimensions.every(d => d.score >= 70) && (
+            <div className="text-center py-4">
+              <Trophy size={28} className="text-amber-400 mx-auto mb-2" />
+              <p className="text-xs text-gray-600 font-medium">Semua dimensi sudah di atas 70 — Excellent! Pertahankan performa ini! 🏆</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📝 DAILY NOTES JOURNAL (Premium)
+// ═══════════════════════════════════════════════════════════
+const NOTE_TAGS = [
+  { key: "catatan", label: "📝 Catatan", color: "bg-gray-100 text-gray-700 border-gray-200" },
+  { key: "flash-sale", label: "⚡ Flash Sale", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { key: "campaign", label: "📢 Campaign", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { key: "libur", label: "🏖️ Libur/Off", color: "bg-rose-100 text-rose-700 border-rose-200" },
+  { key: "evaluasi", label: "📊 Evaluasi", color: "bg-purple-100 text-purple-700 border-purple-200" },
+  { key: "milestone", label: "🏆 Milestone", color: "bg-green-100 text-green-700 border-green-200" },
+];
+
+const NOTE_MOODS = [
+  { key: "great", emoji: "🔥", label: "Luar Biasa", color: "text-green-600" },
+  { key: "good", emoji: "😊", label: "Bagus", color: "text-blue-600" },
+  { key: "neutral", emoji: "😐", label: "Biasa", color: "text-gray-600" },
+  { key: "bad", emoji: "😰", label: "Kurang", color: "text-red-600" },
+];
+
+function DailyNotesJournal({ harian, activePeriod }: { harian: HarianRow[]; activePeriod: string }) {
+  const [notes, setNotes] = useState<Record<string, DailyNote>>({});
+  const [showForm, setShowForm] = useState(false);
+  const [editDate, setEditDate] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [noteTag, setNoteTag] = useState("catatan");
+  const [noteMood, setNoteMood] = useState("neutral");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Load notes on mount / period change
+  useEffect(() => {
+    setNotes(loadDailyNotes(activePeriod));
+  }, [activePeriod]);
+
+  const refreshNotes = () => setNotes(loadDailyNotes(activePeriod));
+
+  const handleSave = () => {
+    if (!editDate || !noteText.trim()) return;
+    saveDailyNote(activePeriod, editDate, noteText, noteTag, noteMood);
+    refreshNotes();
+    setShowForm(false);
+    setEditDate("");
+    setNoteText("");
+    setNoteTag("catatan");
+    setNoteMood("neutral");
+  };
+
+  const handleDelete = (date: string) => {
+    deleteDailyNote(activePeriod, date);
+    refreshNotes();
+    setConfirmDelete(null);
+  };
+
+  const handleEdit = (note: DailyNote) => {
+    setEditDate(note.date);
+    setNoteText(note.text);
+    setNoteTag(note.tag || "catatan");
+    setNoteMood(note.mood || "neutral");
+    setShowForm(true);
+  };
+
+  // Build sorted notes list with performance data
+  const noteEntries = useMemo(() => {
+    const entries = Object.values(notes)
+      .filter((n) => {
+        if (filterTag && n.tag !== filterTag) return false;
+        if (searchQuery && !n.text.toLowerCase().includes(searchQuery.toLowerCase()) && !n.date.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        // Sort by date descending (most recent first)
+        const da = parseTanggalToDate(a.date);
+        const db = parseTanggalToDate(b.date);
+        if (da && db) return db.getTime() - da.getTime();
+        return b.date.localeCompare(a.date);
+      });
+
+    // Enrich with performance data
+    return entries.map((note) => {
+      const dayData = harian.find((h) => h.tanggal === note.date);
+      return { ...note, dayData };
+    });
+  }, [notes, harian, filterTag, searchQuery]);
+
+  // Available dates that don't have notes yet
+  const availableDates = harian
+    .map((h) => h.tanggal)
+    .filter((d) => !notes[d]);
+
+  const totalNotes = Object.keys(notes).length;
+  const tagCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const n of Object.values(notes)) {
+      const t = n.tag || "catatan";
+      counts[t] = (counts[t] || 0) + 1;
+    }
+    return counts;
+  }, [notes]);
+
+  return (
+    <div className="space-y-5">
+      {/* Header Card */}
+      <div className="bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full -mr-16 -mt-16" />
+        <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full -ml-12 -mb-12" />
+        <div className="relative flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="bg-white/20 p-2 rounded-xl"><StickyNote size={22} /></div>
+              <div>
+                <h2 className="text-lg font-bold">Daily Notes Journal</h2>
+                <p className="text-xs text-white/70">Catat insight, keputusan, dan observasi harian Anda</p>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-3 text-xs">
+              <div className="bg-white/15 rounded-lg px-3 py-1.5">
+                <span className="text-white/60">Total Notes</span>
+                <span className="font-bold ml-1.5">{totalNotes}</span>
+              </div>
+              <div className="bg-white/15 rounded-lg px-3 py-1.5">
+                <span className="text-white/60">Periode</span>
+                <span className="font-bold ml-1.5">{activePeriod}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => { setShowForm(!showForm); setEditDate(""); setNoteText(""); setNoteTag("catatan"); setNoteMood("neutral"); }}
+            className="bg-white text-orange-600 font-bold text-sm px-4 py-2.5 rounded-xl hover:bg-white/90 transition-all shadow-md flex items-center gap-1.5"
+          >
+            {showForm ? <X size={16} /> : <StickyNote size={16} />}
+            {showForm ? "Tutup" : "Tulis Note"}
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Add Form */}
+      {showForm && (
+        <div className="bg-white rounded-2xl border-2 border-orange-200 p-5 shadow-md animate-fade-slide-up">
+          <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-1.5">
+            <StickyNote size={16} className="text-orange-500" />
+            {editDate ? `Edit Note: ${editDate}` : "Tulis Note Baru"}
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            {/* Date Select */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Tanggal</label>
+              <select
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:ring-2 focus:ring-orange-300 focus:border-orange-300 outline-none"
+              >
+                <option value="">Pilih tanggal...</option>
+                {editDate && !availableDates.includes(editDate) && (
+                  <option value={editDate}>{editDate}</option>
+                )}
+                {availableDates.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tag Select */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Kategori</label>
+              <div className="flex flex-wrap gap-1.5">
+                {NOTE_TAGS.map((tag) => (
+                  <button
+                    key={tag.key}
+                    onClick={() => setNoteTag(tag.key)}
+                    className={`text-[11px] px-2.5 py-1.5 rounded-lg border font-medium transition-all ${
+                      noteTag === tag.key
+                        ? tag.color + " ring-2 ring-offset-1 ring-orange-300 font-bold"
+                        : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                    }`}
+                  >
+                    {tag.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Mood Select */}
+          <div className="mb-4">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Mood Hari Ini</label>
+            <div className="flex gap-2">
+              {NOTE_MOODS.map((mood) => (
+                <button
+                  key={mood.key}
+                  onClick={() => setNoteMood(mood.key)}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border transition-all ${
+                    noteMood === mood.key
+                      ? "bg-orange-50 border-orange-300 font-bold ring-2 ring-offset-1 ring-orange-200"
+                      : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+                  }`}
+                >
+                  <span className="text-base">{mood.emoji}</span>
+                  <span className={noteMood === mood.key ? mood.color : "text-gray-500"}>{mood.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Text Area */}
+          <div className="mb-4">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Catatan</label>
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Tulis insight, keputusan, observasi hari ini... Contoh: 'Flash sale jam 12 siang, omzet melonjak 3x. Next time prepare stok lebih banyak.'"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 focus:ring-2 focus:ring-orange-300 focus:border-orange-300 outline-none resize-none"
+              rows={4}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] text-gray-400">
+              {noteText.length > 0 && `${noteText.length} karakter`}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setShowForm(false); setEditDate(""); setNoteText(""); }}
+                className="text-xs text-gray-500 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!editDate || !noteText.trim()}
+                className="bg-gradient-to-r from-orange-500 to-rose-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl hover:from-orange-600 hover:to-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center gap-1.5"
+              >
+                <Save size={14} /> Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter & Search Bar */}
+      <div className="bg-white rounded-2xl border p-4">
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="🔍 Cari catatan..."
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:ring-2 focus:ring-orange-200 focus:border-orange-300 outline-none"
+            />
+          </div>
+          {/* Tag Filters */}
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setFilterTag(null)}
+              className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-medium transition-all ${!filterTag ? "bg-orange-100 text-orange-700 border-orange-200 font-bold" : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"}`}
+            >
+              Semua ({totalNotes})
+            </button>
+            {NOTE_TAGS.map((tag) => (
+              <button
+                key={tag.key}
+                onClick={() => setFilterTag(filterTag === tag.key ? null : tag.key)}
+                className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-medium transition-all ${
+                  filterTag === tag.key ? tag.color + " font-bold" : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                {tag.label.split(" ")[0]} {tagCounts[tag.key] || 0}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Notes Timeline */}
+      {noteEntries.length === 0 ? (
+        <div className="bg-white rounded-2xl border p-10 text-center">
+          <StickyNote size={36} className="text-gray-200 mx-auto mb-3" />
+          <p className="text-sm text-gray-500 font-medium">
+            {totalNotes === 0 ? "Belum ada catatan" : "Tidak ada catatan yang cocok"}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            {totalNotes === 0 ? "Mulai catat insight harian Anda — klik 'Tulis Note' untuk mulai!" : "Coba ubah filter atau keyword pencarian."}
+          </p>
+        </div>
+      ) : (
+        <div className="relative">
+          {/* Timeline line */}
+          <div className="absolute left-[19px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-orange-300 via-amber-200 to-transparent hidden sm:block" />
+
+          <div className="space-y-3">
+            {noteEntries.map((entry, idx) => {
+              const tagInfo = NOTE_TAGS.find((t) => t.key === entry.tag) || NOTE_TAGS[0];
+              const moodInfo = NOTE_MOODS.find((m) => m.key === entry.mood) || NOTE_MOODS[2];
+              const dayData = entry.dayData;
+
+              return (
+                <div key={entry.date} className="flex gap-3 sm:gap-4 animate-fade-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
+                  {/* Timeline pin */}
+                  <div className="hidden sm:flex flex-col items-center shrink-0">
+                    <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-base shadow-sm z-10 bg-white ${
+                      entry.tag === "milestone" ? "border-green-400" :
+                      entry.tag === "flash-sale" ? "border-amber-400" :
+                      entry.tag === "campaign" ? "border-blue-400" :
+                      entry.tag === "libur" ? "border-rose-400" :
+                      entry.tag === "evaluasi" ? "border-purple-400" :
+                      "border-gray-300"
+                    }`}>
+                      {moodInfo.emoji}
+                    </div>
+                  </div>
+
+                  {/* Note Card */}
+                  <div className="flex-1 bg-white rounded-2xl border hover:shadow-md transition-all duration-200 overflow-hidden group">
+                    {/* Card Header */}
+                    <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-900">{entry.date}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${tagInfo.color}`}>
+                          {tagInfo.label}
+                        </span>
+                        <span className="sm:hidden text-base">{moodInfo.emoji}</span>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleEdit(entry)}
+                          className="text-[10px] text-gray-400 hover:text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          ✏️ Edit
+                        </button>
+                        {confirmDelete === entry.date ? (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => handleDelete(entry.date)}
+                              className="text-[10px] text-red-600 font-bold px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100">
+                              Hapus
+                            </button>
+                            <button onClick={() => setConfirmDelete(null)}
+                              className="text-[10px] text-gray-400 px-2 py-1 rounded-lg hover:bg-gray-100">
+                              Batal
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDelete(entry.date)}
+                            className="text-[10px] text-gray-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="px-4 pb-3">
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{entry.text}</p>
+                    </div>
+
+                    {/* Performance Footer */}
+                    {dayData && (
+                      <div className="px-4 pb-3 pt-1 border-t bg-gradient-to-r from-gray-50/80 to-transparent">
+                        <div className="flex flex-wrap items-center gap-3 text-[10px]">
+                          <span className="text-gray-400 font-medium uppercase tracking-wide">📊 Performa:</span>
+                          <span className="font-bold text-gray-700">
+                            💰 {fR(dayData.omzet)}
+                          </span>
+                          <span className="text-gray-500">{fN(dayData.closing)} closing</span>
+                          <span className="text-gray-500">{fN(dayData.botol)} botol</span>
+                          <span className="text-gray-500">{dayData.upsell.toFixed(2)}x upsell</span>
+                          <span className={`font-bold ${dayData.cac_total <= 40 ? "text-green-600" : dayData.cac_total <= 55 ? "text-amber-600" : "text-red-600"}`}>
+                            CAC {dayData.cac_total.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Stats Summary */}
+      {totalNotes > 0 && (
+        <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl border p-5">
+          <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+            <BarChart3 size={14} className="text-orange-500" /> Ringkasan Notes
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {NOTE_TAGS.map((tag) => {
+              const count = tagCounts[tag.key] || 0;
+              if (count === 0) return null;
+              return (
+                <div key={tag.key} className={`rounded-xl p-3 text-center border ${tag.color}`}>
+                  <div className="text-lg font-black text-number">{count}</div>
+                  <div className="text-[10px] font-medium mt-0.5">{tag.label}</div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Mood Distribution */}
+          <div className="flex items-center gap-3 mt-3">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Mood:</span>
+            {NOTE_MOODS.map((mood) => {
+              const count = Object.values(notes).filter((n) => (n.mood || "neutral") === mood.key).length;
+              if (count === 0) return null;
+              return (
+                <span key={mood.key} className="text-xs flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1">
+                  <span>{mood.emoji}</span>
+                  <span className="font-bold text-gray-700">{count}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
