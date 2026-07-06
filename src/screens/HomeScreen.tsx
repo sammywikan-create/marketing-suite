@@ -480,66 +480,22 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     []
   );
 
-  // ─── KPI CARDS ──────────────────────────────────────────
-  const kpiCards = useMemo(() => [
-    {
-      id: "gmv", label: "Total GMV", value: fRp(agg.totalGMV),
-      sub: momGrowth !== null
-        ? `${momGrowth >= 0 ? "↑" : "↓"} ${Math.abs(momGrowth).toFixed(1)}% vs ${formatPeriod(prevPeriod || "")}`
-        : "Periode pertama",
-      subOk: momGrowth === null || momGrowth >= 0,
-      icon: "💰", color: "blue", tab: "affiliate",
-    },
-    {
-      id: "netgmv", label: "Net GMV (setelah refund)", value: fRp(agg.netGMV),
-      sub: `Refund ${fRp(agg.totalRefund)} (${fP(agg.refundRate)})`,
-      subOk: agg.refundRate <= 15,
-      icon: "✅", color: "green", tab: "affiliate",
-    },
-    {
-      id: "netcomm", label: "Net Setelah Komisi", value: fRp(agg.netAfterComm),
-      sub: `Komisi ${fRp(agg.totalCommission)} (${fP(agg.commRate)})`,
-      subOk: true,
-      icon: "💳", color: "teal", tab: "affiliate",
-    },
-    {
-      id: "orders", label: "Total Pesanan", value: fN(agg.totalOrders),
-      sub: `AOV ${fRp(agg.aov)} per pesanan`,
-      subOk: true,
-      icon: "🛒", color: "purple", tab: "affiliate",
-    },
-    {
-      id: "creators", label: "Kreator Aktif", value: fN(agg.activeCreators),
-      sub: `dari ${fN(agg.totalCreators)} terdaftar (${agg.totalCreators > 0 ? fP((agg.activeCreators / agg.totalCreators) * 100) : "0%"})`,
-      subOk: agg.totalCreators > 0 ? (agg.activeCreators / agg.totalCreators) * 100 >= 5 : true,
-      icon: "🎥", color: "orange", tab: "affiliate",
-    },
-    {
-      id: "videos", label: "Konten Dibuat", value: fN(agg.totalVideos + agg.totalLive),
-      sub: `${fN(agg.totalVideos)} video + ${fN(agg.totalLive)} LIVE`,
-      subOk: true,
-      icon: "📹", color: "indigo", tab: "video-performance",
-    },
-    {
-      id: "refund", label: "Refund Rate", value: fP(agg.refundRate),
-      sub: agg.refundRate > 20 ? "🔴 Di atas batas aman (15%)" : agg.refundRate > 10 ? "🟡 Perlu dipantau" : "🟢 Aman",
-      subOk: agg.refundRate <= 15,
-      icon: "↩️", color: agg.refundRate > 20 ? "red" : agg.refundRate > 10 ? "yellow" : "gray",
-      tab: "affiliate",
-    },
-    {
-      id: "target", label: "Progress Target",
-      value: targetGMV > 0 ? fP(targetProgress) : "Belum diset",
-      sub: targetGMV > 0
-        ? (targetProgress >= 100
-            ? `🎉 Tercapai! ${fRp(agg.totalGMV)} / ${fRp(targetGMV)}`
-            : `Sisa ${fRp(targetRemaining)} lagi`)
-        : "Klik untuk set target",
-      subOk: targetProgress >= 100 || targetGMV === 0,
-      icon: "🎯", color: targetProgress >= 100 ? "green" : targetProgress >= 70 ? "yellow" : "red",
-      tab: "",
-    },
-  ], [agg, momGrowth, prevPeriod, targetGMV, targetProgress, targetRemaining]);
+  // ─── KPI CARDS (simplified: only 4 most critical) ──────
+  const heroCards = useMemo(() => {
+    const s = lhData?.summary;
+    const ch = lhData?.channels || {};
+    const displayOmzet =
+      (s?.total_omzet_fv || 0) > 0 ? s!.total_omzet_fv
+        : (lhData?.evaluasi_per_brand?.freshvision || 0) > 0 ? (lhData!.evaluasi_per_brand!.freshvision as number)
+          : (ch.shop_tab?.total_omzet || 0) > 0 ? ch.shop_tab!.total_omzet
+            : (s?.total_omzet || 0);
+    const displayRoas = s && s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
+    const daysElapsed = s?.hari || 0;
+    const dailyAvgOmzet = daysElapsed > 0 ? displayOmzet / daysElapsed : 0;
+    const projectedEOM = dailyAvgOmzet * 30;
+
+    return { displayOmzet, displayRoas, daysElapsed, dailyAvgOmzet, projectedEOM };
+  }, [lhData]);
 
   // ─── QUICK ACTIONS ──────────────────────────────────────
   const quickActions = [
@@ -551,15 +507,15 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   // ─── COLOR MAP ──────────────────────────────────────────
   const colorMap: Record<string, { bg: string; icon: string; text: string; border: string }> = {
-    blue: { bg: "bg-blue-50", icon: "bg-blue-100", text: "text-blue-700", border: "border-blue-100" },
-    green: { bg: "bg-green-50", icon: "bg-green-100", text: "text-green-700", border: "border-green-100" },
-    purple: { bg: "bg-purple-50", icon: "bg-purple-100", text: "text-purple-700", border: "border-purple-100" },
-    orange: { bg: "bg-orange-50", icon: "bg-orange-100", text: "text-orange-700", border: "border-orange-100" },
-    teal: { bg: "bg-teal-50", icon: "bg-teal-100", text: "text-teal-700", border: "border-teal-100" },
-    yellow: { bg: "bg-yellow-50", icon: "bg-yellow-100", text: "text-yellow-700", border: "border-yellow-100" },
-    indigo: { bg: "bg-indigo-50", icon: "bg-indigo-100", text: "text-indigo-700", border: "border-indigo-100" },
-    red: { bg: "bg-red-50", icon: "bg-red-100", text: "text-red-700", border: "border-red-100" },
-    gray: { bg: "bg-gray-50", icon: "bg-gray-100", text: "text-gray-600", border: "border-gray-100" },
+    blue: { bg: "bg-blue-50 dark:bg-blue-900/20", icon: "bg-blue-100", text: "text-blue-700 dark:text-blue-400", border: "border-blue-100 dark:border-blue-800" },
+    green: { bg: "bg-green-50 dark:bg-green-900/20", icon: "bg-green-100", text: "text-green-700 dark:text-green-400", border: "border-green-100 dark:border-green-800" },
+    purple: { bg: "bg-purple-50 dark:bg-purple-900/20", icon: "bg-purple-100", text: "text-purple-700 dark:text-purple-400", border: "border-purple-100 dark:border-purple-800" },
+    orange: { bg: "bg-orange-50 dark:bg-orange-900/20", icon: "bg-orange-100", text: "text-orange-700 dark:text-orange-400", border: "border-orange-100 dark:border-orange-800" },
+    teal: { bg: "bg-teal-50 dark:bg-teal-900/20", icon: "bg-teal-100", text: "text-teal-700 dark:text-teal-400", border: "border-teal-100 dark:border-teal-800" },
+    yellow: { bg: "bg-yellow-50 dark:bg-yellow-900/20", icon: "bg-yellow-100", text: "text-yellow-700 dark:text-yellow-400", border: "border-yellow-100 dark:border-yellow-800" },
+    indigo: { bg: "bg-indigo-50 dark:bg-indigo-900/20", icon: "bg-indigo-100", text: "text-indigo-700 dark:text-indigo-400", border: "border-indigo-100 dark:border-indigo-800" },
+    red: { bg: "bg-red-50 dark:bg-red-900/20", icon: "bg-red-100", text: "text-red-700 dark:text-red-400", border: "border-red-100 dark:border-red-800" },
+    gray: { bg: "bg-gray-50 dark:bg-gray-800", icon: "bg-gray-100", text: "text-gray-600 dark:text-gray-400", border: "border-gray-100 dark:border-gray-700" },
   };
 
   // ═══════════════════════════════════════════════════════
@@ -653,36 +609,130 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </div>
       )}
 
-      {/* ═══ ZONA 3: KPI GABUNGAN ═══ */}
+      {/* ═══ ZONA 2.5: QUICK ACTIONS (moved up for easy access) ═══ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {quickActions.map((action) => (
+          <button
+            key={action.label}
+            onClick={() => onNavigate(action.tab)}
+            className={`${action.color} text-white rounded-xl p-4 flex items-center gap-3 transition cursor-pointer text-left shadow-sm hover:shadow-md`}
+          >
+            <span className="text-2xl flex-shrink-0">{action.icon}</span>
+            <div>
+              <div className="text-sm font-semibold">{action.label}</div>
+              <div className="text-xs opacity-80">{action.desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ ZONA 3: HERO KPI — 4 angka paling penting ═══ */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
           📊 Ringkasan {formatPeriod(activePeriod)} — Gabungan Semua Toko
         </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {kpiCards.map((card) => {
-            const c = colorMap[card.color] || colorMap.gray;
-            return (
-              <button
-                key={card.id}
-                onClick={() => {
-                  if (card.id === "target") {
-                    document.getElementById("target-section")?.scrollIntoView({ behavior: "smooth" });
-                  } else if (card.tab) {
-                    onNavigate(card.tab);
-                  }
-                }}
-                className={`text-left ${c.bg} border ${c.border} rounded-2xl p-4 hover:shadow-md transition group`}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className={`${c.icon} rounded-xl p-2.5 text-xl`}>{card.icon}</div>
-                  <span className="text-xs text-gray-400 group-hover:text-gray-600 transition">→</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: GMV vs Target */}
+          <button onClick={() => document.getElementById("target-section")?.scrollIntoView({ behavior: "smooth" })}
+            className="text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xl">💰</span>
+              {momGrowth !== null && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`}>
+                  {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <p className="text-3xl font-extrabold leading-tight">{fRp(agg.totalGMV)}</p>
+            <p className="text-blue-200 text-xs mt-1 font-medium">Total GMV Affiliate</p>
+            {targetGMV > 0 && (
+              <div className="mt-3">
+                <div className="flex justify-between text-xs text-blue-200 mb-1">
+                  <span>Target: {fRp(targetGMV)}</span>
+                  <span className="font-bold">{fP(targetProgress)}</span>
                 </div>
-                <div className={`text-2xl font-bold ${c.text} mb-1`}>{card.value}</div>
-                <div className="text-xs text-gray-500 font-medium">{card.label}</div>
-                <div className={`text-xs mt-1 ${card.subOk ? "text-green-600" : "text-red-500"}`}>{card.sub}</div>
-              </button>
-            );
-          })}
+                <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${targetProgress >= 100 ? "bg-green-400" : "bg-white/60"}`}
+                    style={{ width: `${Math.min(100, targetProgress)}%` }} />
+                </div>
+              </div>
+            )}
+          </button>
+
+          {/* Card 2: Omzet FreshVision (Laporan Harian) */}
+          <button onClick={() => onNavigate("laporan-harian")}
+            className="text-left bg-gradient-to-br from-emerald-600 to-teal-700 dark:from-emerald-700 dark:to-teal-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xl">📋</span>
+              {heroCards.daysElapsed > 0 && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{heroCards.daysElapsed} hari</span>}
+            </div>
+            <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
+            <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet FreshVision</p>
+            {heroCards.displayOmzet > 0 && heroCards.daysElapsed > 0 && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-emerald-200">Rata-rata:</span>
+                <span className="text-xs font-bold text-white">{fRp(heroCards.dailyAvgOmzet)}/hari</span>
+              </div>
+            )}
+          </button>
+
+          {/* Card 3: Kreator Aktif */}
+          <button onClick={() => onNavigate("affiliate")}
+            className="text-left bg-gradient-to-br from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xl">🎥</span>
+              <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                {agg.totalCreators > 0 ? fP((agg.activeCreators / agg.totalCreators) * 100) : "0%"} aktif
+              </span>
+            </div>
+            <p className="text-3xl font-extrabold leading-tight">{fN(agg.activeCreators)}</p>
+            <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif dari {fN(agg.totalCreators)}</p>
+            <div className="mt-3 flex items-center gap-3 text-xs">
+              <span className="text-amber-200">{fN(agg.totalVideos)} video</span>
+              <span className="text-amber-200">{fN(agg.totalLive)} LIVE</span>
+            </div>
+          </button>
+
+          {/* Card 4: ROAS */}
+          <button onClick={() => onNavigate("laporan-harian")}
+            className={`text-left rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group ${
+              heroCards.displayRoas >= 3 ? "bg-gradient-to-br from-green-600 to-emerald-700 dark:from-green-700 dark:to-emerald-800"
+                : heroCards.displayRoas >= 2 ? "bg-gradient-to-br from-yellow-600 to-amber-700"
+                  : heroCards.displayRoas > 0 ? "bg-gradient-to-br from-red-600 to-rose-700"
+                    : "bg-gradient-to-br from-gray-600 to-gray-700"
+            }`}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xl">🎯</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                heroCards.displayRoas >= 3 ? "bg-green-400/20 text-green-200" : heroCards.displayRoas >= 2 ? "bg-yellow-400/20 text-yellow-200" : "bg-red-400/20 text-red-200"
+              }`}>{heroCards.displayRoas >= 3 ? "✅ Sehat" : heroCards.displayRoas >= 2 ? "⚠️ Waspada" : heroCards.displayRoas > 0 ? "🔴 Rendah" : "—"}</span>
+            </div>
+            <p className="text-3xl font-extrabold leading-tight">{heroCards.displayRoas > 0 ? `${heroCards.displayRoas.toFixed(2)}×` : "—"}</p>
+            <p className="text-white/70 text-xs mt-1 font-medium">ROAS (Return on Ad Spend)</p>
+            {heroCards.displayRoas > 0 && lhData?.summary && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-white/60">Ad Spend:</span>
+                <span className="text-xs font-bold text-white">{fRp(lhData.summary.total_biaya_iklan || 0)}</span>
+              </div>
+            )}
+          </button>
+        </div>
+
+        {/* Secondary KPIs row */}
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mt-3">
+          {[
+            { label: "Net GMV", value: fRp(agg.netGMV), ok: true },
+            { label: "Refund Rate", value: fP(agg.refundRate), ok: agg.refundRate <= 15 },
+            { label: "Total Pesanan", value: fN(agg.totalOrders), ok: true },
+            { label: "AOV", value: fRp(agg.aov), ok: true },
+            { label: "Komisi Aff", value: fRp(agg.totalCommission), ok: true },
+            { label: "Net - Komisi", value: fRp(agg.netAfterComm), ok: agg.netAfterComm > 0 },
+          ].map((item) => (
+            <div key={item.label} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-3 text-center">
+              <div className={`text-sm font-bold ${item.ok ? "text-gray-900 dark:text-white" : "text-red-600"}`}>{item.value}</div>
+              <div className="text-[11px] text-gray-400 mt-0.5">{item.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1291,27 +1341,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         )}
       </div>
 
-      {/* ═══ ZONA 8: QUICK ACTIONS ═══ */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          Akses Cepat
-        </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {quickActions.map((action) => (
-            <button
-              key={action.label}
-              onClick={() => onNavigate(action.tab)}
-              className={`${action.color} text-white rounded-xl p-4 flex items-center gap-3 transition cursor-pointer text-left`}
-            >
-              <span className="flex-shrink-0">{action.icon}</span>
-              <div>
-                <div className="text-sm font-semibold">{action.label}</div>
-                <div className="text-xs opacity-80">{action.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Quick Actions removed from here — moved to top (Zona 2.5) */}
 
     </div>
   );
