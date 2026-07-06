@@ -5,7 +5,7 @@ import {
   Target, Filter, DollarSign, Layers, CalendarCheck, CalendarDays, BarChart3,
   ChevronLeft, ChevronRight, Upload, PieChart, Package, Sparkles, Award,
   ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode, ClipboardList,
-  X, ShieldCheck,
+  X, ShieldCheck, TrendingUp, Rocket, Heart, Globe, Trophy,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -82,6 +82,16 @@ const tabGroups: TabGroup[] = [
     items: [
       { key: "report-builder", label: "📄 Report Builder", icon: <FileText size={18} /> },
       { key: "laporan-harian", label: "📊 Laporan Harian", icon: <BarChart3 size={18} /> },
+    ],
+  },
+  {
+    title: "Strategic Intelligence",
+    items: [
+      { key: "revenue-impact", label: "💰 Revenue Impact", icon: <TrendingUp size={18} /> },
+      { key: "strategic-planning", label: "🚀 Strategic Planning", icon: <Rocket size={18} /> },
+      { key: "team-performance", label: "👥 Team Performance", icon: <Trophy size={18} /> },
+      { key: "customer-journey", label: "❤️ Customer Journey", icon: <Heart size={18} /> },
+      { key: "competitor-benchmark", label: "🌐 Competitive Intel", icon: <Globe size={18} /> },
     ],
   },
   {

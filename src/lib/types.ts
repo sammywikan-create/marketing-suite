@@ -198,7 +198,12 @@ export type TabKey =
   | "product-cards"
   | "laporan-harian"
   | "sku-tracking"
-  | "gmax-evaluasi";
+  | "gmax-evaluasi"
+  | "revenue-impact"
+  | "competitor-benchmark"
+  | "customer-journey"
+  | "team-performance"
+  | "strategic-planning";
 
 export interface TabConfig {
   key: TabKey;

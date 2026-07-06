@@ -53,6 +53,11 @@ const ProductCardsScreen = dynamic(() => import("@/screens/ProductCardsScreen"),
 const LaporanHarianScreen = dynamic(() => import("@/screens/LaporanHarianScreen"), { ssr: false });
 const SKUTrackingScreen = dynamic(() => import("@/screens/SKUTrackingScreen"), { ssr: false });
 const GmaxEvaluasiScreen = dynamic(() => import("@/screens/GmaxEvaluasiScreen"), { ssr: false });
+const RevenueImpactScreen = dynamic(() => import("@/screens/RevenueImpactScreen"), { ssr: false });
+const CompetitorBenchmarkScreen = dynamic(() => import("@/screens/CompetitorBenchmarkScreen"), { ssr: false });
+const CustomerJourneyScreen = dynamic(() => import("@/screens/CustomerJourneyScreen"), { ssr: false });
+const TeamPerformanceScreen = dynamic(() => import("@/screens/TeamPerformanceScreen"), { ssr: false });
+const StrategicPlanningScreen = dynamic(() => import("@/screens/StrategicPlanningScreen"), { ssr: false });
 
 // ─── Valid tab keys for hash routing ───
 const VALID_TABS = new Set<string>([
@@ -63,6 +68,7 @@ const VALID_TABS = new Set<string>([
   "gmv-overview","video-performance","store-compare","store-settings","compare-gabungan",
   "okr","affiliate","report-builder","live-analytics","gmax-overview","product-cards",
   "laporan-harian","sku-tracking","gmax-evaluasi",
+  "revenue-impact","competitor-benchmark","customer-journey","team-performance","strategic-planning",
 ]);
 
 const PAGE_TITLES: Record<TabKey, string> = {
@@ -84,6 +90,11 @@ const PAGE_TITLES: Record<TabKey, string> = {
   "gmax-overview": "GMAX Overview", "product-cards": "Kartu Produk",
   "laporan-harian": "Laporan Harian", "sku-tracking": "SKU Tracking",
   "gmax-evaluasi": "GMAX Evaluasi",
+  "revenue-impact": "Revenue Impact",
+  "competitor-benchmark": "Competitive Intelligence",
+  "customer-journey": "Customer Journey",
+  "team-performance": "Team Performance",
+  "strategic-planning": "Strategic Planning",
 };
 
 function getTabFromHash(): TabKey {
@@ -296,6 +307,11 @@ export default function Home() {
       case "laporan-harian": return <LaporanHarianScreen />;
       case "sku-tracking": return <SKUTrackingScreen />;
       case "gmax-evaluasi": return <GmaxEvaluasiScreen />;
+      case "revenue-impact": return <RevenueImpactScreen />;
+      case "competitor-benchmark": return <CompetitorBenchmarkScreen />;
+      case "customer-journey": return <CustomerJourneyScreen />;
+      case "team-performance": return <TeamPerformanceScreen />;
+      case "strategic-planning": return <StrategicPlanningScreen />;
       default: return <DashboardScreen />;
     }
   };
