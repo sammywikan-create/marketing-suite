@@ -72,6 +72,12 @@ const tabGroups: TabGroup[] = [
     ],
   },
   {
+    title: "Tim",
+    items: [
+      { key: "staff-tracker", label: "👥 Staff Tracker", icon: <Users size={18} /> },
+    ],
+  },
+  {
     title: "OKR",
     items: [
       { key: "okr", label: "🎯 OKR Framework", icon: <Target size={18} /> },
