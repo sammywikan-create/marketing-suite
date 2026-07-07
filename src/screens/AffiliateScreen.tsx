@@ -321,12 +321,29 @@ export default function AffiliateScreen() {
     const sampleSent = filteredData.reduce((a, d) => a + (d.coreSummary?.samplesSent || 0), 0);
     const activeCreators = creators.filter((c) => c.affiliateGMV > 0).length;
 
+    // ── TOTAL KREATOR ──
+    // Ambil dari summary yang di-save (lebih akurat, mencakup semua kreator termasuk yang GMV=0)
+    // Fallback ke creators.length jika summary tidak punya data
+    const summaryTotalCreators = filteredData.reduce((a, d) => a + (d.summary.totalCreators || 0), 0);
+    const totalCreators = Math.max(summaryTotalCreators, creators.length);
+
     // ── CREATOR ACTIVITY BREAKDOWN ──
     // Kreator yang membuat konten (video atau live), terlepas dari apakah mereka punya GMV
-    const videoCreators = creators.filter((c) => c.affiliateShoppableVideos > 0).length;
-    const liveCreators = creators.filter((c) => c.affiliateLiveStreams > 0).length;
-    const bothVideoAndLive = creators.filter((c) => c.affiliateShoppableVideos > 0 && c.affiliateLiveStreams > 0).length;
-    const activePromoters = videoCreators + liveCreators - bothVideoAndLive;
+    // Prioritas: data dari summary yang di-save (lebih lengkap), fallback ke kalkulasi dari creators array
+    const summaryActivePromoters = filteredData.reduce((a, d) => a + (d.summary.activePromoters || 0), 0);
+    const summaryVideoCreators = filteredData.reduce((a, d) => a + (d.summary.videoCreators || 0), 0);
+    const summaryLiveCreators = filteredData.reduce((a, d) => a + (d.summary.liveCreators || 0), 0);
+    const summaryBothVideoAndLive = filteredData.reduce((a, d) => a + (d.summary.bothVideoAndLive || 0), 0);
+
+    const computedVideoCreators = creators.filter((c) => c.affiliateShoppableVideos > 0).length;
+    const computedLiveCreators = creators.filter((c) => c.affiliateLiveStreams > 0).length;
+    const computedBothVideoAndLive = creators.filter((c) => c.affiliateShoppableVideos > 0 && c.affiliateLiveStreams > 0).length;
+    const computedActivePromoters = computedVideoCreators + computedLiveCreators - computedBothVideoAndLive;
+
+    const videoCreators = summaryVideoCreators > 0 ? summaryVideoCreators : computedVideoCreators;
+    const liveCreators = summaryLiveCreators > 0 ? summaryLiveCreators : computedLiveCreators;
+    const bothVideoAndLive = summaryBothVideoAndLive > 0 ? summaryBothVideoAndLive : computedBothVideoAndLive;
+    const activePromoters = summaryActivePromoters > 0 ? summaryActivePromoters : computedActivePromoters;
 
     // ── TOTAL IMPRESI ──
     const totalImpressions = creators.reduce((a, c) => a + (c.productImpressions || 0), 0);
@@ -395,7 +412,7 @@ export default function AffiliateScreen() {
     return {
       totalGMV, totalRefund, totalOrders, totalCommission,
       totalVideos, totalLive, videoGMV, liveGMV, productCardGMV,
-      sampleSent, activeCreators, totalCreators: creators.length,
+      sampleSent, activeCreators, totalCreators,
       refundRate: totalGMV > 0 ? (totalRefund / totalGMV) * 100 : 0,
       commissionRate: totalGMV > 0 ? (totalCommission / totalGMV) * 100 : 0,
       avgAOV: totalOrders > 0 ? totalGMV / totalOrders : 0,
