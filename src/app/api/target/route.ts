@@ -54,6 +54,22 @@ export async function GET(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Fetch ALL targets for a period at once
+    if (type === 'all') {
+      const { data, error } = await supabase
+        .from('target_settings')
+        .select('target_value, period, type')
+        .eq('period', period);
+      if (error) {
+        console.error('[Target API] Error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      // Return as map { gmv: 200000000, videos: 500, ... }
+      const map: Record<string, number> = {};
+      (data || []).forEach((row: any) => { map[row.type] = row.target_value; });
+      return NextResponse.json({ period, targets: map });
+    }
+
     const { data, error } = await supabase
       .from('target_settings')
       .select('target_value, period, type')

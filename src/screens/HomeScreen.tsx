@@ -56,8 +56,6 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
   const [chartView, setChartView] = useState<"gabungan" | "pertoko">("gabungan");
   const [chartMetric, setChartMetric] = useState<"gmv" | "refund">("gmv");
-  const [showTargetForm, setShowTargetForm] = useState(false);
-  const [targetInput, setTargetInput] = useState("");
   const [targetVersion, setTargetVersion] = useState(0);
 
   // ─── ALL AFFILIATE DATA ─────────────────────────────────
@@ -116,6 +114,11 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     const productCardGMV = periodSummaries.reduce((a, d) => a + (d.summary.productCardGMV || 0), 0);
     const activeCreators = periodSummaries.reduce((a, d) => a + (d.summary.activeCreators || 0), 0);
     const totalCreators = periodSummaries.reduce((a, d) => a + (d.summary.totalCreators || 0), 0);
+    // Creator activity breakdown
+    const activePromoters = periodSummaries.reduce((a, d) => a + (d.summary.activePromoters || 0), 0);
+    const videoCreators = periodSummaries.reduce((a, d) => a + (d.summary.videoCreators || 0), 0);
+    const liveCreators = periodSummaries.reduce((a, d) => a + (d.summary.liveCreators || 0), 0);
+    const bothVideoAndLive = periodSummaries.reduce((a, d) => a + (d.summary.bothVideoAndLive || 0), 0);
     const refundRate = totalGMV > 0 ? (totalRefund / totalGMV) * 100 : 0;
     const netGMV = totalGMV - totalRefund;
     const netAfterComm = netGMV - totalCommission;
@@ -126,6 +129,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       totalGMV, totalRefund, totalOrders, totalVideos, totalLive,
       totalCommission, videoGMV, liveGMV, productCardGMV,
       activeCreators, totalCreators, refundRate, netGMV, netAfterComm, aov, commRate,
+      activePromoters, videoCreators, liveCreators, bothVideoAndLive,
     };
   }, [periodSummaries]);
 
@@ -143,22 +147,21 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return prevGMV > 0 ? ((agg.totalGMV - prevGMV) / prevGMV) * 100 : null;
   }, [prevPeriod, allAffiliateData, agg.totalGMV]);
 
-  // ─── TARGET (Supabase) ──────────────────────────────
-  const getTarget = useCallback(async (period: string) => {
-    try {
-      const res = await fetch(`/api/target?period=${period}&type=gmv`);
-      const data = await res.json();
-      return data.target_value || 0;
-    } catch {
-      return 0;
-    }
-  }, []);
-
-  const [targetGMV, setTargetGMV] = useState(0);
+  // ─── MULTI-TARGET GOALS (Supabase) ──────────────────────
+  type GoalsMap = Record<string, number>;
+  const [goals, setGoals] = useState<GoalsMap>({});
+  const [goalsEditing, setGoalsEditing] = useState(false);
+  const [goalsForm, setGoalsForm] = useState<GoalsMap>({});
 
   useEffect(() => {
-    getTarget(activePeriod).then(setTargetGMV);
-  }, [activePeriod, targetVersion, getTarget]);
+    if (!activePeriod) return;
+    fetch(`/api/target?period=${activePeriod}&type=all`)
+      .then((r) => r.json())
+      .then((d) => setGoals(d.targets || {}))
+      .catch(() => setGoals({}));
+  }, [activePeriod, targetVersion]);
+
+  const targetGMV = goals.gmv || 0;
   const targetProgress = targetGMV > 0 ? (agg.totalGMV / targetGMV) * 100 : 0;
   const targetRemaining = Math.max(0, targetGMV - agg.totalGMV);
 
@@ -254,14 +257,21 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             refundRate: agg.refundRate,
             totalOrders: agg.totalOrders,
             activeCreators: agg.activeCreators,
+            activePromoters: agg.activePromoters,
+            videoCreators: agg.videoCreators,
+            liveCreators: agg.liveCreators,
+            bothVideoAndLive: agg.bothVideoAndLive,
             totalCreators: agg.totalCreators,
             totalCommission: agg.totalCommission,
             videoGMV: agg.videoGMV,
             liveGMV: agg.liveGMV,
+            totalVideos: agg.totalVideos,
+            totalLive: agg.totalLive,
             momGrowth: momGrowth,
             topCreator: supabaseCreators.filter(c => (c.affiliateGMV || 0) > 0).sort((a,b) => b.affiliateGMV - a.affiliateGMV)[0]?.creatorUsername || '-',
             topCreatorGMV: supabaseCreators.filter(c => (c.affiliateGMV || 0) > 0).sort((a,b) => b.affiliateGMV - a.affiliateGMV)[0]?.affiliateGMV || 0,
           } : null,
+          goals: Object.keys(goals).length > 0 ? goals : null,
         }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'AI error'); }
@@ -402,16 +412,17 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   // ─── DAILY AVERAGES ───────────────────────────────────
   const dailyAvg = useMemo(() => {
-    const days = 30;
+    const days = lhData?.summary?.hari || 30;
     return {
       revenuePerDay: agg.totalGMV / days,
       ordersPerDay: agg.totalOrders / days,
       contentPerDay: (agg.totalVideos + agg.totalLive) / days,
       gmvPerVideo: agg.totalVideos > 0 ? agg.videoGMV / agg.totalVideos : 0,
       gmvPerLive: agg.totalLive > 0 ? agg.liveGMV / agg.totalLive : 0,
-      gmvPerCreator: agg.activeCreators > 0 ? agg.totalGMV / agg.activeCreators : 0,
+      gmvPerCreator: agg.activePromoters > 0 ? agg.totalGMV / agg.activePromoters : 0,
+      days,
     };
-  }, [agg]);
+  }, [agg, lhData]);
 
   // ─── TREND DATA ───────────────────────────────────────
   const trendData = useMemo(() => {
@@ -447,7 +458,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         orders: sm?.totalOrders || 0,
         videos: sm?.totalVideos || 0,
         live: sm?.totalLive || 0,
-        creators: sm?.activeCreators || 0,
+        creators: sm?.activePromoters || sm?.activeCreators || 0,
         commission: sm?.totalCommission || 0,
         videoGMV: sm?.videoGMV || 0,
         liveGMV: sm?.liveGMV || 0,
@@ -497,26 +508,9 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return { displayOmzet, displayRoas, daysElapsed, dailyAvgOmzet, projectedEOM };
   }, [lhData]);
 
-  // ─── QUICK ACTIONS ──────────────────────────────────────
-  const quickActions = [
-    { icon: "📤", label: "Upload Data", desc: "Import Excel TikTok / Tokopedia", tab: "gmv-upload", color: "bg-blue-600 hover:bg-blue-700" },
-    { icon: "📄", label: "Generate Laporan", desc: "Export PDF atau Excel", tab: "report-builder", color: "bg-indigo-600 hover:bg-indigo-700" },
-    { icon: "🎥", label: "Performa Video", desc: "Analisis konten kreator", tab: "video-performance", color: "bg-purple-600 hover:bg-purple-700" },
-    { icon: "🎯", label: "GMV Max", desc: "Iklan & creative performance", tab: "gmv-creative", color: "bg-orange-500 hover:bg-orange-600" },
-  ];
 
-  // ─── COLOR MAP ──────────────────────────────────────────
-  const colorMap: Record<string, { bg: string; icon: string; text: string; border: string }> = {
-    blue: { bg: "bg-blue-50 dark:bg-blue-900/20", icon: "bg-blue-100", text: "text-blue-700 dark:text-blue-400", border: "border-blue-100 dark:border-blue-800" },
-    green: { bg: "bg-green-50 dark:bg-green-900/20", icon: "bg-green-100", text: "text-green-700 dark:text-green-400", border: "border-green-100 dark:border-green-800" },
-    purple: { bg: "bg-purple-50 dark:bg-purple-900/20", icon: "bg-purple-100", text: "text-purple-700 dark:text-purple-400", border: "border-purple-100 dark:border-purple-800" },
-    orange: { bg: "bg-orange-50 dark:bg-orange-900/20", icon: "bg-orange-100", text: "text-orange-700 dark:text-orange-400", border: "border-orange-100 dark:border-orange-800" },
-    teal: { bg: "bg-teal-50 dark:bg-teal-900/20", icon: "bg-teal-100", text: "text-teal-700 dark:text-teal-400", border: "border-teal-100 dark:border-teal-800" },
-    yellow: { bg: "bg-yellow-50 dark:bg-yellow-900/20", icon: "bg-yellow-100", text: "text-yellow-700 dark:text-yellow-400", border: "border-yellow-100 dark:border-yellow-800" },
-    indigo: { bg: "bg-indigo-50 dark:bg-indigo-900/20", icon: "bg-indigo-100", text: "text-indigo-700 dark:text-indigo-400", border: "border-indigo-100 dark:border-indigo-800" },
-    red: { bg: "bg-red-50 dark:bg-red-900/20", icon: "bg-red-100", text: "text-red-700 dark:text-red-400", border: "border-red-100 dark:border-red-800" },
-    gray: { bg: "bg-gray-50 dark:bg-gray-800", icon: "bg-gray-100", text: "text-gray-600 dark:text-gray-400", border: "border-gray-100 dark:border-gray-700" },
-  };
+
+
 
   // ═══════════════════════════════════════════════════════
   // RENDER
@@ -609,22 +603,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </div>
       )}
 
-      {/* ═══ ZONA 2.5: QUICK ACTIONS (moved up for easy access) ═══ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {quickActions.map((action) => (
-          <button
-            key={action.label}
-            onClick={() => onNavigate(action.tab)}
-            className={`${action.color} text-white rounded-xl p-4 flex items-center gap-3 transition cursor-pointer text-left shadow-sm hover:shadow-md`}
-          >
-            <span className="text-2xl flex-shrink-0">{action.icon}</span>
-            <div>
-              <div className="text-sm font-semibold">{action.label}</div>
-              <div className="text-xs opacity-80">{action.desc}</div>
-            </div>
-          </button>
-        ))}
-      </div>
+      {/* Quick Actions removed — not executive-level data */}
 
       {/* ═══ ZONA 3: HERO KPI — 4 angka paling penting ═══ */}
       <div>
@@ -633,7 +612,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: GMV vs Target */}
-          <button onClick={() => document.getElementById("target-section")?.scrollIntoView({ behavior: "smooth" })}
+          <button onClick={() => document.getElementById("goals-section")?.scrollIntoView({ behavior: "smooth" })}
             className="text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">💰</span>
@@ -676,20 +655,21 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             )}
           </button>
 
-          {/* Card 3: Kreator Aktif */}
+          {/* Card 3: Kreator Aktif Promosi */}
           <button onClick={() => onNavigate("affiliate")}
             className="text-left bg-gradient-to-br from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">🎥</span>
               <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-                {agg.totalCreators > 0 ? fP((agg.activeCreators / agg.totalCreators) * 100) : "0%"} aktif
+                {agg.totalCreators > 0 ? fP((agg.activePromoters / agg.totalCreators) * 100) : "0%"} aktif
               </span>
             </div>
-            <p className="text-3xl font-extrabold leading-tight">{fN(agg.activeCreators)}</p>
-            <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif dari {fN(agg.totalCreators)}</p>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="text-amber-200">{fN(agg.totalVideos)} video</span>
-              <span className="text-amber-200">{fN(agg.totalLive)} LIVE</span>
+            <p className="text-3xl font-extrabold leading-tight">{fN(agg.activePromoters)}</p>
+            <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif Promosi dari {fN(agg.totalCreators)}</p>
+            <div className="mt-3 flex items-center gap-2 text-xs flex-wrap">
+              <span className="bg-white/15 px-1.5 py-0.5 rounded">📹 {fN(agg.videoCreators)} video</span>
+              <span className="bg-white/15 px-1.5 py-0.5 rounded">🔴 {fN(agg.liveCreators)} LIVE</span>
+              <span className="bg-white/15 px-1.5 py-0.5 rounded">🔄 {fN(agg.bothVideoAndLive)} keduanya</span>
             </div>
           </button>
 
@@ -854,25 +834,155 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         })()}
       </div>
 
-      {/* ═══ ZONA 3.5: RATA-RATA HARIAN ═══ */}
-      {agg.totalGMV > 0 && (
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: "Omset/Hari", value: fRp(dailyAvg.revenuePerDay), icon: "📅" },
-            { label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)), icon: "🛒" },
-            { label: "Konten/Hari", value: fN(Math.round(dailyAvg.contentPerDay)), icon: "📹" },
-            { label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo), icon: "🎬" },
-            { label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive), icon: "🔴" },
-            { label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator), icon: "👤" },
-          ].map((item) => (
-            <div key={item.label} className="bg-white border border-gray-100 rounded-xl p-3 text-center">
-              <div className="text-lg mb-1">{item.icon}</div>
-              <div className="text-sm font-bold text-gray-900">{item.value}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{item.label}</div>
+      {/* ═══ ZONA 3.5: GOALS & TARGET DASHBOARD ═══ */}
+      {agg.totalGMV > 0 && (() => {
+        const goalsDef = [
+          { key: "gmv", icon: "💰", label: "Target GMV", actual: agg.totalGMV, fmt: fRp, unit: "", desc: "Total pendapatan dari affiliate", inputPlaceholder: "cth: 200000000" },
+          { key: "videos", icon: "📹", label: "Target Video", actual: agg.totalVideos, fmt: fN, unit: " video", desc: "Jumlah shoppable video kreator", inputPlaceholder: "cth: 500" },
+          { key: "live", icon: "🔴", label: "Target LIVE", actual: agg.totalLive, fmt: fN, unit: " sesi", desc: "Jumlah siaran LIVE kreator", inputPlaceholder: "cth: 50" },
+          { key: "active-creators", icon: "👥", label: "Target Kreator Aktif", actual: agg.activePromoters, fmt: fN, unit: " kreator", desc: "Kreator yang buat video/live", inputPlaceholder: "cth: 1000" },
+          { key: "max-refund", icon: "📉", label: "Batas Refund Rate", actual: agg.refundRate, fmt: fP, unit: "", desc: "Maksimal refund rate yang diterima", inputPlaceholder: "cth: 15", isInverse: true },
+        ];
+        const hasAnyGoal = goalsDef.some((g) => (goals[g.key] || 0) > 0);
+        const achievedCount = goalsDef.filter((g) => {
+          const target = goals[g.key] || 0;
+          if (target <= 0) return false;
+          if ((g as any).isInverse) return g.actual <= target;
+          return g.actual >= target;
+        }).length;
+        const totalGoals = goalsDef.filter((g) => (goals[g.key] || 0) > 0).length;
+
+        return (
+          <div id="goals-section" className="bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-base">🎯</span>
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">Goals & Target — {formatPeriod(activePeriod)}</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {hasAnyGoal ? `${achievedCount}/${totalGoals} target tercapai` : "Belum ada target yang di-set"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setGoalsEditing(!goalsEditing); if (!goalsEditing) setGoalsForm({ ...goals }); }}
+                className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
+              >
+                {goalsEditing ? "✕ Batal" : hasAnyGoal ? "✏️ Edit Target" : "＋ Set Target"}
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+
+            {/* Edit Form */}
+            {goalsEditing && (
+              <div className="bg-white rounded-xl border border-indigo-100 p-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {goalsDef.map((g) => (
+                    <div key={g.key}>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">{g.icon} {g.label}</label>
+                      <input
+                        type="number"
+                        placeholder={g.inputPlaceholder}
+                        value={goalsForm[g.key] || ""}
+                        onChange={(e) => setGoalsForm((prev) => ({ ...prev, [g.key]: Number(e.target.value) || 0 }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2 mt-3">
+                  <button
+                    onClick={async () => {
+                      // Save all goals
+                      await Promise.all(
+                        goalsDef.map((g) =>
+                          goalsForm[g.key] ? fetch('/api/target', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ period: activePeriod, target_value: goalsForm[g.key], type: g.key }),
+                          }) : Promise.resolve()
+                        )
+                      );
+                      setGoalsEditing(false);
+                      setTargetVersion((v) => v + 1);
+                    }}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
+                  >
+                    💾 Simpan Semua Target
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Goals Progress */}
+            {hasAnyGoal && (
+              <div className="space-y-3">
+                {goalsDef.filter((g) => (goals[g.key] || 0) > 0).map((g) => {
+                  const target = goals[g.key] || 0;
+                  const isInverse = (g as any).isInverse;
+                  const progress = isInverse
+                    ? (target > 0 ? Math.max(0, ((target - g.actual) / target) * 100 + 100) : 0)
+                    : (target > 0 ? (g.actual / target) * 100 : 0);
+                  const achieved = isInverse ? g.actual <= target : g.actual >= target;
+                  const nearTarget = !achieved && progress >= 70;
+                  const statusColor = achieved ? "text-green-600" : nearTarget ? "text-yellow-600" : "text-red-500";
+                  const barColor = achieved ? "bg-green-500" : nearTarget ? "bg-yellow-500" : "bg-red-400";
+                  const statusLabel = achieved ? "✅ Tercapai" : nearTarget ? "⚡ Hampir" : "🔴 Behind";
+
+                  return (
+                    <div key={g.key} className="bg-white rounded-xl p-3 border border-indigo-50">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{g.icon}</span>
+                          <span className="text-xs font-medium text-gray-700">{g.label}</span>
+                        </div>
+                        <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                          <div
+                            className={`h-2.5 rounded-full transition-all duration-500 ${barColor}`}
+                            style={{ width: `${Math.min(100, isInverse ? (achieved ? 100 : Math.max(0, 100 - (g.actual - target) * 3)) : progress)}%` }}
+                          />
+                        </div>
+                        <div className="text-right flex-shrink-0 w-36">
+                          <span className="text-xs font-bold text-gray-900">{g.fmt(g.actual)}</span>
+                          <span className="text-xs text-gray-400"> / {g.fmt(target)}{g.unit}</span>
+                        </div>
+                      </div>
+                      {!achieved && !isInverse && (
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Butuh {g.fmt(target - g.actual)} lagi{g.key === "gmv" ? ` (~${fN(Math.ceil((target - g.actual) / (agg.aov || 1)))} pesanan)` : ""}
+                        </p>
+                      )}
+                      {!achieved && isInverse && (
+                        <p className="text-[10px] text-red-400 mt-1">
+                          ⚠ Saat ini {g.fmt(g.actual)}, melebihi batas {g.fmt(target)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!hasAnyGoal && !goalsEditing && (
+              <div className="text-center py-6 bg-white/50 rounded-xl border border-indigo-100">
+                <div className="text-3xl mb-2">🎯</div>
+                <p className="text-sm font-medium text-gray-700">Belum ada target untuk {formatPeriod(activePeriod)}</p>
+                <p className="text-xs text-gray-400 mt-1">Set target GMV, Video, LIVE, Kreator Aktif, dan Refund Rate untuk memantau progress bulanan.</p>
+                <button
+                  onClick={() => { setGoalsEditing(true); setGoalsForm({}); }}
+                  className="mt-3 text-xs bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition"
+                >
+                  ＋ Set Target Sekarang
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ═══ ZONA 4: TREND CHART ═══ */}
       {trendData.length > 0 && (
@@ -1008,7 +1118,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                     { label: "GMV", value: fRp(sd.gmv) },
                     { label: "Net GMV", value: fRp(sd.netGMV) },
                     { label: "Orders", value: fN(sd.orders) },
-                    { label: "Kreator Aktif", value: fN(sd.creators) },
+                    { label: "Kreator Promosi", value: fN(sd.creators) },
                     { label: "Video", value: fN(sd.videos) },
                     { label: "LIVE", value: fN(sd.live) },
                   ].map((item) => (
@@ -1175,99 +1285,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </div>
       </div>
 
-      {/* ═══ ZONA 7: TARGET GMV ═══ */}
-      <div id="target-section" className="bg-white rounded-2xl border border-gray-100 p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">
-              🎯 Target GMV — {formatPeriod(activePeriod)}
-            </h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {targetGMV > 0
-                ? `Target: ${fRp(targetGMV)} | Tercapai: ${fP(targetProgress)}`
-                : "Belum ada target untuk periode ini"}
-            </p>
-          </div>
-          <button
-            onClick={() => setShowTargetForm(!showTargetForm)}
-            className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
-          >
-            {targetGMV > 0 ? "✏️ Edit Target" : "+ Set Target"}
-          </button>
-        </div>
-
-        {targetGMV > 0 && (
-          <div className="mt-4">
-            <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-              <span>Progress</span>
-              <span>{fRp(agg.totalGMV)} dari {fRp(targetGMV)}</span>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-3">
-              <div
-                className={`h-3 rounded-full transition-all duration-500 ${
-                  targetProgress >= 100 ? "bg-green-500" :
-                  targetProgress >= 70 ? "bg-yellow-500" : "bg-red-500"
-                }`}
-                style={{ width: `${Math.min(100, targetProgress)}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs mt-1">
-              <span className={
-                targetProgress >= 100 ? "text-green-600 font-semibold" :
-                targetProgress >= 70 ? "text-yellow-600" : "text-red-500"
-              }>
-                {targetProgress >= 100
-                  ? `🎉 Tercapai ${fP(targetProgress)}!`
-                  : `${fP(targetProgress)} — butuh ${fRp(targetRemaining)} lagi`}
-              </span>
-              <span className="text-gray-400">
-                ~{fN(Math.ceil(targetRemaining / (agg.aov || 1)))} pesanan lagi
-              </span>
-            </div>
-          </div>
-        )}
-
-        {showTargetForm && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="flex gap-2">
-              <input
-                type="number"
-                placeholder="Contoh: 150000000 (= Rp 150Jt)"
-                value={targetInput}
-                onChange={(e) => setTargetInput(e.target.value)}
-                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={async () => {
-                  const val = Number(targetInput);
-                  if (val > 0) {
-                    await fetch('/api/target', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ period: activePeriod, target_value: val, type: 'gmv' }),
-                    });
-                    setShowTargetForm(false);
-                    setTargetInput("");
-                    setTargetVersion((v) => v + 1);
-                  }
-                }}
-                className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition"
-              >
-                Simpan
-              </button>
-              <button
-                onClick={() => setShowTargetForm(false)}
-                className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition"
-              >
-                Batal
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              💡 Target disimpan per periode. Ganti periode di atas untuk set target periode lain.
-            </p>
-          </div>
-        )}
-      </div>
+      {/* Old Target GMV section removed — replaced by Goals Dashboard above */}
 
       {/* ═══ ZONA 7.5: AI EVALUASI ═══ */}
       <div className="bg-gradient-to-br from-violet-50 via-purple-50 to-indigo-50 rounded-2xl border border-violet-100 p-5">
