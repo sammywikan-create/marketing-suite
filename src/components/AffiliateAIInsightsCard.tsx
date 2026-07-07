@@ -102,6 +102,7 @@ function buildPayload(data: AffiliateMonthData, prevData?: AffiliateMonthData | 
     summary: {
       totalCreators: s.totalCreators,
       activeCreators: s.activeCreators,
+      activePromoters: s.activePromoters,
       inactiveCreators: s.inactiveCreators,
       activeRate: s.activeRate,
       totalGMV: s.totalGMV,
@@ -120,6 +121,7 @@ function buildPayload(data: AffiliateMonthData, prevData?: AffiliateMonthData | 
     prevSummary: prevData?.summary ? {
       totalGMV: prevData.summary.totalGMV,
       activeCreators: prevData.summary.activeCreators,
+      activePromoters: prevData.summary.activePromoters,
       refundRate: prevData.summary.refundRate,
     } : undefined,
   };

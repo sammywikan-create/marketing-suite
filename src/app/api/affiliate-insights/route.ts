@@ -48,7 +48,7 @@ function buildAffiliatePrompt(payload: {
 
   // Summary
   prompt += `## Ringkasan Keseluruhan\n`;
-  prompt += `- Total Kreator: ${summary.totalCreators || 0} (Aktif: ${summary.activeCreators || 0}, Tidak Aktif: ${summary.inactiveCreators || 0})\n`;
+  prompt += `- Total Kreator: ${summary.totalCreators || 0} (Aktif: ${summary.activePromoters ?? summary.activeCreators || 0}, Tidak Aktif: ${summary.inactiveCreators || 0})\n`;
   prompt += `- Total GMV: ${fR(Number(summary.totalGMV || 0))}\n`;
   prompt += `- Total Order: ${Number(summary.totalOrders || 0).toLocaleString('id-ID')}\n`;
   prompt += `- Total Komisi: ${fR(Number(summary.totalCommission || 0))}\n`;
@@ -90,8 +90,8 @@ function buildAffiliatePrompt(payload: {
       prev > 0 ? ` (Δ ${(((curr - prev) / prev) * 100).toFixed(1)}%)` : '';
     const curGMV = Number(summary.totalGMV || 0);
     const prevGMV = Number(prevSummary.totalGMV || 0);
-    const curActive = Number(summary.activeCreators || 0);
-    const prevActive = Number(prevSummary.activeCreators || 0);
+    const curActive = Number(summary.activePromoters ?? summary.activeCreators || 0);
+    const prevActive = Number(prevSummary.activePromoters ?? prevSummary.activeCreators || 0);
     prompt += `- GMV: ${fR(curGMV)} vs ${fR(prevGMV)}${delta(curGMV, prevGMV)}\n`;
     prompt += `- Kreator Aktif: ${curActive} vs ${prevActive}${delta(curActive, prevActive)}\n`;
     prompt += `- Refund Rate: ${fP(Number(summary.refundRate || 0))} vs ${fP(Number(prevSummary.refundRate || 0))}\n`;

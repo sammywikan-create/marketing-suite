@@ -57,6 +57,7 @@ function buildExecPrompt(payload: {
     refundRate: number;
     totalOrders: number;
     activeCreators: number;
+    activePromoters?: number;
     totalCreators: number;
     totalCommission: number;
     videoGMV: number;
@@ -104,7 +105,8 @@ function buildExecPrompt(payload: {
     prompt += `- Net GMV (setelah refund): ${fR(aff.netGMV)}\n`;
     prompt += `- Total Refund: ${fR(aff.totalRefund)} (${fP(aff.refundRate)})\n`;
     prompt += `- Total Pesanan: ${aff.totalOrders.toLocaleString('id-ID')}\n`;
-    prompt += `- Kreator Aktif: ${aff.activeCreators} dari ${aff.totalCreators} (${fP(aff.totalCreators > 0 ? (aff.activeCreators / aff.totalCreators) * 100 : 0)})\n`;
+    const usedActive = aff.activePromoters ?? aff.activeCreators;
+    prompt += `- Kreator Aktif: ${usedActive} dari ${aff.totalCreators} (${fP(aff.totalCreators > 0 ? (usedActive / aff.totalCreators) * 100 : 0)})\n`;
     prompt += `- Komisi Affiliate: ${fR(aff.totalCommission)}\n`;
     prompt += `- GMV dari Video: ${fR(aff.videoGMV)}, dari LIVE: ${fR(aff.liveGMV)}\n`;
     prompt += `- Top Kreator: ${aff.topCreator} (${fR(aff.topCreatorGMV)})\n`;
