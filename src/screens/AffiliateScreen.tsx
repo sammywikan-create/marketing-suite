@@ -321,6 +321,13 @@ export default function AffiliateScreen() {
     const sampleSent = filteredData.reduce((a, d) => a + (d.coreSummary?.samplesSent || 0), 0);
     const activeCreators = creators.filter((c) => c.affiliateGMV > 0).length;
 
+    // ── CREATOR ACTIVITY BREAKDOWN ──
+    // Kreator yang membuat konten (video atau live), terlepas dari apakah mereka punya GMV
+    const videoCreators = creators.filter((c) => c.affiliateShoppableVideos > 0).length;
+    const liveCreators = creators.filter((c) => c.affiliateLiveStreams > 0).length;
+    const bothVideoAndLive = creators.filter((c) => c.affiliateShoppableVideos > 0 && c.affiliateLiveStreams > 0).length;
+    const activePromoters = videoCreators + liveCreators - bothVideoAndLive;
+
     // ── TOTAL IMPRESI ──
     const totalImpressions = creators.reduce((a, c) => a + (c.productImpressions || 0), 0);
     const totalCtr = totalImpressions > 0 ? (totalOrders / totalImpressions) * 100 : 0;
@@ -403,6 +410,8 @@ export default function AffiliateScreen() {
       creatorsWithTarget, totalTargetGMV, totalTargetAchieved, targetAchievementRate,
       // Impresi
       totalImpressions, totalCtr, gmvPerImpression,
+      // Creator activity breakdown
+      activePromoters, videoCreators, liveCreators, bothVideoAndLive,
     };
   }, [filteredData, supabaseCreators, combinedMode]);
 
@@ -703,6 +712,67 @@ export default function AffiliateScreen() {
                   alert={agg.refundRate > 15}
                 />
               </div>
+
+              {/* ROW KREATOR ACTIVITY BREAKDOWN */}
+              {agg.totalCreators > 0 && (
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200/60 p-5">
+                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-emerald-600" />
+                    Breakdown Kreator
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {[
+                      {
+                        label: "Total Kreator",
+                        val: fN(agg.totalCreators),
+                        desc: "Terdaftar/join",
+                        color: "text-gray-700",
+                        bg: "bg-white/80",
+                      },
+                      {
+                        label: "Kreator Aktif Promosi",
+                        val: fN(agg.activePromoters),
+                        desc: `${agg.totalCreators > 0 ? ((agg.activePromoters / agg.totalCreators) * 100).toFixed(1) : 0}% dari total`,
+                        color: "text-emerald-700",
+                        bg: "bg-emerald-100/60",
+                      },
+                      {
+                        label: "Buat Video",
+                        val: fN(agg.videoCreators),
+                        desc: "Shoppable videos",
+                        color: "text-purple-700",
+                        bg: "bg-purple-100/60",
+                      },
+                      {
+                        label: "Siaran LIVE",
+                        val: fN(agg.liveCreators),
+                        desc: "Live streaming",
+                        color: "text-rose-700",
+                        bg: "bg-rose-100/60",
+                      },
+                      {
+                        label: "Video + LIVE",
+                        val: fN(agg.bothVideoAndLive),
+                        desc: "Melakukan keduanya",
+                        color: "text-blue-700",
+                        bg: "bg-blue-100/60",
+                      },
+                    ].map((item) => (
+                      <div key={item.label} className={`${item.bg} rounded-lg p-3 text-center border border-gray-100`}>
+                        <div className={`text-xl font-bold ${item.color}`}>{item.val}</div>
+                        <div className="text-xs font-medium text-gray-700 mt-0.5">{item.label}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">{item.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {agg.totalCreators > agg.activePromoters && (
+                    <p className="text-xs text-gray-500 mt-3 flex items-center gap-1">
+                      <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                      {fN(agg.totalCreators - agg.activePromoters)} kreator belum membuat konten video/live — penjualan hanya dari Product Showcase (Kartu Produk).
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* ROW IMPRESI */}
               {agg.totalImpressions > 0 && (

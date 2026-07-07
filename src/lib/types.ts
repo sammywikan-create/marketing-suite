@@ -518,6 +518,11 @@ export interface AffiliateMonthSummary {
   activeCreators: number;
   inactiveCreators: number;
   activeRate: number;
+  // Creator activity breakdown
+  activePromoters: number;      // kreator yang membuat video ATAU live
+  videoCreators: number;        // kreator yang membuat shoppable video
+  liveCreators: number;         // kreator yang melakukan siaran LIVE
+  bothVideoAndLive: number;     // kreator yang melakukan keduanya (video DAN live)
   totalGMV: number;
   totalOrders: number;
   totalVideos: number;

@@ -416,3 +416,9 @@ CREATE TABLE IF NOT EXISTS laporan_harian_data (
 ALTER TABLE laporan_harian_data ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all for anon" ON laporan_harian_data;
 CREATE POLICY "Allow all for anon" ON laporan_harian_data FOR ALL USING (true) WITH CHECK (true);
+
+-- 11. CREATOR ACTIVITY BREAKDOWN (affiliate_summaries)
+ALTER TABLE affiliate_summaries ADD COLUMN IF NOT EXISTS active_promoters INT DEFAULT 0;
+ALTER TABLE affiliate_summaries ADD COLUMN IF NOT EXISTS video_creators INT DEFAULT 0;
+ALTER TABLE affiliate_summaries ADD COLUMN IF NOT EXISTS live_creators INT DEFAULT 0;
+ALTER TABLE affiliate_summaries ADD COLUMN IF NOT EXISTS both_video_and_live INT DEFAULT 0;

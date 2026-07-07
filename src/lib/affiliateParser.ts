@@ -358,11 +358,23 @@ function buildSummary(
   const channelSum = videoGMV + liveGMV + productCardGMV
   const totalGMV = rawTotalGMV > 0 ? rawTotalGMV : channelSum
 
+  // ── CREATOR ACTIVITY BREAKDOWN ──
+  // Kreator yang membuat konten (video atau live), terlepas dari GMV
+  const videoCreators = creators.filter((c) => c.affiliateShoppableVideos > 0).length
+  const liveCreators = creators.filter((c) => c.affiliateLiveStreams > 0).length
+  const bothVideoAndLive = creators.filter((c) => c.affiliateShoppableVideos > 0 && c.affiliateLiveStreams > 0).length
+  // activePromoters = kreator yang punya video ATAU live (inclusion-exclusion)
+  const activePromoters = videoCreators + liveCreators - bothVideoAndLive
+
   return {
     totalCreators: creators.length,
     activeCreators: active.length,
     inactiveCreators: creators.length - active.length,
     activeRate: creators.length > 0 ? (active.length / creators.length) * 100 : 0,
+    activePromoters,
+    videoCreators,
+    liveCreators,
+    bothVideoAndLive,
     totalGMV,
     totalOrders,
     totalVideos: creators.length > 0 ? creators.reduce((a, c) => a + c.affiliateShoppableVideos, 0) : (coreSummary?.videoCount || 0),
