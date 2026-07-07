@@ -316,10 +316,36 @@ function buildSummary(
   const creatorsGMV = creators.reduce((a, c) => a + c.affiliateGMV, 0)
   const creatorsRefund = creators.reduce((a, c) => a + c.affiliateRefundedGMV, 0)
   const creatorsCommission = creators.reduce((a, c) => a + c.estCommission, 0)
-  let rawTotalGMV = (coreSummary?.gmvFromCreator ?? 0) > 0 ? coreSummary!.gmvFromCreator : (coreStats?.affiliateGMV ?? 0) > 0 ? coreStats!.affiliateGMV : creatorsGMV
-  const totalRefund = (coreSummary?.refundAmount ?? 0) > 0 ? coreSummary!.refundAmount : (coreStats?.affiliateRefundedGMV ?? 0) > 0 ? coreStats!.affiliateRefundedGMV : creatorsRefund
+
+  // GMV: ketika kedua sumber ada (coreSummary dari Transaction Analysis DAN
+  // coreStats dari Core Stats / analitik toko), ambil nilai terbesar.
+  // Core Stats sering mencakup periode lebih panjang / data lebih lengkap,
+  // sehingga nilainya bisa lebih besar dan lebih akurat.
+  const coreGMV = coreSummary?.gmvFromCreator ?? 0
+  const statsGMV = coreStats?.affiliateGMV ?? 0
+  let rawTotalGMV: number
+  if (coreGMV > 0 && statsGMV > 0) {
+    rawTotalGMV = Math.max(coreGMV, statsGMV)
+  } else if (coreGMV > 0) {
+    rawTotalGMV = coreGMV
+  } else if (statsGMV > 0) {
+    rawTotalGMV = statsGMV
+  } else {
+    rawTotalGMV = creatorsGMV
+  }
+
+  // Refund: sama — ambil terbesar dari kedua sumber
+  const coreRefund = coreSummary?.refundAmount ?? 0
+  const statsRefund = coreStats?.affiliateRefundedGMV ?? 0
+  const totalRefund = (coreRefund > 0 && statsRefund > 0) ? Math.max(coreRefund, statsRefund) : coreRefund > 0 ? coreRefund : statsRefund > 0 ? statsRefund : creatorsRefund
+
   const totalOrders = creators.reduce((a, c) => a + c.affiliateOrders, 0)
-  const totalCommission = (coreSummary?.estimatedCommission ?? 0) > 0 ? coreSummary!.estimatedCommission : (coreStats?.estCommission ?? 0) > 0 ? coreStats!.estCommission : creatorsCommission
+
+  // Commission: sama — ambil terbesar dari kedua sumber
+  const coreComm = coreSummary?.estimatedCommission ?? 0
+  const statsComm = coreStats?.estCommission ?? 0
+  const totalCommission = (coreComm > 0 && statsComm > 0) ? Math.max(coreComm, statsComm) : coreComm > 0 ? coreComm : statsComm > 0 ? statsComm : creatorsCommission
+
   const topCreator = [...active].sort((a, b) => b.affiliateGMV - a.affiliateGMV)[0]
 
   const videoGMV = (coreStats?.affiliateShoppableVideoGMV ?? 0) > 0 ? coreStats!.affiliateShoppableVideoGMV : creators.reduce((a, c) => a + c.affiliateShoppableVideoGMV, 0)
