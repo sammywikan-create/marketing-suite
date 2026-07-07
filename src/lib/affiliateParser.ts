@@ -396,6 +396,63 @@ function buildSummary(
     productCardGMV,
   }
 }
+// ─── MERGE TWO CREATOR LISTS ──────────────────────────────
+// Ketika user upload file TikTok Creator List DAN Tokopedia Creator List,
+// keduanya berisi data kreator yang sama dari sudut pandang berbeda.
+// Tokopedia biasanya punya roster lengkap (semua join), TikTok punya detail video.
+// Fungsi ini merge by username, ambil Math.max untuk tiap field numerik.
+function mergeCreatorLists(
+  listA: AffiliateCreatorItem[],
+  listB: AffiliateCreatorItem[],
+): AffiliateCreatorItem[] {
+  if (!listA.length && !listB.length) return []
+  if (!listA.length) return listB
+  if (!listB.length) return listA
+
+  // Base = list terbesar (biasanya Tokopedia, punya semua kreator termasuk inaktif)
+  const base = listA.length >= listB.length ? listA : listB
+  const supplement = listA.length >= listB.length ? listB : listA
+
+  const merged = new Map<string, AffiliateCreatorItem>()
+  for (const c of base) {
+    merged.set(c.creatorUsername.toLowerCase().trim(), { ...c })
+  }
+
+  for (const c of supplement) {
+    const key = c.creatorUsername.toLowerCase().trim()
+    const existing = merged.get(key)
+    if (existing) {
+      // Merge: ambil nilai terbesar dari kedua sumber
+      existing.affiliateGMV = Math.max(existing.affiliateGMV, c.affiliateGMV)
+      existing.affiliateShoppableVideos = Math.max(existing.affiliateShoppableVideos, c.affiliateShoppableVideos)
+      existing.affiliateLiveStreams = Math.max(existing.affiliateLiveStreams, c.affiliateLiveStreams)
+      existing.affiliateOrders = Math.max(existing.affiliateOrders, c.affiliateOrders)
+      existing.affiliateShoppableVideoGMV = Math.max(existing.affiliateShoppableVideoGMV, c.affiliateShoppableVideoGMV)
+      existing.affiliateLiveGMV = Math.max(existing.affiliateLiveGMV, c.affiliateLiveGMV)
+      existing.affiliateProductCardGMV = Math.max(existing.affiliateProductCardGMV, c.affiliateProductCardGMV)
+      existing.affiliateRefundedGMV = Math.max(existing.affiliateRefundedGMV, c.affiliateRefundedGMV)
+      existing.affiliateItemsRefunded = Math.max(existing.affiliateItemsRefunded, c.affiliateItemsRefunded)
+      existing.estCommission = Math.max(existing.estCommission, c.estCommission)
+      existing.itemsSold = Math.max(existing.itemsSold, c.itemsSold)
+      existing.affiliateProductsSold = Math.max(existing.affiliateProductsSold, c.affiliateProductsSold)
+      existing.affiliateFollowers = Math.max(existing.affiliateFollowers, c.affiliateFollowers)
+      existing.sampelTerkirim = Math.max(existing.sampelTerkirim || 0, c.sampelTerkirim || 0)
+      // Recalculate derived fields
+      existing.refundRate = existing.affiliateGMV > 0 ? (existing.affiliateRefundedGMV / existing.affiliateGMV) * 100 : 0
+      existing.commissionRate = existing.affiliateGMV > 0 ? (existing.estCommission / existing.affiliateGMV) * 100 : 0
+      existing.gmvPerVideo = existing.affiliateShoppableVideos > 0 ? existing.affiliateGMV / existing.affiliateShoppableVideos : 0
+      existing.avgOrderValue = existing.affiliateOrders > 0 ? existing.affiliateGMV / existing.affiliateOrders : 0
+      existing.creatorTier = getFollowerTier(existing.affiliateFollowers)
+      existing.creatorScore = getCreatorScore(existing.affiliateGMV, existing.affiliateShoppableVideos, existing.affiliateOrders, existing.refundRate)
+      existing.creatorStatus = getCreatorStatus(existing.affiliateGMV, existing.refundRate)
+    } else {
+      // Kreator hanya ada di supplement — tambahkan
+      merged.set(key, { ...c })
+    }
+  }
+
+  return Array.from(merged.values())
+}
 
 // ─── MAIN: PARSE FILES AND BUILD MONTH DATA ───────────────
 export async function parseAffiliateFiles(
@@ -405,7 +462,8 @@ export async function parseAffiliateFiles(
 ): Promise<AffiliateMonthData> {
   let coreSummary: AffiliateCoreSummary | undefined
   let coreStats: AffiliateCoreStats | undefined
-  let creators: AffiliateCreatorItem[] = []
+  let tiktokCreators: AffiliateCreatorItem[] = []
+  let tokopediaCreators: AffiliateCreatorItem[] = []
 
   for (const file of files) {
     const rows = await readXLSX(file)
@@ -414,10 +472,13 @@ export async function parseAffiliateFiles(
     if (fileType === 'unknown') fileType = detectFileTypeByName(file.name)
 
     if (fileType === 'tiktok-core') coreSummary = parseTikTokCore(rows)
-    else if (fileType === 'tiktok-creator') creators = parseTikTokCreators(rows)
+    else if (fileType === 'tiktok-creator') tiktokCreators = parseTikTokCreators(rows)
     else if (fileType === 'tokopedia-core') coreStats = parseTokopediaCore(rows)
-    else if (fileType === 'tokopedia-creator') creators = parseTokopediaCreators(rows)
+    else if (fileType === 'tokopedia-creator') tokopediaCreators = parseTokopediaCreators(rows)
   }
+
+  // Merge kreator dari kedua sumber (jika keduanya ada)
+  const creators = mergeCreatorLists(tiktokCreators, tokopediaCreators)
 
   const periodLabel = (() => {
     try {
