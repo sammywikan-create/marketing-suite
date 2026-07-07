@@ -23,17 +23,22 @@ export async function POST(req: NextRequest) {
           settings.maxTokens ?? 600
         )
         break
-      case 'ollama':
+      case 'ollama': {
+        const baseUrl = settings.ollamaBaseUrl || 'http://localhost:11434';
+        if (process.env.VERCEL && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1'))) {
+          throw new Error('Vercel tidak dapat mengakses Ollama di localhost. Harap gunakan IP publik (misal Ngrok) atau gunakan provider Gemini.');
+        }
+
         content = await callOllama(
           systemPrompt, messages,
           settings.ollamaModel || 'llama3.2',
-          settings.ollamaBaseUrl || 'http://localhost:11434',
+          baseUrl,
           settings.temperature ?? 0.7,
           settings.maxTokens ?? 600,
-          settings.ollamaMode || 'local',
           settings.ollamaApiKey
         )
         break
+      }
       case 'openrouter':
         content = await callOpenRouter(
           systemPrompt, messages,

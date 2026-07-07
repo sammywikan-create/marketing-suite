@@ -83,90 +83,48 @@ export function AISettings({ onClose }: { onClose: () => void }) {
         {/* Ollama Settings */}
         {settings.provider === 'ollama' && (
           <div className="space-y-3 mb-4">
-            {/* Mode Toggle */}
-            <label className="text-sm font-semibold text-gray-600">Mode Ollama</label>
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-              <button
-                onClick={() => updateSettings({ ollamaMode: 'local', ollamaModel: 'llama3.2' })}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                  !isOllamaCloud
-                    ? 'bg-green-600 text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                🖥️ Lokal
-              </button>
-              <button
-                onClick={() => updateSettings({ ollamaMode: 'cloud', ollamaModel: 'qwen3.5' })}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                  isOllamaCloud
-                    ? 'bg-green-600 text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                ☁️ Cloud
-              </button>
-            </div>
+            <label className="text-sm font-semibold text-gray-600">Base URL Ollama</label>
+            <input
+              value={settings.ollamaBaseUrl}
+              onChange={e => updateSettings({ ollamaBaseUrl: e.target.value })}
+              className="w-full border rounded-lg p-2 text-sm"
+              placeholder="http://localhost:11434 atau https://api.anda.com"
+            />
 
-            {/* Local-specific: Base URL */}
-            {!isOllamaCloud && (
-              <>
-                <label className="text-sm font-semibold text-gray-600">Base URL Ollama</label>
-                <input
-                  value={settings.ollamaBaseUrl}
-                  onChange={e => updateSettings({ ollamaBaseUrl: e.target.value })}
-                  className="w-full border rounded-lg p-2 text-sm"
-                  placeholder="http://localhost:11434"
-                />
-              </>
-            )}
-
-            {/* Model selector */}
             <label className="text-sm font-semibold text-gray-600">Model</label>
             <div className="flex gap-2 items-center">
-              <select
+              <input
                 value={settings.ollamaModel}
                 onChange={e => updateSettings({ ollamaModel: e.target.value })}
                 className="flex-1 border rounded-lg p-2 text-sm"
-              >
-                {ollamaModels.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
+                placeholder="misal: llama3.2 atau qwen2.5"
+                list="ollama-models"
+              />
+              <datalist id="ollama-models">
+                {ollamaLocalModels.map(m => (
+                  <option key={m.value} value={m.value} />
                 ))}
-              </select>
-              {!isOllamaCloud && (
-                <button
-                  onClick={fetchOllamaModels}
-                  className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200 transition-colors"
-                >
-                  🔄 Refresh
-                </button>
-              )}
+              </datalist>
+              <button
+                onClick={fetchOllamaModels}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200 transition-colors whitespace-nowrap"
+              >
+                🔄 Ambil Model
+              </button>
             </div>
 
-            {/* Cloud-specific: API Key */}
-            {isOllamaCloud && (
-              <>
-                <label className="text-sm font-semibold text-gray-600">Ollama API Key</label>
-                <input
-                  type="password"
-                  value={settings.ollamaApiKey}
-                  onChange={e => updateSettings({ ollamaApiKey: e.target.value })}
-                  className="w-full border rounded-lg p-2 text-sm"
-                  placeholder="Masukkan API key Ollama Cloud"
-                />
-              </>
-            )}
+            <label className="text-sm font-semibold text-gray-600">API Key (Opsional)</label>
+            <input
+              type="password"
+              value={settings.ollamaApiKey}
+              onChange={e => updateSettings({ ollamaApiKey: e.target.value })}
+              className="w-full border rounded-lg p-2 text-sm"
+              placeholder="Isi jika server Ollama diproteksi"
+            />
 
-            {/* Info text */}
-            {isOllamaCloud ? (
-              <p className="text-xs text-green-600">
-                💡 Dapatkan API key di: <strong>ollama.com</strong>
-              </p>
-            ) : (
-              <p className="text-xs text-green-600">
-                💡 Install Ollama: <strong>ollama.com</strong> → jalankan: <code className="bg-green-50 px-1 rounded">ollama run llama3.2</code>
-              </p>
-            )}
+            <p className="text-xs text-green-600">
+              💡 Jika menggunakan Ollama lokal, pastikan URL <strong>http://localhost:11434</strong> dapat diakses.
+            </p>
           </div>
         )}
 

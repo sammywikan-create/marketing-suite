@@ -5,16 +5,14 @@ export async function callOllama(
   baseUrl: string = 'http://localhost:11434',
   temperature: number = 0.7,
   maxTokens: number = 600,
-  mode: 'local' | 'cloud' = 'local',
   apiKey?: string
 ): Promise<string> {
-  const isCloud = mode === 'cloud'
-  const url = isCloud ? 'https://ollama.com/api/chat' : `${baseUrl}/api/chat`
+  // Normalize baseUrl to not have trailing slash
+  const url = `${baseUrl.replace(/\/$/, '')}/api/chat`
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (isCloud) {
-    const key = apiKey || process.env.OLLAMA_API_KEY
-    if (!key) throw new Error('OLLAMA_API_KEY tidak ditemukan. Masukkan API key di Settings > Ollama > Cloud.')
+  const key = apiKey || process.env.OLLAMA_API_KEY
+  if (key) {
     headers['Authorization'] = `Bearer ${key}`
   }
 
@@ -23,7 +21,7 @@ export async function callOllama(
     ...messages,
   ]
 
-  console.log('[Ollama] Calling:', url, 'model:', model, 'mode:', mode)
+  console.log('[Ollama] Calling:', url, 'model:', model)
   console.log('[Ollama] Messages count:', allMessages.length, 'system prompt length:', systemPrompt.length)
   console.log('[Ollama] User message length:', messages[0]?.content?.length || 0)
 
@@ -45,10 +43,7 @@ export async function callOllama(
   if (!response.ok) {
     const err = await response.text()
     console.error('[Ollama] API error:', response.status, err)
-    throw new Error(isCloud
-      ? `Ollama Cloud error (${response.status}): ${err.slice(0, 200)}`
-      : `Ollama error (${response.status}): ${err.slice(0, 200)}. Pastikan Ollama berjalan di ${baseUrl}`
-    )
+    throw new Error(`Ollama error (${response.status}): ${err.slice(0, 200)}. Pastikan Ollama berjalan di ${baseUrl}`)
   }
 
   const rawText = await response.text()

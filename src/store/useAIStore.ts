@@ -3,12 +3,10 @@ import { persist } from 'zustand/middleware'
 
 export type AIProvider = 'gemini' | 'ollama' | 'openrouter'
 
-export type OllamaMode = 'local' | 'cloud'
 
 export interface AISettings {
   provider: AIProvider
   geminiModel: string
-  ollamaMode: OllamaMode
   ollamaModel: string
   ollamaBaseUrl: string
   ollamaApiKey: string
@@ -43,7 +41,6 @@ export const useAIStore = create<AIStore>()(
       settings: {
         provider: 'gemini',
         geminiModel: 'gemini-1.5-flash',
-        ollamaMode: 'local',
         ollamaModel: 'llama3.2',
         ollamaBaseUrl: 'http://localhost:11434',
         ollamaApiKey: '',

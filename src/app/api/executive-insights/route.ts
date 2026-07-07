@@ -153,26 +153,19 @@ export async function POST(req: NextRequest) {
         break;
 
       case 'ollama': {
-        // Jika ada API key (env atau settings), paksa mode cloud
-        const isCloud = resolvedOllamaKey
-          ? 'cloud'
-          : (settings?.ollamaMode || 'local');
-
-        if (isCloud === 'local') {
-          throw new Error(
-            'Ollama mode "local" tidak dapat diakses dari Vercel. ' +
-            'Masukkan Ollama API Key di AI Analyst settings untuk menggunakan Ollama Cloud, ' +
-            'atau gunakan provider Gemini.'
-          );
+        const baseUrl = settings?.ollamaBaseUrl || 'http://localhost:11434';
+        
+        // Vercel serverless functions cannot reach localhost
+        if (process.env.VERCEL && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1'))) {
+          throw new Error('Vercel tidak dapat mengakses Ollama di localhost. Harap gunakan IP publik (misal Ngrok) atau gunakan provider Gemini.');
         }
 
         content = await callOllama(
           SYSTEM_PROMPT, messages,
           settings?.ollamaModel || 'llama3.2',
-          settings?.ollamaBaseUrl || 'http://localhost:11434',
+          baseUrl,
           settings?.temperature ?? 0.5,
           Math.max(settings?.maxTokens || 2000, 2000),
-          'cloud',
           resolvedOllamaKey
         );
         break;

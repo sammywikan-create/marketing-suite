@@ -13,7 +13,7 @@ export function AIProviderBadge() {
 
   const modelLabel =
     settings.provider === 'gemini' ? settings.geminiModel :
-    settings.provider === 'ollama' ? `${settings.ollamaModel} (${settings.ollamaMode === 'cloud' ? 'Cloud' : 'Lokal'})` :
+    settings.provider === 'ollama' ? settings.ollamaModel :
     settings.openrouterModel
 
   return (

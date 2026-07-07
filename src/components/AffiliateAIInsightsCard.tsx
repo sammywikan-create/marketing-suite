@@ -147,7 +147,7 @@ export default function AffiliateAIInsightsCard({
 
   const modelLabel = useMemo(() => {
     switch (aiSettings.provider) {
-      case 'ollama': return `Ollama · ${aiSettings.ollamaMode === 'cloud' ? 'Cloud' : 'Local'} · ${aiSettings.ollamaModel}`;
+      case 'ollama': return `Ollama · ${aiSettings.ollamaModel}`;
       case 'gemini': return `Gemini · ${aiSettings.geminiModel}`;
       case 'openrouter': return `OpenRouter · ${aiSettings.openrouterModel}`;
       default: return aiSettings.provider;
