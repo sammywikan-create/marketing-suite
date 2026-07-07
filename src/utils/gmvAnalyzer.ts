@@ -1158,6 +1158,10 @@ export function parseAffiliateData(
     videoGMV: coreStats?.affiliateShoppableVideoGMV ?? creators.reduce((a, c) => a + c.affiliateShoppableVideoGMV, 0),
     liveGMV: coreStats?.affiliateLiveGMV ?? creators.reduce((a, c) => a + c.affiliateLiveGMV, 0),
     productCardGMV: coreStats?.affiliateProductCardGMV ?? creators.reduce((a, c) => a + c.affiliateProductCardGMV, 0),
+    activePromoters: creators.filter((c) => c.affiliateShoppableVideos > 0 || c.affiliateLiveStreams > 0).length,
+    videoCreators: creators.filter((c) => c.affiliateShoppableVideos > 0).length,
+    liveCreators: creators.filter((c) => c.affiliateLiveStreams > 0).length,
+    bothVideoAndLive: creators.filter((c) => c.affiliateShoppableVideos > 0 && c.affiliateLiveStreams > 0).length,
   };
 
   return {
