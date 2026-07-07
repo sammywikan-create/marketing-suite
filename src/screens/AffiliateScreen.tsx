@@ -401,7 +401,7 @@ export default function AffiliateScreen() {
     // ── ROI / EFFICIENCY METRICS ──
     const netGMVAfterCommission = netGMV - totalCommission;
     const costPerOrder = totalOrders > 0 ? (totalCommission + sampleSent) / totalOrders : 0;
-    const revenuePerCreator = activeCreators > 0 ? totalGMV / activeCreators : 0;
+    const revenuePerCreator = activePromoters > 0 ? totalGMV / activePromoters : 0;
 
     // ── TARGET vs ACHIEVEMENT ──
     const creatorsWithTarget = creators.filter((c) => c.targetCollabGMV > 0);
@@ -552,7 +552,7 @@ export default function AffiliateScreen() {
             {combinedMode
               ? `Gabungan ${stores.length} toko: ${stores.map((s) => s.name).join(" + ")} — ${filteredData.length} periode data`
               : agg
-                ? `${fN(agg.activeCreators)} kreator aktif dari ${fN(agg.totalCreators)} terdaftar — ${filteredData.length} periode data`
+                ? `${fN(agg.activePromoters)} kreator aktif promosi dari ${fN(agg.totalCreators)} terdaftar — ${filteredData.length} periode data`
                 : "Upload file affiliate untuk memulai analisis"}
           </p>
         </div>
@@ -707,9 +707,9 @@ export default function AffiliateScreen() {
                   icon={<DollarSign className="w-5 h-5" />}
                 />
                 <KPICard
-                  title="Kreator Aktif"
-                  value={fN(agg.activeCreators)}
-                  sub={`dari ${fN(agg.totalCreators)} terdaftar (${fP(agg.totalCreators > 0 ? (agg.activeCreators / agg.totalCreators) * 100 : 0)})`}
+                  title="Kreator Aktif Promosi"
+                  value={fN(agg.activePromoters)}
+                  sub={`dari ${fN(agg.totalCreators)} terdaftar (${fP(agg.totalCreators > 0 ? (agg.activePromoters / agg.totalCreators) * 100 : 0)})`}
                   color="green"
                   icon={<Users className="w-5 h-5" />}
                 />
@@ -1136,7 +1136,7 @@ export default function AffiliateScreen() {
                 <KPICard
                   title="Revenue per Kreator"
                   value={fRp(agg.revenuePerCreator)}
-                  sub={`GMV / ${fN(agg.activeCreators)} kreator aktif`}
+                  sub={`GMV / ${fN(agg.activePromoters)} kreator aktif promosi`}
                   color="blue"
                   icon={<Users className="w-5 h-5" />}
                 />
@@ -1170,7 +1170,7 @@ export default function AffiliateScreen() {
                         </div>
                       </div>
                       <p className="text-sm font-semibold text-gray-700 mt-2">
-                        {fN(agg.pareto80Count)} dari {fN(agg.activeCreators)} kreator
+                        {fN(agg.pareto80Count)} dari {fN(agg.activeCreators)} kreator penjual
                       </p>
                       <p className="text-xs text-gray-500">menghasilkan 80% total GMV</p>
                       <p className={`text-xs font-medium mt-1 ${agg.paretoPercent <= 20 ? "text-red-600" : agg.paretoPercent <= 40 ? "text-yellow-600" : "text-green-600"}`}>
@@ -1611,7 +1611,7 @@ export default function AffiliateScreen() {
                                   </span>
                                 )}
                               </td>
-                              <td className="py-2.5 text-right">{fN(d.summary.activeCreators)}/{fN(d.summary.totalCreators)}</td>
+                              <td className="py-2.5 text-right">{fN(d.summary.activePromoters || d.summary.activeCreators)}/{fN(d.summary.totalCreators)}</td>
                               <td className="py-2.5 text-right">{fN(d.summary.totalVideos)}</td>
                               <td className="py-2.5 text-right">{fN(d.summary.totalLive)}</td>
                               <td className="py-2.5 text-right">{fN(d.summary.totalOrders)}</td>
@@ -2475,7 +2475,7 @@ function ComparisonView({ data }: { data: AffiliateMonthData[] }) {
 
   const metrics = [
     { label: "Total GMV", curr: latest.summary.totalGMV, prev: prev.summary.totalGMV, fmt: fRp },
-    { label: "Kreator Aktif", curr: latest.summary.activeCreators, prev: prev.summary.activeCreators, fmt: fN },
+    { label: "Kreator Aktif Promosi", curr: latest.summary.activePromoters, prev: prev.summary.activePromoters, fmt: fN },
     { label: "Total Orders", curr: latest.summary.totalOrders, prev: prev.summary.totalOrders, fmt: fN },
     { label: "Total Video", curr: latest.summary.totalVideos, prev: prev.summary.totalVideos, fmt: fN },
     { label: "Total LIVE", curr: latest.summary.totalLive, prev: prev.summary.totalLive, fmt: fN },
