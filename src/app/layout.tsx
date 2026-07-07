@@ -31,6 +31,8 @@ export const metadata: Metadata = {
   },
 };
 
+import UpdateBanner from "@/components/UpdateBanner";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -41,7 +43,7 @@ export default function RootLayout({
       lang="id"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full"><PasswordGate>{children}</PasswordGate></body>
+      <body className="min-h-full"><PasswordGate>{children}</PasswordGate><UpdateBanner /></body>
     </html>
   );
 }
