@@ -677,7 +677,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     <div className="space-y-6">
 
       {/* ═══ ZONA 1: PREMIUM WELCOME CARD ═══ */}
-      <div className="welcome-card rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+      <div className="welcome-card rounded-2xl p-6 text-white shadow-xl relative overflow-hidden stagger-1">
         {/* Decorative elements */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
         <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
@@ -794,7 +794,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       {/* Quick Actions removed — not executive-level data */}
 
       {/* ═══ ZONA 2.5: QUICK NAVIGATION SHORTCUTS ═══ */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 stagger-2">
         {[
           { icon: "📊", label: "Affiliate", tab: "affiliate", bg: "from-blue-500 to-indigo-600" },
           { icon: "📋", label: "Lap. Harian", tab: "laporan-harian", bg: "from-emerald-500 to-teal-600" },
@@ -815,7 +815,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       </div>
 
       {/* ═══ ZONA 3: HERO KPI — 4 angka paling penting ═══ */}
-      <div>
+      <div className="stagger-3">
         <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
           📊 Ringkasan {formatPeriod(activePeriod)} — Gabungan Semua Toko
         </h2>

@@ -632,15 +632,17 @@ export default function AffiliateScreen() {
       {/* ── HEADER ──────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Users className="w-7 h-7 text-blue-600" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <Users className="w-5 h-5 text-white" />
+            </div>
             Affiliate & KOL Dashboard
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 mt-1.5 flex items-center gap-2 flex-wrap">
             {combinedMode
-              ? `Gabungan ${stores.length} toko: ${stores.map((s) => s.name).join(" + ")} — ${filteredData.length} periode data`
+              ? <><span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-medium">🔗 Gabungan</span>{`${stores.length} toko: ${stores.map((s) => s.name).join(" + ")} — ${filteredData.length} periode`}</>
               : agg
-                ? `${fN(agg.activePromoters)} kreator aktif promosi dari ${fN(agg.totalCreators)} terdaftar — ${filteredData.length} periode data`
+                ? <><span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">👥 {fN(agg.activePromoters)} aktif</span>{`dari ${fN(agg.totalCreators)} kreator — ${filteredData.length} periode data`}</>
                 : "Upload file affiliate untuk memulai analisis"}
           </p>
         </div>
@@ -687,16 +689,16 @@ export default function AffiliateScreen() {
               ));
             })()}
           </select>
-          <div className="flex border rounded-lg overflow-hidden">
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
             {(["dashboard", "creators", "comparison", "retention"] as ViewMode[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  view === v ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+                className={`px-3.5 py-2 text-sm font-medium transition-all rounded-lg ${
+                  view === v ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
                 }`}
               >
-                {v === "dashboard" ? "Dashboard" : v === "creators" ? "Kreator" : v === "comparison" ? "Perbandingan" : "Retensi"}
+                {v === "dashboard" ? "📊 Dashboard" : v === "creators" ? "👥 Kreator" : v === "comparison" ? "📈 Perbandingan" : "🔄 Retensi"}
               </button>
             ))}
           </div>
@@ -2484,26 +2486,26 @@ function KPICard({ title, value, sub, color, icon, alert = false }: {
   title: string; value: string; sub: string; color: string; icon: React.ReactNode; alert?: boolean;
 }) {
   const colorMap: Record<string, string> = {
-    blue: "border-blue-200 bg-blue-50", green: "border-green-200 bg-green-50",
-    purple: "border-purple-200 bg-purple-50", red: "border-red-200 bg-red-50",
-    teal: "border-teal-200 bg-teal-50", orange: "border-orange-200 bg-orange-50",
-    gray: "border-gray-200 bg-gray-50", indigo: "border-indigo-200 bg-indigo-50",
+    blue: "border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50", green: "border-green-200 bg-gradient-to-br from-green-50 to-emerald-50",
+    purple: "border-purple-200 bg-gradient-to-br from-purple-50 to-violet-50", red: "border-red-200 bg-gradient-to-br from-red-50 to-rose-50",
+    teal: "border-teal-200 bg-gradient-to-br from-teal-50 to-cyan-50", orange: "border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50",
+    gray: "border-gray-200 bg-gradient-to-br from-gray-50 to-slate-50", indigo: "border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50",
   };
   const valMap: Record<string, string> = {
     blue: "text-blue-700", green: "text-green-700", purple: "text-purple-700",
     red: "text-red-700", teal: "text-teal-700", orange: "text-orange-700",
     gray: "text-gray-700", indigo: "text-indigo-700",
   };
-  const iconMap: Record<string, string> = {
-    blue: "text-blue-500", green: "text-green-500", purple: "text-purple-500",
-    red: "text-red-500", teal: "text-teal-500", orange: "text-orange-500",
-    gray: "text-gray-500", indigo: "text-indigo-500",
+  const iconBgMap: Record<string, string> = {
+    blue: "bg-blue-100 text-blue-600", green: "bg-green-100 text-green-600", purple: "bg-purple-100 text-purple-600",
+    red: "bg-red-100 text-red-600", teal: "bg-teal-100 text-teal-600", orange: "bg-orange-100 text-orange-600",
+    gray: "bg-gray-100 text-gray-600", indigo: "bg-indigo-100 text-indigo-600",
   };
   return (
-    <div className={`rounded-xl border p-4 ${colorMap[color] || colorMap.gray} ${alert ? "ring-2 ring-red-400 animate-pulse" : ""}`}>
+    <div className={`rounded-xl border p-4 ${colorMap[color] || colorMap.gray} ${alert ? "ring-2 ring-red-400 animate-pulse" : ""} hover:shadow-md transition-shadow duration-200`}>
       <div className="flex justify-between items-start">
         <p className="text-sm text-gray-600 font-medium">{title}</p>
-        <span className={iconMap[color] || iconMap.gray}>{icon}</span>
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBgMap[color] || iconBgMap.gray}`}>{icon}</div>
       </div>
       <p className={`text-2xl font-bold mt-1.5 ${valMap[color] || valMap.gray}`}>{value}</p>
       <p className="text-xs text-gray-500 mt-1">{sub}</p>
