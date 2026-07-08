@@ -508,9 +508,167 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return { displayOmzet, displayRoas, daysElapsed, dailyAvgOmzet, projectedEOM };
   }, [lhData]);
 
+  // ─── MoM COMPARISON (all metrics) ─────────────────────
+  const momAll = useMemo(() => {
+    if (!prevPeriod) return null;
+    const prev = allAffiliateData.filter((d) => d.period === prevPeriod);
+    const pGMV = prev.reduce((a, d) => a + (d.summary.totalGMV || 0), 0);
+    const pOrders = prev.reduce((a, d) => a + (d.summary.totalOrders || 0), 0);
+    const pVideos = prev.reduce((a, d) => a + (d.summary.totalVideos || 0), 0);
+    const pLive = prev.reduce((a, d) => a + (d.summary.totalLive || 0), 0);
+    const pCreators = prev.reduce((a, d) => a + (d.summary.activePromoters || d.summary.activeCreators || 0), 0);
+    const pRefund = prev.reduce((a, d) => a + (d.summary.totalRefundedGMV || 0), 0);
+    const pRefundRate = pGMV > 0 ? (pRefund / pGMV) * 100 : 0;
+    const pComm = prev.reduce((a, d) => a + (d.summary.totalCommission || 0), 0);
+    const g = (curr: number, p: number) => p > 0 ? ((curr - p) / p) * 100 : (curr > 0 ? 100 : 0);
+    return {
+      gmv: g(agg.totalGMV, pGMV),
+      orders: g(agg.totalOrders, pOrders),
+      videos: g(agg.totalVideos, pVideos),
+      live: g(agg.totalLive, pLive),
+      creators: g(agg.activePromoters, pCreators),
+      refundRate: agg.refundRate - pRefundRate, // difference in pp
+      commission: g(agg.totalCommission, pComm),
+      prevPeriodLabel: formatPeriod(prevPeriod),
+    };
+  }, [prevPeriod, allAffiliateData, agg]);
 
+  // ─── BUSINESS HEALTH SCORE ─────────────────────────────
+  const healthScore = useMemo(() => {
+    let score = 0;
+    let maxScore = 0;
 
+    // 1. Target achievement (30 pts)
+    if (targetGMV > 0) {
+      maxScore += 30;
+      score += Math.min(30, (targetProgress / 100) * 30);
+    }
 
+    // 2. Refund rate health (20 pts) — <10% = full, >30% = 0
+    maxScore += 20;
+    if (agg.refundRate <= 10) score += 20;
+    else if (agg.refundRate <= 15) score += 15;
+    else if (agg.refundRate <= 20) score += 10;
+    else if (agg.refundRate <= 30) score += 5;
+
+    // 3. Creator activity rate (20 pts)
+    maxScore += 20;
+    const activityRate = agg.totalCreators > 0 ? (agg.activePromoters / agg.totalCreators) * 100 : 0;
+    if (activityRate >= 30) score += 20;
+    else if (activityRate >= 20) score += 15;
+    else if (activityRate >= 10) score += 10;
+    else if (activityRate > 0) score += 5;
+
+    // 4. MoM growth (15 pts)
+    maxScore += 15;
+    if (momGrowth !== null) {
+      if (momGrowth >= 20) score += 15;
+      else if (momGrowth >= 10) score += 12;
+      else if (momGrowth >= 0) score += 10;
+      else if (momGrowth >= -10) score += 5;
+    } else {
+      score += 8; // no previous data, neutral
+    }
+
+    // 5. Content productivity (15 pts)
+    maxScore += 15;
+    const contentCount = agg.totalVideos + agg.totalLive;
+    if (contentCount >= 100) score += 15;
+    else if (contentCount >= 50) score += 12;
+    else if (contentCount >= 20) score += 8;
+    else if (contentCount > 0) score += 4;
+
+    const finalScore = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+    const label = finalScore >= 80 ? "Excellent" : finalScore >= 60 ? "Good" : finalScore >= 40 ? "Fair" : "Needs Work";
+    const color = finalScore >= 80 ? "text-green-600" : finalScore >= 60 ? "text-blue-600" : finalScore >= 40 ? "text-yellow-600" : "text-red-600";
+    const bgColor = finalScore >= 80 ? "from-green-500 to-emerald-600" : finalScore >= 60 ? "from-blue-500 to-indigo-600" : finalScore >= 40 ? "from-yellow-500 to-amber-600" : "from-red-500 to-rose-600";
+    const ringColor = finalScore >= 80 ? "stroke-green-500" : finalScore >= 60 ? "stroke-blue-500" : finalScore >= 40 ? "stroke-yellow-500" : "stroke-red-500";
+
+    return { score: finalScore, label, color, bgColor, ringColor, activityRate };
+  }, [agg, targetGMV, targetProgress, momGrowth]);
+
+  // ─── AUTO-GENERATED INSIGHTS ───────────────────────────
+  const autoInsights = useMemo(() => {
+    const insights: { icon: string; text: string; type: "positive" | "warning" | "neutral" }[] = [];
+    if (agg.totalGMV <= 0) return insights;
+
+    // Video vs LIVE efficiency
+    if (agg.totalVideos > 0 && agg.totalLive > 0) {
+      const gmvPerVid = agg.videoGMV / agg.totalVideos;
+      const gmvPerLiv = agg.liveGMV / agg.totalLive;
+      if (gmvPerVid > gmvPerLiv * 1.5) {
+        insights.push({ icon: "📹", text: `Video menghasilkan ${(gmvPerVid/gmvPerLiv).toFixed(1)}× lebih banyak GMV per konten dibanding LIVE`, type: "neutral" });
+      } else if (gmvPerLiv > gmvPerVid * 1.5) {
+        insights.push({ icon: "🔴", text: `LIVE menghasilkan ${(gmvPerLiv/gmvPerVid).toFixed(1)}× lebih banyak GMV per sesi dibanding Video`, type: "neutral" });
+      }
+    }
+
+    // Dormant creators
+    if (dormantRate > 60) {
+      insights.push({ icon: "😴", text: `${Math.round(dormantRate)}% kreator (${dormantCount} orang) tidak menghasilkan GMV — pertimbangkan program reaktivasi`, type: "warning" });
+    }
+
+    // MoM growth with context
+    if (momAll) {
+      if (momAll.gmv > 10 && momAll.creators < -5) {
+        insights.push({ icon: "💪", text: `GMV naik ${momAll.gmv.toFixed(0)}% tapi kreator aktif turun ${Math.abs(momAll.creators).toFixed(0)}% — kreator existing makin produktif`, type: "positive" });
+      }
+      if (momAll.gmv < -10) {
+        insights.push({ icon: "📉", text: `GMV turun ${Math.abs(momAll.gmv).toFixed(0)}% dari bulan lalu. Evaluasi strategi konten dan kreator diperlukan`, type: "warning" });
+      }
+      if (momAll.refundRate > 5) {
+        insights.push({ icon: "⚠️", text: `Refund rate naik ${momAll.refundRate.toFixed(1)}pp vs bulan lalu — periksa kualitas kreator`, type: "warning" });
+      }
+    }
+
+    // Channel concentration
+    const maxChannel = Math.max(agg.videoGMV, agg.liveGMV, agg.productCardGMV);
+    if (maxChannel > 0 && maxChannel / agg.totalGMV > 0.7) {
+      const name = maxChannel === agg.videoGMV ? "Video" : maxChannel === agg.liveGMV ? "LIVE" : "Product Card";
+      insights.push({ icon: "🎯", text: `${fP(maxChannel / agg.totalGMV * 100)} GMV berasal dari ${name} — diversifikasi channel untuk mengurangi risiko`, type: "neutral" });
+    }
+
+    // High refund warning
+    if (highRefundCreators.length >= 3) {
+      const totalRefundGMV = highRefundCreators.reduce((a, c) => a + c.affiliateRefundedGMV, 0);
+      insights.push({ icon: "🚨", text: `${highRefundCreators.length} kreator refund >50% dengan total refund ${fRp(totalRefundGMV)} — perlu tindakan segera`, type: "warning" });
+    }
+
+    // Commission efficiency
+    if (agg.totalCommission > 0 && agg.totalGMV > 0) {
+      const roi = agg.totalGMV / agg.totalCommission;
+      insights.push({ icon: "💰", text: `Setiap Rp1 komisi menghasilkan ${fRp(roi)} GMV (ROI ${roi.toFixed(1)}×)`, type: roi >= 5 ? "positive" : "neutral" });
+    }
+
+    // Projected EOM
+    if (heroCards.projectedEOM > 0 && targetGMV > 0) {
+      const projected = heroCards.projectedEOM;
+      if (projected >= targetGMV) {
+        insights.push({ icon: "🎉", text: `Proyeksi EOM ${fRp(projected)} — on track untuk melampaui target ${fRp(targetGMV)}`, type: "positive" });
+      } else {
+        insights.push({ icon: "⏳", text: `Proyeksi EOM ${fRp(projected)} — masih kurang ${fRp(targetGMV - projected)} dari target`, type: "warning" });
+      }
+    }
+
+    return insights.slice(0, 6);
+  }, [agg, dormantRate, dormantCount, momAll, highRefundCreators, heroCards, targetGMV]);
+
+  // ─── PER-STORE MoM ────────────────────────────────────
+  const storeMoM = useMemo(() => {
+    if (!prevPeriod) return null;
+    const prev = allAffiliateData.filter((d) => d.period === prevPeriod);
+    const map: Record<string, { prevGMV: number; prevOrders: number; prevRefundRate: number }> = {};
+    prev.forEach((d) => {
+      const store = activeStores.find((s) => s.id === d.storeId);
+      if (!store) return;
+      map[store.id] = {
+        prevGMV: d.summary.totalGMV || 0,
+        prevOrders: d.summary.totalOrders || 0,
+        prevRefundRate: d.summary.refundRate || 0,
+      };
+    });
+    return map;
+  }, [prevPeriod, allAffiliateData, activeStores]);
 
   // ═══════════════════════════════════════════════════════
   // RENDER
@@ -604,6 +762,27 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       )}
 
       {/* Quick Actions removed — not executive-level data */}
+
+      {/* ═══ ZONA 2.5: QUICK NAVIGATION SHORTCUTS ═══ */}
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+        {[
+          { icon: "📊", label: "Affiliate", tab: "affiliate", bg: "from-blue-500 to-indigo-600" },
+          { icon: "📋", label: "Lap. Harian", tab: "laporan-harian", bg: "from-emerald-500 to-teal-600" },
+          { icon: "📹", label: "Video Perf.", tab: "video-performance", bg: "from-purple-500 to-violet-600" },
+          { icon: "🏪", label: "Bandingkan", tab: "compare-gabungan", bg: "from-orange-500 to-amber-600" },
+          { icon: "🎯", label: "OKR", tab: "okr", bg: "from-rose-500 to-pink-600" },
+          { icon: "📄", label: "Report", tab: "report-builder", bg: "from-gray-500 to-slate-600" },
+        ].map((item) => (
+          <button
+            key={item.tab}
+            onClick={() => onNavigate(item.tab)}
+            className={`bg-gradient-to-br ${item.bg} text-white rounded-xl p-3 text-center hover:shadow-lg hover:scale-[1.02] transition-all duration-200`}
+          >
+            <span className="text-lg block">{item.icon}</span>
+            <span className="text-[11px] font-medium mt-1 block opacity-90">{item.label}</span>
+          </button>
+        ))}
+      </div>
 
       {/* ═══ ZONA 3: HERO KPI — 4 angka paling penting ═══ */}
       <div>
@@ -715,6 +894,130 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           ))}
         </div>
       </div>
+
+      {/* ═══ ZONA 3.1: HEALTH SCORE + MoM COMPARISON + DAILY AVG ═══ */}
+      {agg.totalGMV > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          {/* ── HEALTH SCORE ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col items-center justify-center text-center">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">🏥 Skor Kesehatan Bisnis</h3>
+            <div className="relative w-28 h-28 mb-3">
+              <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                <circle cx="50" cy="50" r="42" fill="none" className={healthScore.ringColor} strokeWidth="8" strokeLinecap="round"
+                  strokeDasharray={`${healthScore.score * 2.64} 264`} />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className={`text-3xl font-black ${healthScore.color}`}>{healthScore.score}</span>
+                <span className="text-[10px] text-gray-400 font-medium">/100</span>
+              </div>
+            </div>
+            <span className={`text-sm font-bold ${healthScore.color}`}>{healthScore.label}</span>
+            <div className="grid grid-cols-2 gap-2 mt-3 w-full text-[10px]">
+              <div className="bg-gray-50 rounded-lg p-1.5">
+                <div className="font-bold text-gray-700">{fP(agg.refundRate)}</div>
+                <div className="text-gray-400">Refund</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-1.5">
+                <div className="font-bold text-gray-700">{fP(healthScore.activityRate)}</div>
+                <div className="text-gray-400">Aktivitas</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── MoM COMPARISON STRIP ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              📈 Perubahan vs {momAll?.prevPeriodLabel || "Bulan Lalu"}
+            </h3>
+            {momAll ? (
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "GMV", val: momAll.gmv, isBetter: momAll.gmv >= 0 },
+                  { label: "Orders", val: momAll.orders, isBetter: momAll.orders >= 0 },
+                  { label: "Kreator", val: momAll.creators, isBetter: momAll.creators >= 0 },
+                  { label: "Video", val: momAll.videos, isBetter: momAll.videos >= 0 },
+                  { label: "LIVE", val: momAll.live, isBetter: momAll.live >= 0 },
+                  { label: "Refund", val: momAll.refundRate, isBetter: momAll.refundRate <= 0, suffix: "pp" },
+                  { label: "Komisi", val: momAll.commission, isBetter: true },
+                ].map((m) => (
+                  <div key={m.label} className={`flex items-center justify-between rounded-lg px-3 py-2 ${m.isBetter ? "bg-green-50" : "bg-red-50"}`}>
+                    <span className="text-xs text-gray-600">{m.label}</span>
+                    <span className={`text-xs font-bold ${m.isBetter ? "text-green-600" : "text-red-600"}`}>
+                      {m.val >= 0 ? "▲" : "▼"} {Math.abs(m.val).toFixed(1)}{m.suffix || "%"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-gray-400 text-xs">
+                <p>Data bulan sebelumnya belum tersedia</p>
+                <p className="mt-1 text-gray-300">Upload minimal 2 periode untuk perbandingan</p>
+              </div>
+            )}
+          </div>
+
+          {/* ── DAILY AVERAGES + PROJECTED EOM ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">⚡ Rata-rata Harian & Proyeksi</h3>
+            <div className="space-y-2.5">
+              {[
+                { icon: "💰", label: "Revenue/Hari", value: fRp(dailyAvg.revenuePerDay) },
+                { icon: "📦", label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)) },
+                { icon: "🎬", label: "Konten/Hari", value: dailyAvg.contentPerDay.toFixed(1) },
+                { icon: "📹", label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo) },
+                { icon: "🔴", label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive) },
+                { icon: "👤", label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator) },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">{item.icon} {item.label}</span>
+                  <span className="text-xs font-bold text-gray-800">{item.value}</span>
+                </div>
+              ))}
+            </div>
+            {heroCards.projectedEOM > 0 && (
+              <div className={`mt-3 rounded-lg p-3 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "bg-green-50 border border-green-100" : "bg-amber-50 border border-amber-100"}`}>
+                <div className="text-[10px] text-gray-500 uppercase font-medium">Proyeksi End of Month</div>
+                <div className={`text-lg font-black mt-0.5 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "text-green-600" : "text-amber-600"}`}>
+                  {fRp(heroCards.projectedEOM)}
+                </div>
+                {targetGMV > 0 && (
+                  <div className="text-[10px] text-gray-400 mt-0.5">
+                    {heroCards.projectedEOM >= targetGMV ? "✅ On track melampaui target" : `⚠️ Masih kurang ${fRp(targetGMV - heroCards.projectedEOM)}`}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ZONA 3.2: AUTO-GENERATED INSIGHTS ═══ */}
+      {autoInsights.length > 0 && (
+        <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-2xl border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs">💡</span>
+            Insight Otomatis
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {autoInsights.map((insight, i) => (
+              <div key={i} className={`flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 border ${
+                insight.type === "positive" ? "bg-green-50 border-green-100" :
+                insight.type === "warning" ? "bg-amber-50 border-amber-100" :
+                "bg-white border-gray-100"
+              }`}>
+                <span className="text-base flex-shrink-0 mt-0.5">{insight.icon}</span>
+                <p className={`text-xs leading-relaxed ${
+                  insight.type === "positive" ? "text-green-700" :
+                  insight.type === "warning" ? "text-amber-700" :
+                  "text-gray-600"
+                }`}>{insight.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ═══ ZONA 3.6: LAPORAN HARIAN SUMMARY ═══ */}
       <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5">
@@ -1096,7 +1399,18 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                       {sd.store.avatar || "🏪"}
                     </div>
                     <div>
-                      <div className="font-semibold text-gray-900">{sd.store.name}</div>
+                      <div className="font-semibold text-gray-900 flex items-center gap-2">
+                        {sd.store.name}
+                        {storeMoM?.[sd.store.id] && (() => {
+                          const prev = storeMoM[sd.store.id];
+                          const growth = prev.prevGMV > 0 ? ((sd.gmv - prev.prevGMV) / prev.prevGMV) * 100 : 0;
+                          return growth !== 0 ? (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${growth >= 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
+                              {growth >= 0 ? "▲" : "▼"}{Math.abs(growth).toFixed(0)}%
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
                       <div className="text-xs text-gray-400">{formatPeriod(activePeriod)}</div>
                     </div>
                   </div>

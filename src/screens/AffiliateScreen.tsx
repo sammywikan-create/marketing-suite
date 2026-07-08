@@ -18,7 +18,7 @@ import AffiliateAIInsightsCard from "@/components/AffiliateAIInsightsCard";
 // TYPES
 // ═══════════════════════════════════════════════════════
 type ViewMode = "dashboard" | "creators" | "comparison" | "retention";
-type SortKey = "gmv" | "orders" | "refund" | "videos" | "commission" | "score";
+type SortKey = "gmv" | "orders" | "refund" | "videos" | "commission" | "score" | "roi";
 type StatusFilter = "all" | "top" | "active" | "needs-push" | "inactive" | "high-refund";
 
 // Extended types for combined mode — avoids `as any` casting everywhere
@@ -537,6 +537,7 @@ export default function AffiliateScreen() {
       else if (sortBy === "videos") diff = b.affiliateShoppableVideos - a.affiliateShoppableVideos;
       else if (sortBy === "commission") diff = b.estCommission - a.estCommission;
       else if (sortBy === "score") diff = b.creatorScore - a.creatorScore;
+      else if (sortBy === "roi") diff = (b.estCommission > 0 ? b.affiliateGMV / b.estCommission : 0) - (a.estCommission > 0 ? a.affiliateGMV / a.estCommission : 0);
       return sortAsc ? -diff : diff;
     });
   }, [agg, filterStatus, filterTier, searchCreator, sortBy, sortAsc]);
@@ -742,6 +743,17 @@ export default function AffiliateScreen() {
           >
             <RefreshCw className={`w-4 h-4 ${isLoadingCreators ? 'animate-spin' : ''}`} />
             Refresh
+          </button>
+          <button
+            onClick={() => {
+              // Scroll to AI section or navigate to home
+              const el = document.getElementById('ai-evaluasi-section');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+              else window.dispatchEvent(new CustomEvent('navigate', { detail: 'home' }));
+            }}
+            className="text-sm font-medium px-3 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 text-white hover:from-violet-600 hover:to-indigo-700 transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            🤖 AI Insight
           </button>
           {!combinedMode && <UploadButton onUpload={handleUpload} isUploading={isUploading} />}
         </div>
@@ -1921,6 +1933,74 @@ export default function AffiliateScreen() {
           {/* ═══════════════════════════════════════════ */}
           {view === "creators" && (
             <div className="space-y-4">
+              {/* ── B5: SUMMARY CARDS ── */}
+              {agg && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {[
+                    { icon: "👥", label: "Total Kreator", value: fN(agg.totalCreators), sub: `${fN(agg.activeCreators)} aktif (${agg.totalCreators > 0 ? fP((agg.activeCreators / agg.totalCreators) * 100) : '0%'})`, color: "text-blue-600", bg: "bg-blue-50 border-blue-100" },
+                    { icon: "💰", label: "Avg GMV/Kreator", value: fRp(agg.activeCreators > 0 ? agg.totalGMV / agg.activeCreators : 0), sub: `Top 1: ${fRp(agg.creators[0]?.affiliateGMV || 0)}`, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-100" },
+                    { icon: "📊", label: "Avg Refund Rate", value: fP(agg.refundRate), sub: agg.refundRate <= 15 ? "✅ Dalam batas aman" : "⚠️ Di atas batas 15%", color: agg.refundRate <= 15 ? "text-green-600" : "text-red-600", bg: agg.refundRate <= 15 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100" },
+                    { icon: "🎯", label: "Commission ROI", value: agg.totalCommission > 0 ? `${(agg.totalGMV / agg.totalCommission).toFixed(1)}×` : '—', sub: `${fRp(agg.totalCommission)} total komisi`, color: "text-purple-600", bg: "bg-purple-50 border-purple-100" },
+                  ].map((card) => (
+                    <div key={card.label} className={`${card.bg} border rounded-xl p-4`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">{card.icon}</span>
+                        <span className="text-[11px] font-medium text-gray-500">{card.label}</span>
+                      </div>
+                      <div className={`text-lg font-black ${card.color}`}>{card.value}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">{card.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── B3: EFFICIENCY LEADERBOARD ── */}
+              {agg && agg.creators.length > 0 && (
+                <div className="bg-white rounded-xl border p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-[10px]">🏆</span>
+                    Top 5 Kreator Paling Efisien
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                    {/* GMV per Video */}
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase font-medium mb-1.5">📹 GMV per Video Tertinggi</p>
+                      <div className="space-y-1">
+                        {agg.creators
+                          .filter((c) => c.affiliateShoppableVideos > 0 && c.affiliateGMV > 0)
+                          .sort((a, b) => (b.affiliateGMV / b.affiliateShoppableVideos) - (a.affiliateGMV / a.affiliateShoppableVideos))
+                          .slice(0, 5)
+                          .map((c, i) => (
+                            <div key={c.creatorUsername} className="flex items-center gap-2 text-xs">
+                              <span className="text-gray-400 w-4 text-right font-bold">{i + 1}.</span>
+                              <span className="text-gray-700 truncate flex-1">@{c.creatorUsername}</span>
+                              <span className="font-bold text-blue-600">{fRp(c.affiliateGMV / c.affiliateShoppableVideos)}</span>
+                              <span className="text-gray-300">/ vid</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                    {/* GMV per Commission */}
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase font-medium mb-1.5">💰 ROI Komisi Tertinggi (GMV/Komisi)</p>
+                      <div className="space-y-1">
+                        {agg.creators
+                          .filter((c) => c.estCommission > 0 && c.affiliateGMV > 0)
+                          .sort((a, b) => (b.affiliateGMV / b.estCommission) - (a.affiliateGMV / a.estCommission))
+                          .slice(0, 5)
+                          .map((c, i) => (
+                            <div key={c.creatorUsername} className="flex items-center gap-2 text-xs">
+                              <span className="text-gray-400 w-4 text-right font-bold">{i + 1}.</span>
+                              <span className="text-gray-700 truncate flex-1">@{c.creatorUsername}</span>
+                              <span className="font-bold text-purple-600">{(c.affiliateGMV / c.estCommission).toFixed(1)}×</span>
+                              <span className="text-gray-300">ROI</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* Filter & Search Bar */}
               <div className="bg-white rounded-xl border p-4 flex flex-wrap gap-3 items-center">
                 <div className="relative">
@@ -1972,6 +2052,7 @@ export default function AffiliateScreen() {
                   <option value="videos">Sort: Videos</option>
                   <option value="commission">Sort: Komisi</option>
                   <option value="score">Sort: Score</option>
+                  <option value="roi">Sort: ROI (GMV/Komisi)</option>
                 </select>
                 <button
                   onClick={() => setSortAsc(!sortAsc)}
@@ -2010,6 +2091,7 @@ export default function AffiliateScreen() {
                         <th className="px-3 py-3 text-right font-medium text-gray-600">Refund</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">Ref%</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">Komisi</th>
+                        <th className="px-3 py-3 text-right font-medium text-gray-600" title="GMV / Komisi">ROI</th>
                         <th className="px-3 py-3 text-right font-medium text-gray-600">Score</th>
                         <th className="px-3 py-3 text-center font-medium text-gray-600">Status</th>
                       </tr>
@@ -2102,6 +2184,13 @@ export default function AffiliateScreen() {
                               {fP(c.refundRate)}
                             </td>
                             <td className="px-3 py-2.5 text-right text-purple-600">{fRp(c.estCommission)}</td>
+                            <td className="px-3 py-2.5 text-right">
+                              {c.estCommission > 0 ? (
+                                <span className={`text-xs font-bold ${(c.affiliateGMV / c.estCommission) >= 8 ? 'text-green-600' : (c.affiliateGMV / c.estCommission) >= 5 ? 'text-blue-600' : 'text-gray-500'}`}>
+                                  {(c.affiliateGMV / c.estCommission).toFixed(1)}×
+                                </span>
+                              ) : <span className="text-gray-300 text-xs">—</span>}
+                            </td>
                             {/* Fitur 2: Score bar */}
                             <td className="px-3 py-2.5">
                               <div className="flex items-center gap-1.5 min-w-[56px]">
@@ -2123,7 +2212,7 @@ export default function AffiliateScreen() {
                           </tr>
                           {isExpanded && (
                             <tr className="bg-blue-50/60">
-                              <td colSpan={17} className="px-4 py-4">
+                              <td colSpan={18} className="px-4 py-4">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                   {/* GMV Breakdown */}
                                   <div className="bg-white rounded-lg border p-3">
