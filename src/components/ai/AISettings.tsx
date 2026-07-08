@@ -23,7 +23,7 @@ export function AISettings({ onClose }: { onClose: () => void }) {
     } catch { /* keep defaults */ }
   }
 
-  const isOllamaCloud = settings.ollamaMode === 'cloud'
+  const isOllamaCloud = !settings.ollamaBaseUrl?.includes('localhost')
   const ollamaModels = isOllamaCloud ? OLLAMA_CLOUD_MODELS : ollamaLocalModels
 
   const providers: { value: AIProvider; label: string; desc: string }[] = [
