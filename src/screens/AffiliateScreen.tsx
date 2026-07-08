@@ -21,6 +21,10 @@ type ViewMode = "dashboard" | "creators" | "comparison" | "retention";
 type SortKey = "gmv" | "orders" | "refund" | "videos" | "commission" | "score";
 type StatusFilter = "all" | "top" | "active" | "needs-push" | "inactive" | "high-refund";
 
+// Extended types for combined mode — avoids `as any` casting everywhere
+type AffiliateMonthDataWithStore = AffiliateMonthData & { _storeName: string };
+type CreatorWithStore = AffiliateCreatorItem & { _storeKey: string; _months: number };
+
 // ═══════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════
@@ -56,6 +60,142 @@ const TIER_COLORS: Record<string, string> = {
   Unknown: "bg-gray-50 text-gray-400",
 };
 
+// ── HELPER: Merge creator sources (supabase + local) ──────────────
+// Centralized logic used by the agg useMemo. Avoids code duplication.
+function mergeCreatorSources(
+  localCreators: (AffiliateCreatorItem & { _storeKey: string })[],
+  supabaseCreators: AffiliateCreatorItem[],
+  combinedMode: boolean,
+): CreatorWithStore[] {
+  let creatorSource: (AffiliateCreatorItem & { _storeKey: string })[];
+
+  if (supabaseCreators.length > 0) {
+    const supabaseKeys = new Set(
+      supabaseCreators.map((c) => {
+        const sk = (c as CreatorWithStore)._storeKey || '';
+        return combinedMode ? `${sk}::${c.creatorUsername}` : c.creatorUsername;
+      }),
+    );
+    const localOnly = localCreators.filter((c) => {
+      const key = combinedMode ? `${c._storeKey}::${c.creatorUsername}` : c.creatorUsername;
+      return !supabaseKeys.has(key);
+    });
+    creatorSource = [
+      ...supabaseCreators.map((c) => ({ ...c, _storeKey: (c as CreatorWithStore)._storeKey || '' })),
+      ...localOnly,
+    ];
+  } else {
+    creatorSource = localCreators;
+  }
+
+  const creatorMap: Record<string, CreatorWithStore> = {};
+  creatorSource.forEach((c) => {
+    const key = combinedMode
+      ? `${c._storeKey || ''}::${c.creatorUsername}`
+      : c.creatorUsername;
+
+    if (!creatorMap[key]) {
+      creatorMap[key] = { ...c, _months: 0 };
+    } else {
+      creatorMap[key].affiliateGMV += c.affiliateGMV;
+      creatorMap[key].affiliateOrders += c.affiliateOrders;
+      creatorMap[key].affiliateShoppableVideos += c.affiliateShoppableVideos;
+      creatorMap[key].affiliateLiveStreams += c.affiliateLiveStreams;
+      creatorMap[key].affiliateRefundedGMV += c.affiliateRefundedGMV;
+      creatorMap[key].estCommission += c.estCommission;
+      creatorMap[key].itemsSold += c.itemsSold;
+      creatorMap[key].affiliateLiveGMV += c.affiliateLiveGMV;
+      creatorMap[key].affiliateShoppableVideoGMV += c.affiliateShoppableVideoGMV;
+      creatorMap[key].affiliateProductCardGMV += c.affiliateProductCardGMV;
+      creatorMap[key].productImpressions += c.productImpressions || 0;
+    }
+    if (c.affiliateGMV > 0) creatorMap[key]._months++;
+  });
+
+  return Object.values(creatorMap).map((c) => ({
+    ...c,
+    refundRate: c.affiliateGMV > 0 ? (c.affiliateRefundedGMV / c.affiliateGMV) * 100 : 0,
+    commissionRate: c.affiliateGMV > 0 ? (c.estCommission / c.affiliateGMV) * 100 : 0,
+    gmvPerVideo: c.affiliateShoppableVideos > 0 ? c.affiliateGMV / c.affiliateShoppableVideos : 0,
+    avgOrderValue: c.affiliateOrders > 0 ? c.affiliateGMV / c.affiliateOrders : 0,
+  }));
+}
+
+// ── HELPER: Merge month data across stores by period+platform ─────
+// Used to create a single merged entry per period+platform for aggregation.
+function mergeMonthsByPeriod(
+  months: AffiliateMonthDataWithStore[],
+): AffiliateMonthDataWithStore[] {
+  const map: Record<string, AffiliateMonthDataWithStore> = {};
+  months.forEach((d) => {
+    const key = `${d.periodRaw}__${d.platform || 'tiktok'}`;
+    if (!map[key]) {
+      map[key] = {
+        ...d,
+        _storeName: 'Gabungan',
+        creators: [...d.creators],
+        summary: { ...d.summary },
+      };
+    } else {
+      const m = map[key];
+      // Merge creators arrays (will be deduped later by the agg logic)
+      m.creators = [...m.creators, ...d.creators];
+      // Sum up summary metrics
+      m.summary = {
+        ...m.summary,
+        totalCreators: m.summary.totalCreators + d.summary.totalCreators,
+        activeCreators: m.summary.activeCreators + d.summary.activeCreators,
+        inactiveCreators: m.summary.inactiveCreators + d.summary.inactiveCreators,
+        activeRate: 0, // recalculated below
+        activePromoters: m.summary.activePromoters + d.summary.activePromoters,
+        videoCreators: m.summary.videoCreators + d.summary.videoCreators,
+        liveCreators: m.summary.liveCreators + d.summary.liveCreators,
+        bothVideoAndLive: m.summary.bothVideoAndLive + d.summary.bothVideoAndLive,
+        totalGMV: m.summary.totalGMV + d.summary.totalGMV,
+        totalOrders: m.summary.totalOrders + d.summary.totalOrders,
+        totalVideos: m.summary.totalVideos + d.summary.totalVideos,
+        totalLive: m.summary.totalLive + d.summary.totalLive,
+        totalCommission: m.summary.totalCommission + d.summary.totalCommission,
+        totalRefundedGMV: m.summary.totalRefundedGMV + d.summary.totalRefundedGMV,
+        refundRate: 0, // recalculated below
+        avgAOV: 0, // recalculated below
+        avgGMVPerCreator: 0, // recalculated below
+        topCreator: m.summary.topCreatorGMV >= d.summary.topCreatorGMV ? m.summary.topCreator : d.summary.topCreator,
+        topCreatorGMV: Math.max(m.summary.topCreatorGMV, d.summary.topCreatorGMV),
+        nanoCount: m.summary.nanoCount + d.summary.nanoCount,
+        microCount: m.summary.microCount + d.summary.microCount,
+        midCount: m.summary.midCount + d.summary.midCount,
+        macroCount: m.summary.macroCount + d.summary.macroCount,
+        megaCount: m.summary.megaCount + d.summary.megaCount,
+        videoGMV: m.summary.videoGMV + d.summary.videoGMV,
+        liveGMV: m.summary.liveGMV + d.summary.liveGMV,
+        productCardGMV: m.summary.productCardGMV + d.summary.productCardGMV,
+      };
+      // Recalculate derived
+      m.summary.refundRate = m.summary.totalGMV > 0 ? (m.summary.totalRefundedGMV / m.summary.totalGMV) * 100 : 0;
+      m.summary.avgAOV = m.summary.totalOrders > 0 ? m.summary.totalGMV / m.summary.totalOrders : 0;
+      m.summary.activeRate = m.summary.totalCreators > 0 ? (m.summary.activeCreators / m.summary.totalCreators) * 100 : 0;
+      m.summary.avgGMVPerCreator = m.summary.activeCreators > 0 ? m.summary.totalGMV / m.summary.activeCreators : 0;
+      // Merge coreSummary if both present
+      if (d.coreSummary && m.coreSummary) {
+        m.coreSummary = {
+          ...m.coreSummary,
+          gmvFromCreator: m.coreSummary.gmvFromCreator + d.coreSummary.gmvFromCreator,
+          productsSoldViaAffiliate: m.coreSummary.productsSoldViaAffiliate + d.coreSummary.productsSoldViaAffiliate,
+          refundAmount: m.coreSummary.refundAmount + d.coreSummary.refundAmount,
+          samplesSent: m.coreSummary.samplesSent + d.coreSummary.samplesSent,
+          videoCount: m.coreSummary.videoCount + d.coreSummary.videoCount,
+          liveStreamCount: m.coreSummary.liveStreamCount + d.coreSummary.liveStreamCount,
+          estimatedCommission: m.coreSummary.estimatedCommission + d.coreSummary.estimatedCommission,
+        };
+      } else if (d.coreSummary) {
+        m.coreSummary = { ...d.coreSummary };
+      }
+    }
+  });
+  return Object.values(map).sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+}
+
 // ═══════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════
@@ -68,15 +208,25 @@ export default function AffiliateScreen() {
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [editingTarget, setEditingTarget] = useState<AffiliateTarget | null>(null);
 
-  const allMonths: AffiliateMonthData[] = useMemo(() => {
+  // allMonths: flat list of all month entries (each tagged with _storeName)
+  // In combined mode, this contains separate entries per store (for the trend table).
+  const allMonths: AffiliateMonthDataWithStore[] = useMemo(() => {
     if (combinedMode) {
-      // Merge affiliate data from ALL stores
       return stores.flatMap((s) =>
         (s.affiliateData || []).map((d) => ({ ...d, _storeName: s.name }))
       );
     }
     return (activeStore?.affiliateData || []).map((d) => ({ ...d, _storeName: activeStore?.name || '' }));
   }, [combinedMode, stores, activeStore]);
+
+  // mergedMonths: in combined mode, entries merged by period+platform across stores.
+  // Used for aggregation, comparison, and retention views so that each period
+  // appears once with combined metrics (not separate per-store rows).
+  // In single mode, same as allMonths.
+  const mergedMonths: AffiliateMonthDataWithStore[] = useMemo(() => {
+    if (!combinedMode) return allMonths;
+    return mergeMonthsByPeriod(allMonths);
+  }, [combinedMode, allMonths]);
 
   const [view, setView] = useState<ViewMode>("dashboard");
   const [selectedPeriod, setSelectedPeriod] = useState<string>("all");
@@ -232,83 +382,28 @@ export default function AffiliateScreen() {
   }, [activeStore, saveAffiliateData, setRawFile]);
 
   // ─── FILTERED DATA ────────────────────────────────────
-  const filteredData = useMemo(() => {
-    let data = allMonths;
+  // filteredData uses mergedMonths (properly combined per-period in combined mode)
+  // for aggregation. filteredAllMonths uses allMonths (per-store entries) for the trend table.
+  const filteredMerged = useMemo(() => {
+    let data = mergedMonths;
     if (selectedPeriod !== "all") data = data.filter((d) => d.periodRaw === selectedPeriod);
     if (platformFilter !== "all") data = data.filter((d) => d.platform === platformFilter);
     return data;
-  }, [allMonths, selectedPeriod, platformFilter]);
+  }, [mergedMonths, selectedPeriod, platformFilter]);
+
+  const filteredData = filteredMerged; // alias for backwards compat in render code
 
   // ─── AGGREGATED METRICS ───────────────────────────────
   const agg = useMemo(() => {
     if (!filteredData.length && !supabaseCreators.length) return null;
 
-    // ── CREATOR SOURCE SELECTION ──
-    // supabaseCreators sekarang berisi kreator dari SEMUA toko saat combined mode
-    // (di-fetch secara paralel oleh useEffect di atas, masing-masing dengan _storeKey).
-    // Di single mode: supabaseCreators = kreator toko aktif saja (perilaku lama).
-    //
-    // Key kreator:
-    //   - Combined mode → "storeName::username" agar kreator yang sama di dua toko terpisah
-    //   - Single mode   → "username" (merge lintas periode, perilaku lama)
+    // Use the centralized helper to merge local + supabase creators
     const localCreators = filteredData.flatMap((d) =>
-      d.creators.map((c) => ({ ...c, _storeKey: (d as any)._storeName as string || '' }))
+      d.creators.map((c) => ({ ...c, _storeKey: d._storeName || '' }))
     );
-    type CreatorWithStore = AffiliateCreatorItem & { _months: number; _storeKey: string };
-    let creatorSource: (AffiliateCreatorItem & { _storeKey: string })[];
+    const creators = mergeCreatorSources(localCreators, supabaseCreators, combinedMode);
 
-    if (supabaseCreators.length > 0) {
-      // Supabase takes priority (sudah mencakup semua toko di combined mode)
-      const supabaseKeys = new Set(
-        supabaseCreators.map((c) => {
-          const sk = (c as any)._storeKey || '';
-          return combinedMode ? `${sk}::${c.creatorUsername}` : c.creatorUsername;
-        })
-      );
-      const localOnly = localCreators.filter((c) => {
-        const key = combinedMode ? `${c._storeKey}::${c.creatorUsername}` : c.creatorUsername;
-        return !supabaseKeys.has(key);
-      });
-      creatorSource = [
-        ...supabaseCreators.map((c) => ({ ...c, _storeKey: (c as any)._storeKey || '' })),
-        ...localOnly,
-      ];
-    } else {
-      creatorSource = localCreators;
-    }
-
-    const creatorMap: Record<string, CreatorWithStore> = {};
-    creatorSource.forEach((c) => {
-      const key = combinedMode
-        ? `${(c as any)._storeKey || ''}::${c.creatorUsername}`
-        : c.creatorUsername;
-
-      if (!creatorMap[key]) {
-        creatorMap[key] = { ...c, _months: 0 };
-      } else {
-        creatorMap[key].affiliateGMV += c.affiliateGMV;
-        creatorMap[key].affiliateOrders += c.affiliateOrders;
-        creatorMap[key].affiliateShoppableVideos += c.affiliateShoppableVideos;
-        creatorMap[key].affiliateLiveStreams += c.affiliateLiveStreams;
-        creatorMap[key].affiliateRefundedGMV += c.affiliateRefundedGMV;
-        creatorMap[key].estCommission += c.estCommission;
-        creatorMap[key].itemsSold += c.itemsSold;
-        creatorMap[key].affiliateLiveGMV += c.affiliateLiveGMV;
-        creatorMap[key].affiliateShoppableVideoGMV += c.affiliateShoppableVideoGMV;
-        creatorMap[key].affiliateProductCardGMV += c.affiliateProductCardGMV;
-        creatorMap[key].productImpressions += c.productImpressions || 0;
-      }
-      if (c.affiliateGMV > 0) creatorMap[key]._months++;
-    });
-
-    const creators = Object.values(creatorMap).map((c) => ({
-      ...c,
-      refundRate: c.affiliateGMV > 0 ? (c.affiliateRefundedGMV / c.affiliateGMV) * 100 : 0,
-      commissionRate: c.affiliateGMV > 0 ? (c.estCommission / c.affiliateGMV) * 100 : 0,
-      gmvPerVideo: c.affiliateShoppableVideos > 0 ? c.affiliateGMV / c.affiliateShoppableVideos : 0,
-      avgOrderValue: c.affiliateOrders > 0 ? c.affiliateGMV / c.affiliateOrders : 0,
-    }));
-
+    // Use mergedMonths for summary aggregation (avoids double-counting in combined mode)
     const totalGMV = filteredData.reduce((a, d) => a + d.summary.totalGMV, 0);
     const totalRefund = filteredData.reduce((a, d) => a + d.summary.totalRefundedGMV, 0);
     const totalOrders = filteredData.reduce((a, d) => a + d.summary.totalOrders, 0);
@@ -322,14 +417,10 @@ export default function AffiliateScreen() {
     const activeCreators = creators.filter((c) => c.affiliateGMV > 0).length;
 
     // ── TOTAL KREATOR ──
-    // Ambil dari summary yang di-save (lebih akurat, mencakup semua kreator termasuk yang GMV=0)
-    // Fallback ke creators.length jika summary tidak punya data
     const summaryTotalCreators = filteredData.reduce((a, d) => a + (d.summary.totalCreators || 0), 0);
     const totalCreators = Math.max(summaryTotalCreators, creators.length);
 
     // ── CREATOR ACTIVITY BREAKDOWN ──
-    // Kreator yang membuat konten (video atau live), terlepas dari apakah mereka punya GMV
-    // Prioritas: data dari summary yang di-save (lebih lengkap), fallback ke kalkulasi dari creators array
     const summaryActivePromoters = filteredData.reduce((a, d) => a + (d.summary.activePromoters || 0), 0);
     const summaryVideoCreators = filteredData.reduce((a, d) => a + (d.summary.videoCreators || 0), 0);
     const summaryLiveCreators = filteredData.reduce((a, d) => a + (d.summary.liveCreators || 0), 0);
@@ -377,16 +468,15 @@ export default function AffiliateScreen() {
     const paretoPercent = activeCreators > 0 ? (pareto80Count / activeCreators) * 100 : 0;
 
     // ── SEGMENTATION MATRIX ──
-    // Threshold: mean GMV (bukan median) + konten >= 1
     const activeList = creators.filter((c) => c.affiliateGMV > 0);
     const avgGMVThreshold = activeList.length > 0 ? activeList.reduce((a, c) => a + c.affiliateGMV, 0) / activeList.length : 0;
-    const contentThreshold = 1; // punya minimal 1 video atau 1 LIVE
+    const contentThreshold = 1;
 
     const segmentation = {
-      stars: [] as typeof creators,       // GMV tinggi + punya konten
-      efficient: [] as typeof creators,   // GMV tinggi + tanpa konten (product card only)
-      potential: [] as typeof creators,   // GMV rendah + punya konten
-      nurture: [] as typeof creators,     // GMV rendah + tanpa konten (dormant)
+      stars: [] as typeof creators,
+      efficient: [] as typeof creators,
+      potential: [] as typeof creators,
+      nurture: [] as typeof creators,
     };
     activeList.forEach((c) => {
       const contentCount = c.affiliateShoppableVideos + c.affiliateLiveStreams;
@@ -418,16 +508,13 @@ export default function AffiliateScreen() {
       avgAOV: totalOrders > 0 ? totalGMV / totalOrders : 0,
       creators,
       coreSummary: filteredData.find((d) => d.coreSummary)?.coreSummary || null,
-      // New metrics
       netGMV,
       gmvPerVideo, gmvPerLive, ordersPerVideo, ordersPerLive, gmvPerContent,
       pareto80Count, paretoPercent, top10GMV, top5GMV,
       segmentation, avgGMVThreshold, contentThreshold,
       netGMVAfterCommission, costPerOrder, revenuePerCreator,
       creatorsWithTarget, totalTargetGMV, totalTargetAchieved, targetAchievementRate,
-      // Impresi
       totalImpressions, totalCtr, gmvPerImpression,
-      // Creator activity breakdown
       activePromoters, videoCreators, liveCreators, bothVideoAndLive,
     };
   }, [filteredData, supabaseCreators, combinedMode]);
@@ -1442,8 +1529,8 @@ export default function AffiliateScreen() {
                                 return <span className={`font-bold ${achColor(pct)}`}>{fP(pct)}</span>;
                               };
                             return (
-                              <tr key={`${(t as any)._storeName || ''}-${t.id}`} className="border-b hover:bg-gray-50">
-                                {combinedMode && <td className="py-2.5 text-xs font-medium text-gray-500">{(t as any)._storeName}</td>}
+                              <tr key={`${t._storeName || ''}-${t.id}`} className="border-b hover:bg-gray-50">
+                                {combinedMode && <td className="py-2.5 text-xs font-medium text-gray-500">{t._storeName}</td>}
                                 <td className="py-2.5 font-medium">{t.period === "all" ? "Semua Periode" : t.period}{t.notes && <span className="text-xs text-gray-400 ml-1">({t.notes})</span>}</td>
                                   <td className="py-2.5 text-right">{t.targetGMV > 0 ? fRp(t.targetGMV) : <span className="text-gray-300">—</span>}</td>
                                   <td className="py-2.5 text-right font-bold text-blue-600">{fRp(actualGMV)}</td>
@@ -1535,7 +1622,7 @@ export default function AffiliateScreen() {
                       label: d.period?.replace(/\s*~.*/, "") || d.periodRaw.slice(0, 7),
                       gmv: d.summary.totalGMV,
                       orders: d.summary.totalOrders,
-                      store: (d as any)._storeName || "",
+                      store: d._storeName || "",
                     }));
                     const gmvLine = pts.map((p) => `${p.x},${p.yGMV}`).join(" ");
                     const ordLine = pts.map((p) => `${p.x},${p.yOrd}`).join(" ");
@@ -1589,12 +1676,16 @@ export default function AffiliateScreen() {
                       </thead>
                       <tbody>
                         {allMonths.map((d, i) => {
-                          const prev = allMonths[i - 1];
+                          // In combined mode, find previous entry for the SAME store
+                          // to avoid comparing across different stores.
+                          const prev = combinedMode
+                            ? allMonths.slice(0, i).reverse().find((p) => p._storeName === d._storeName && p.platform === d.platform)
+                            : allMonths[i - 1];
                           const growth = prev && prev.summary.totalGMV > 0
                             ? ((d.summary.totalGMV - prev.summary.totalGMV) / prev.summary.totalGMV) * 100
                             : null;
                           return (
-                            <tr key={`${(d as any)._storeName || ''}-${d.platform}-${d.periodRaw}`} className="border-b hover:bg-gray-50">
+                            <tr key={`${d._storeName}-${d.platform}-${d.periodRaw}`} className="border-b hover:bg-gray-50">
                               <td className="py-2.5 font-medium">{d.period}</td>
                               <td className="py-2.5">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -1621,7 +1712,7 @@ export default function AffiliateScreen() {
                               <td className="py-2.5 text-right text-purple-600">{fRp(d.summary.totalCommission)}</td>
                               <td className="py-2.5 text-center">
                                 {combinedMode ? (
-                                  <span className="text-xs text-gray-400">{(d as any)._storeName}</span>
+                                  <span className="text-xs text-gray-400">{d._storeName}</span>
                                 ) : (
                                   <button
                                     onClick={() => activeStore && deleteAffiliateData(activeStore.id, d.periodRaw, d.platform)}
@@ -1707,23 +1798,34 @@ export default function AffiliateScreen() {
 
               {/* ═══ PER-STORE COMPARISON (Combined Mode) ═══ */}
               {combinedMode && stores.length >= 2 && (() => {
+                // Use allMonths (per-store entries) filtered by the active filters
+                // to calculate per-store metrics that respect period/platform selection.
                 const storeMetrics = stores.map((s) => {
-                  const data = s.affiliateData || [];
-                  const gmv = data.reduce((a, d) => a + d.summary.totalGMV, 0);
-                  const orders = data.reduce((a, d) => a + d.summary.totalOrders, 0);
-                  const refund = data.reduce((a, d) => a + d.summary.totalRefundedGMV, 0);
-                  const videos = data.reduce((a, d) => a + d.summary.totalVideos, 0);
-                  const live = data.reduce((a, d) => a + d.summary.totalLive, 0);
-                  const commission = data.reduce((a, d) => a + d.summary.totalCommission, 0);
-                  const activeCreators = new Set(data.flatMap((d) => d.creators.filter((c) => c.affiliateGMV > 0).map((c) => c.creatorUsername))).size;
-                  return { name: s.name, color: s.color, periods: data.length, gmv, orders, refund, videos, live, commission, activeCreators, refundRate: gmv > 0 ? (refund / gmv) * 100 : 0 };
+                  const storeData = allMonths.filter((d) => {
+                    if (d._storeName !== s.name) return false;
+                    if (selectedPeriod !== "all" && d.periodRaw !== selectedPeriod) return false;
+                    if (platformFilter !== "all" && d.platform !== platformFilter) return false;
+                    return true;
+                  });
+                  const gmv = storeData.reduce((a, d) => a + d.summary.totalGMV, 0);
+                  const orders = storeData.reduce((a, d) => a + d.summary.totalOrders, 0);
+                  const refund = storeData.reduce((a, d) => a + d.summary.totalRefundedGMV, 0);
+                  const videos = storeData.reduce((a, d) => a + d.summary.totalVideos, 0);
+                  const live = storeData.reduce((a, d) => a + d.summary.totalLive, 0);
+                  const commission = storeData.reduce((a, d) => a + d.summary.totalCommission, 0);
+                  // Use summary-based active creator count (works even after page refresh
+                  // when creators array is stripped from localStorage)
+                  const activeCreators = storeData.reduce((a, d) => a + (d.summary.activeCreators || 0), 0);
+                  return { name: s.name, color: s.color, periods: storeData.length, gmv, orders, refund, videos, live, commission, activeCreators, refundRate: gmv > 0 ? (refund / gmv) * 100 : 0 };
                 });
+                const totalCombinedGMV = storeMetrics.reduce((a, s) => a + s.gmv, 0);
                 const maxGMV = Math.max(...storeMetrics.map((s) => s.gmv), 1);
                 return (
                   <div className="bg-white rounded-xl border p-5">
                     <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
                       <ShoppingBag className="w-4 h-4 text-purple-600" />
                       Perbandingan Per Toko
+                      {selectedPeriod !== "all" && <span className="text-xs font-normal text-gray-400 ml-1">(filter aktif)</span>}
                     </h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -1757,7 +1859,7 @@ export default function AffiliateScreen() {
                                 <div className="bg-gray-100 rounded-full h-2.5 overflow-hidden">
                                   <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${(s.gmv / maxGMV) * 100}%` }} />
                                 </div>
-                                <p className="text-xs text-gray-500 mt-0.5">{fP(agg.totalGMV > 0 ? (s.gmv / agg.totalGMV) * 100 : 0)}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{fP(totalCombinedGMV > 0 ? (s.gmv / totalCombinedGMV) * 100 : 0)}</p>
                               </td>
                             </tr>
                           ))}
@@ -2117,7 +2219,7 @@ export default function AffiliateScreen() {
           {/* COMPARISON VIEW                             */}
           {/* ═══════════════════════════════════════════ */}
           {view === "comparison" && (
-            <ComparisonView data={allMonths} />
+            <ComparisonView data={mergedMonths} />
           )}
 
           {/* ═══════════════════════════════════════════ */}
@@ -2434,7 +2536,7 @@ function EmptyAffiliate({ onUpload }: {
   );
 }
 
-function ComparisonView({ data }: { data: AffiliateMonthData[] }) {
+function ComparisonView({ data }: { data: AffiliateMonthDataWithStore[] }) {
   const sorted = [...data].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
 
   // Build unique period+platform options
@@ -2711,7 +2813,7 @@ function TargetFormModal({ initial, onSave, onClose }: {
 
 function CreatorDrillDownModal({ username, allMonths, supabaseCreators, onClose }: {
   username: string;
-  allMonths: AffiliateMonthData[];
+  allMonths: AffiliateMonthDataWithStore[];
   supabaseCreators?: AffiliateCreatorItem[];
   onClose: () => void;
 }) {
@@ -2738,7 +2840,7 @@ function CreatorDrillDownModal({ username, allMonths, supabaseCreators, onClose 
     return {
       period: m.period || m.periodRaw,
       platform: m.platform || m.source,
-      store: (m as any)._storeName || "",
+      store: m._storeName || "",
       gmv: c?.affiliateGMV || 0,
       netGMV: (c?.affiliateGMV || 0) - (c?.affiliateRefundedGMV || 0),
       orders: c?.affiliateOrders || 0,
