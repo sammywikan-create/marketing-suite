@@ -676,34 +676,64 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   return (
     <div className="space-y-6">
 
-      {/* ═══ ZONA 1: HEADER + PERIOD SELECTOR ═══ */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{greeting}, Kak 👋</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {dateStr} — {activeStores.map((s) => s.name).join(" & ")}
-          </p>
-        </div>
-        {allPeriods.length > 0 && (
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-xs text-gray-400">Periode:</span>
-            <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-wrap">
-              {allPeriods.map((period) => (
-                <button
-                  key={period}
-                  onClick={() => setSelectedPeriod(period)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                    activePeriod === period
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {formatPeriod(period)}
-                </button>
-              ))}
+      {/* ═══ ZONA 1: PREMIUM WELCOME CARD ═══ */}
+      <div className="welcome-card rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+        {/* Decorative elements */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-xl backdrop-blur-sm">👋</div>
+              <div>
+                <h1 className="text-xl font-bold leading-tight">{greeting}, Kak!</h1>
+                <p className="text-blue-200/70 text-xs mt-0.5">{dateStr}</p>
+              </div>
+            </div>
+            {/* Today's highlights */}
+            <div className="flex flex-wrap gap-2 mt-3">
+              {agg.totalGMV > 0 && (
+                <span className="text-[11px] bg-white/10 backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium">
+                  💰 GMV {fRp(agg.totalGMV)}
+                </span>
+              )}
+              {agg.activePromoters > 0 && (
+                <span className="text-[11px] bg-white/10 backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium">
+                  👥 {fN(agg.activePromoters)} kreator aktif
+                </span>
+              )}
+              {momGrowth !== null && (
+                <span className={`text-[11px] backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium ${momGrowth >= 0 ? 'bg-green-400/20' : 'bg-red-400/20'}`}>
+                  {momGrowth >= 0 ? '📈' : '📉'} {momGrowth >= 0 ? '+' : ''}{momGrowth.toFixed(1)}% MoM
+                </span>
+              )}
+              <span className="text-[11px] bg-white/10 backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium">
+                🏪 {activeStores.map((s) => s.name).join(" & ")}
+              </span>
             </div>
           </div>
-        )}
+          {allPeriods.length > 0 && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-xs text-blue-200/60">Periode:</span>
+              <div className="flex gap-1 bg-white/10 backdrop-blur-sm rounded-xl p-1 flex-wrap">
+                {allPeriods.map((period) => (
+                  <button
+                    key={period}
+                    onClick={() => setSelectedPeriod(period)}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                      activePeriod === period
+                        ? "bg-white text-indigo-700 shadow-sm"
+                        : "text-white/70 hover:text-white hover:bg-white/10"
+                    }`}
+                  >
+                    {formatPeriod(period)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ═══ ZONA 2: ALERT BANNERS ═══ */}

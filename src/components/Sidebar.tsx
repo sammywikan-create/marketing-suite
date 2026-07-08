@@ -143,8 +143,11 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
       <div className="flex items-center gap-2 px-4 py-4 border-b border-white/10">
         {(!collapsed || isMobile) && (
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-2xl">📊</span>
-            <span className="font-bold text-lg whitespace-nowrap">Marketing Suite</span>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-lg shadow-lg shadow-blue-500/20">📊</div>
+            <div className="flex flex-col">
+              <span className="font-bold text-sm whitespace-nowrap leading-tight">Marketing Suite</span>
+              <span className="text-[9px] text-white/40 font-medium tracking-wider uppercase">FreshVision Analytics</span>
+            </div>
           </div>
         )}
         {collapsed && !isMobile && <span className="text-2xl mx-auto">📊</span>}
@@ -189,10 +192,10 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
                 <button
                   key={tab.key}
                   onClick={() => onSelect(tab.key)}
-                  className={`w-full flex items-center gap-3 px-4 py-2 text-[13px] transition-colors ${
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-[13px] transition-all duration-200 ${
                     active === tab.key
-                      ? "bg-white/20 text-white font-semibold border-r-3 border-white"
-                      : "text-white/70 hover:bg-sidebar-hover hover:text-white"
+                      ? "sidebar-active-glow text-white font-semibold"
+                      : "text-white/60 hover:bg-white/8 hover:text-white"
                   } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
                   title={tab.label}
                   aria-label={tab.label}
@@ -217,7 +220,7 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300 bg-sidebar text-white hidden md:flex flex-col h-screen sticky top-0 shrink-0`}>
+      <aside className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300 sidebar-premium text-white hidden md:flex flex-col h-screen sticky top-0 shrink-0`}>
         {sidebarContent(false)}
       </aside>
 
@@ -225,7 +228,7 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
       {mobileOpen && (
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onMobileClose} />
-          <aside className="fixed inset-y-0 left-0 w-72 bg-sidebar text-white flex flex-col z-50 md:hidden animate-slide-in">
+          <aside className="fixed inset-y-0 left-0 w-72 sidebar-premium text-white flex flex-col z-50 md:hidden animate-slide-in">
             {sidebarContent(true)}
           </aside>
         </>

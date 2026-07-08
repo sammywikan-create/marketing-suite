@@ -105,6 +105,7 @@ export default function Home() {
   const supabaseInitStatus = useStoreManager((s) => s._supabaseInitStatus);
   const activeStore = getActiveStore();
   const [migrationBanner, setMigrationBanner] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
 
   // Wait for Zustand persist hydration + read initial hash
   useEffect(() => {
@@ -230,10 +231,25 @@ export default function Home() {
 
   if (!hydrated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f1647] via-[#1a237e] to-[#283593]">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Memuat...</p>
+          <div className="animate-splash-logo mb-6">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-4xl shadow-2xl shadow-blue-500/30 mx-auto">
+              📊
+            </div>
+          </div>
+          <h1 className="animate-splash-text text-white text-xl font-bold tracking-[0.15em] uppercase mb-2">Marketing Suite</h1>
+          <p className="animate-splash-text text-blue-300/60 text-xs font-medium tracking-widest uppercase" style={{animationDelay: '0.5s'}}>FreshVision Analytics Platform</p>
+          <div className="mt-8 w-48 mx-auto">
+            <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full animate-splash-bar" />
+            </div>
+            <div className="flex justify-center gap-1.5 mt-4">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 splash-dot-1" />
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 splash-dot-2" />
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 splash-dot-3" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -247,10 +263,20 @@ export default function Home() {
   // local stores render immediately (the sync merges in the background).
   if (stores.length === 0 && supabaseInitStatus === 'pending') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f1647] via-[#1a237e] to-[#283593]">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Menyinkronkan data toko...</p>
+          <div className="animate-splash-logo mb-6">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-4xl shadow-2xl shadow-blue-500/30 mx-auto">
+              📊
+            </div>
+          </div>
+          <h1 className="animate-splash-text text-white text-xl font-bold tracking-[0.15em] uppercase mb-2">Marketing Suite</h1>
+          <p className="animate-splash-text text-blue-300/60 text-xs font-medium" style={{animationDelay: '0.5s'}}>Menyinkronkan data toko...</p>
+          <div className="mt-8 w-48 mx-auto">
+            <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full animate-splash-bar" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -304,11 +330,11 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className={`flex min-h-screen ${presentationMode ? 'presentation-mode' : ''}`}>
       <Sidebar active={activeTab} onSelect={handleTabSelect} mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} userRole={userRole} />
       <main className="flex-1 overflow-y-auto min-w-0">
-        {/* Store selector header */}
-        <div className="bg-white dark:bg-gray-900 border-b border-border dark:border-gray-700 px-4 md:px-6 py-2.5 flex items-center justify-between gap-2 md:gap-4">
+        {/* Premium header bar */}
+        <div className="header-bar border-b border-border dark:border-gray-700 px-4 md:px-6 py-2.5 flex items-center justify-between gap-2 md:gap-4 sticky top-0 z-30">
           <div className="flex items-center gap-2 md:gap-3">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Open menu">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -331,6 +357,18 @@ export default function Home() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               Cari...
               <kbd className="ml-1 px-1 py-0.5 text-[10px] font-mono bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-600">⌘K</kbd>
+            </button>
+            {/* Presentation Mode Toggle */}
+            <button
+              onClick={() => setPresentationMode(!presentationMode)}
+              className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                presentationMode
+                  ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-500/20 presentation-exit'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              title={presentationMode ? 'Keluar Presentation Mode' : 'Presentation Mode — Fullscreen tanpa sidebar'}
+            >
+              {presentationMode ? '✕ Exit' : '🖥️ Present'}
             </button>
             <button onClick={toggleDark} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors" aria-label="Toggle dark mode" title={dark ? "Light mode" : "Dark mode"}>
               {dark ? (
