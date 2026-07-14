@@ -33,6 +33,7 @@ import AIInsightsCard from "@/components/AIInsightsCard";
 import AlertPanel from "@/components/alerts/AlertPanel";
 import ReportButton from "@/components/reports/ReportButton";
 import TelegramQuickActions from "@/components/telegram/TelegramQuickActions";
+import ActionCenter from "@/components/laporan-harian/ActionCenter";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -1089,9 +1090,12 @@ export default function LaporanHarianScreen() {
 
   // ─── UI state ───
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [activeTab, setActiveTab] = useState<string>("briefing");
+  const [analysisView, setAnalysisView] = useState<string>("insights");
   const [showSettings, setShowSettings] = useState(false);
   const [noteCount, setNoteCount] = useState(0);
+  const [actionCount, setActionCount] = useState(0);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
   // ─── Determine active data & period (needed for target lookup) ───
   const isLive = selectedPeriod === "live";
@@ -1288,7 +1292,29 @@ export default function LaporanHarianScreen() {
 
   if (isLoading && isLive) return <LoadingState />;
   if (isLoadingSaved) return <LoadingState />;
-  if (isLive && (error || !liveData?.summary)) return <ErrorState error={error} data={liveData} onRetry={() => mutate()} />;
+  if (isLive && (error || !liveData?.summary)) {
+    return (
+      <div className="dashboard-shell">
+        <MonthHeader
+          selectedPeriod={selectedPeriod}
+          savedPeriods={savedPeriods}
+          onPeriodChange={handlePeriodChange}
+          onImport={() => setShowImportModal(true)}
+          onSave={handleManualSave}
+          isSaving={isSaving}
+          isLive={isLive}
+          onDelete={handleDeletePeriod}
+        />
+        <ErrorState error={error} data={liveData} onRetry={() => mutate()} />
+        <div className="dashboard-panel p-5 text-center sm:p-6">
+          <p className="text-sm font-bold text-foreground">Tetap lanjutkan dengan snapshot atau Excel</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">Pilih periode tersimpan di atas atau import data baru. Gangguan sumber live tidak lagi memblokir laporan historis dan action plan.</p>
+          <button type="button" onClick={() => setShowImportModal(true)} className="dashboard-action mt-4 bg-primary px-4 text-primary-foreground"><Upload size={14} /> Import Excel</button>
+        </div>
+        {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
+      </div>
+    );
+  }
   if (!isLive && !savedData?.summary) {
     return (
       <div className="space-y-5 pb-10">
@@ -1328,16 +1354,77 @@ export default function LaporanHarianScreen() {
     else if (type === "ppt") generatePpt(exportData);
     else exportLaporanHarianToExcel(data, target, health, activePeriod);
   };
+  const remainingDays = Math.max(0, daysInCurrentPeriod - s.hari);
+  const projectedRevenue = s.avg_omzet_harian * daysInCurrentPeriod;
+  const targetProgress = target > 0 ? (s.total_omzet / target) * 100 : 0;
+  const requiredDaily = remainingDays > 0 ? Math.max(0, target - s.total_omzet) / remainingDays : 0;
+  const dataCompleteness = Math.min(100, Math.round((harian.length / Math.max(1, s.hari)) * 100));
+  const briefingStatus = targetProgress >= (s.hari / daysInCurrentPeriod) * 100
+    ? "On track"
+    : projectedRevenue >= target * 0.85
+      ? "At risk"
+      : "Off track";
+  const actionSuggestions = [
+    ...(projectedRevenue < target ? [{
+      title: "Tutup gap target omzet",
+      description: `Proyeksi akhir bulan masih ${fR(Math.max(0, target - projectedRevenue))} di bawah target. Susun intervensi channel dan target harian baru.`,
+      priority: "high" as const,
+      metric: `Butuh ${fR(requiredDaily)}/hari`,
+    }] : []),
+    ...(s.rata_cac > 60 ? [{
+      title: "Turunkan CAC total",
+      description: "Audit campaign dan channel dengan biaya akuisisi tertinggi, lalu hentikan pengeluaran yang tidak efisien.",
+      priority: "high" as const,
+      metric: `CAC saat ini ${s.rata_cac.toFixed(1)}%`,
+    }] : []),
+    ...(s.roas < 3 ? [{
+      title: "Pulihkan efisiensi iklan",
+      description: "Evaluasi creative, audience, dan alokasi budget untuk menaikkan return dari belanja iklan.",
+      priority: "medium" as const,
+      metric: `ROAS saat ini ${s.roas.toFixed(2)}x`,
+    }] : []),
+    ...(highlights.anomalies?.length ? [{
+      title: "Investigasi anomali omzet",
+      description: `Terdapat ${highlights.anomalies.length} anomali pada periode ini. Dokumentasikan penyebab dan dampaknya.`,
+      priority: "medium" as const,
+      metric: `${highlights.anomalies.length} hari anomali`,
+    }] : []),
+  ].slice(0, 3);
+
   const tabs = [
-    { key: "overview", label: "Overview", icon: <BarChart3 size={14} /> },
-    { key: "insights", label: "Insights", icon: <Eye size={14} /> },
-    { key: "forecast", label: "Forecast", icon: <Rocket size={14} /> },
-    { key: "cost", label: "Cost Analysis", icon: <DollarSign size={14} /> },
-    { key: "channels", label: "Per Channel", icon: <Zap size={14} /> },
-    { key: "weekly", label: "Evaluasi Mingguan", icon: <Target size={14} /> },
-    { key: "scorecard", label: "Scorecard", icon: <Trophy size={14} /> },
-    { key: "notes", label: "Notes", icon: <StickyNote size={14} />, badge: noteCount },
+    { key: "briefing", label: "Briefing Hari Ini", icon: <Activity size={14} /> },
+    { key: "analysis", label: "Analisis Kinerja", icon: <BarChart3 size={14} /> },
+    { key: "actions", label: "Action Center", icon: <CheckCircle2 size={14} />, badge: actionCount },
+    { key: "journal", label: "Jurnal & Bagikan", icon: <StickyNote size={14} />, badge: noteCount },
   ];
+  const analysisTabs = [
+    { key: "insights", label: "Tren & Anomali" },
+    { key: "forecast", label: "Forecast" },
+    { key: "cost", label: "Biaya" },
+    { key: "channels", label: "Channel" },
+    { key: "weekly", label: "Mingguan" },
+    { key: "scorecard", label: "Scorecard" },
+  ];
+
+  const handleCopyBriefing = async () => {
+    const activeActionsText = actionCount > 0 ? `${actionCount} tindakan aktif perlu ditindaklanjuti.` : "Belum ada tindakan aktif.";
+    const text = [
+      `BRIEFING HARIAN — ${formatPeriod(activePeriod)}`,
+      `Status: ${briefingStatus} | Health Score: ${health.score}/100`,
+      `Omzet: ${fR(s.total_omzet)} (${targetProgress.toFixed(1)}% dari target ${fR(target)})`,
+      `Proyeksi: ${fR(projectedRevenue)} | Kebutuhan: ${fR(requiredDaily)}/hari`,
+      `Closing: ${fN(s.total_closing)} | AOV: ${fR(s.nilai_per_txn)} | CAC: ${s.rata_cac.toFixed(1)}% | ROAS: ${s.roas.toFixed(2)}x`,
+      `Risiko utama: ${actionSuggestions.map((item) => item.title).join("; ") || "Tidak ada risiko kritis terdeteksi"}`,
+      `Action plan: ${activeActionsText}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMsg("Briefing berhasil disalin.");
+    } catch {
+      setCopyMsg("Gagal menyalin briefing.");
+    }
+    window.setTimeout(() => setCopyMsg(null), 2500);
+  };
 
   return (
   <div className="dashboard-shell">
@@ -1416,10 +1503,7 @@ export default function LaporanHarianScreen() {
       {/* ═══ IMPORT MODAL ═══ */}
       {showImportModal && <ImportModal importPeriod={importPeriod} setImportPeriod={setImportPeriod} onImport={handleImport} onClose={() => setShowImportModal(false)} isImporting={isImporting} importMsg={importMsg} fileRef={fileRef} />}
 
-      {/* ═══ EXECUTIVE SUMMARY ═══ */}
-      <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} harian={harian} />
-
-      {/* ═══ TAB BAR ═══ */}
+      {/* ═══ WORKSPACE NAVIGATION ═══ */}
       <nav className="sticky top-0 z-10 rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur" aria-label="Bagian laporan harian">
         <div className="flex gap-1 overflow-x-auto scrollbar-hide">
           {tabs.map((t) => (
@@ -1435,57 +1519,67 @@ export default function LaporanHarianScreen() {
         {/* Scroll gradient indicator for mobile */}
       </nav>
 
-      {/* ═══ TAB CONTENT ═══ */}
+      {/* ═══ WORKSPACE CONTENT ═══ */}
       <div className="animate-fade-slide-up" key={activeTab}>
-      {activeTab === "overview" && (
-        <OverviewTab
-          s={s}
-          target={target}
-          harian={harian}
-          evaluasi={evaluasi_per_brand}
-          snapshot={data}
-          prevSnapshot={prevMonthData}
-          periodKey={activePeriod}
-          daysInPeriod={daysInCurrentPeriod}
-        />
+      {activeTab === "briefing" && (
+        <div className="flex flex-col gap-5">
+          <section className="dashboard-panel overflow-hidden" aria-labelledby="daily-briefing-title">
+            <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-2xl">
+                <p className="dashboard-eyebrow">Daily business briefing</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <h2 id="daily-briefing-title" className="text-2xl font-bold tracking-tight text-foreground">{briefingStatus}</h2>
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold ${briefingStatus === "On track" ? "bg-green-50 text-green-700" : briefingStatus === "At risk" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>{health.score}/100 health</span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{briefingStatus === "On track" ? "Pace omzet berada pada jalur target. Jaga efisiensi dan replikasi driver terbaik." : briefingStatus === "At risk" ? "Target masih mungkin dicapai, tetapi membutuhkan koreksi pace dan fokus pada channel produktif." : "Proyeksi berada jauh di bawah target. Prioritaskan intervensi dan tetapkan PIC hari ini."}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:min-w-[430px]">
+                <div className="rounded-xl border border-border bg-background p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">Kelengkapan</p><p className="mt-1 text-lg font-bold text-foreground">{dataCompleteness}%</p><p className="text-[10px] text-muted">{harian.length} baris data</p></div>
+                <div className="rounded-xl border border-border bg-background p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">Hari tersisa</p><p className="mt-1 text-lg font-bold text-foreground">{remainingDays}</p><p className="text-[10px] text-muted">dari {daysInCurrentPeriod} hari</p></div>
+                <div className="col-span-2 rounded-xl border border-border bg-background p-3 sm:col-span-1"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">Sumber</p><p className="mt-1 text-sm font-bold text-foreground">{dataMode === "live" ? "Live sheet" : dataMode === "imported" ? "Excel import" : "Snapshot"}</p><p className="text-[10px] text-muted">{lastUpdate ? lastUpdate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "tersimpan"}</p></div>
+              </div>
+            </div>
+            <div className="grid border-t border-border sm:grid-cols-3">
+              <div className="p-4 sm:p-5"><p className="text-xs font-semibold text-muted">Proyeksi akhir bulan</p><p className="mt-1 text-xl font-bold tabular-nums text-foreground">{fR(projectedRevenue)}</p><p className={`mt-1 text-xs font-semibold ${projectedRevenue >= target ? "text-green-700" : "text-red-700"}`}>{projectedRevenue >= target ? "Di atas target" : `Gap ${fR(target - projectedRevenue)}`}</p></div>
+              <div className="border-y border-border p-4 sm:border-x sm:border-y-0 sm:p-5"><p className="text-xs font-semibold text-muted">Kebutuhan omzet harian</p><p className="mt-1 text-xl font-bold tabular-nums text-foreground">{fR(requiredDaily)}</p><p className="mt-1 text-xs text-muted">Avg aktual {fR(s.avg_omzet_harian)}</p></div>
+              <div className="p-4 sm:p-5"><p className="text-xs font-semibold text-muted">Progress target</p><p className="mt-1 text-xl font-bold tabular-nums text-foreground">{targetProgress.toFixed(1)}%</p><div className="mt-2 h-2 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, targetProgress)}%` }} /></div></div>
+            </div>
+          </section>
+
+          <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} harian={harian} />
+
+          {actionSuggestions.length > 0 && (
+            <section className="dashboard-panel p-5 sm:p-6" aria-labelledby="briefing-priorities-title">
+              <div className="flex items-center justify-between gap-3"><div><p className="dashboard-eyebrow">Prioritas keputusan</p><h3 id="briefing-priorities-title" className="mt-1 text-base font-bold text-foreground">Yang perlu dilakukan berikutnya</h3></div><button type="button" onClick={() => setActiveTab("actions")} className="dashboard-action border border-border px-3 text-foreground">Buka Action Center</button></div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">{actionSuggestions.map((item, index) => <article key={item.title} className="rounded-xl border border-border bg-background p-4"><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-primary">Prioritas {index + 1}</span><span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold uppercase text-muted">{item.priority}</span></div><h4 className="mt-2 text-sm font-bold text-foreground">{item.title}</h4><p className="mt-1 text-xs leading-relaxed text-muted">{item.description}</p><p className="mt-3 text-xs font-semibold text-foreground">{item.metric}</p></article>)}</div>
+            </section>
+          )}
+          <OverviewTab s={s} target={target} harian={harian} evaluasi={evaluasi_per_brand} snapshot={data} prevSnapshot={prevMonthData} periodKey={activePeriod} daysInPeriod={daysInCurrentPeriod} />
+        </div>
       )}
-      {activeTab === "insights" && (
-        <InsightsTab
-          s={s}
-          target={target}
-          harian={harian}
-          channels={channels}
-          channelData={channel_data}
-          daysInPeriod={daysInCurrentPeriod}
-          activePeriod={activePeriod}
-        />
+
+      {activeTab === "analysis" && (
+        <div className="flex flex-col gap-4">
+          <div className="dashboard-panel p-2"><div className="flex gap-1 overflow-x-auto" aria-label="Jenis analisis">{analysisTabs.map((tab) => <button key={tab.key} type="button" onClick={() => setAnalysisView(tab.key)} className={`dashboard-action whitespace-nowrap px-3 ${analysisView === tab.key ? "bg-primary text-primary-foreground" : "text-muted hover:bg-background hover:text-foreground"}`}>{tab.label}</button>)}</div></div>
+          {analysisView === "insights" && <InsightsTab s={s} target={target} harian={harian} channels={channels} channelData={channel_data} daysInPeriod={daysInCurrentPeriod} activePeriod={activePeriod} />}
+          {analysisView === "forecast" && <ForecastTab s={s} target={target} harian={harian} daysInPeriod={daysInCurrentPeriod} />}
+          {analysisView === "cost" && <CostTab s={s} harian={harian} />}
+          {analysisView === "channels" && <ChannelsTab channels={channels} channelData={channel_data} />}
+          {analysisView === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} daysInPeriod={daysInCurrentPeriod} />}
+          {analysisView === "scorecard" && <ScorecardTab s={s} target={target} harian={harian} channels={channels} daysInPeriod={daysInCurrentPeriod} prevMonthData={prevMonthData} />}
+        </div>
       )}
-      {activeTab === "forecast" && (
-        <ForecastTab
-          s={s}
-          target={target}
-          harian={harian}
-          daysInPeriod={daysInCurrentPeriod}
-        />
-      )}
-      {activeTab === "cost" && <CostTab s={s} harian={harian} />}
-      {activeTab === "channels" && <ChannelsTab channels={channels} channelData={channel_data} />}
-      {activeTab === "weekly" && <WeeklyTab weekly={weekly} s={s} target={target} harian={harian} daysInPeriod={daysInCurrentPeriod} />}
-      {activeTab === "scorecard" && (
-        <ScorecardTab
-          s={s}
-          target={target}
-          harian={harian}
-          channels={channels}
-          daysInPeriod={daysInCurrentPeriod}
-          prevMonthData={prevMonthData}
-        />
-      )}
-      {activeTab === "notes" && (
-        <DailyNotesJournal
-          harian={harian}
-          activePeriod={activePeriod}
-        />
+
+      {activeTab === "actions" && <ActionCenter period={activePeriod} suggestions={actionSuggestions} onCountChange={setActionCount} />}
+
+      {activeTab === "journal" && (
+        <div className="flex flex-col gap-5">
+          <section className="dashboard-panel p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="dashboard-eyebrow">Stakeholder output</p><h2 className="mt-1 text-lg font-bold text-foreground">Bagikan briefing yang konsisten</h2><p className="mt-1 text-sm text-muted">Salin ringkasan keputusan atau unduh laporan lengkap untuk stakeholder.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={handleCopyBriefing} className="dashboard-action bg-primary px-4 text-primary-foreground">Salin briefing</button><button type="button" onClick={() => handleExport("pdf")} className="dashboard-action border border-border px-3 text-foreground">PDF</button><button type="button" onClick={() => handleExport("ppt")} className="dashboard-action border border-border px-3 text-foreground">PPT</button><button type="button" onClick={() => handleExport("excel")} className="dashboard-action border border-border px-3 text-foreground">Excel</button></div></div>
+            {copyMsg && <p className="mt-3 text-xs font-semibold text-primary" role="status">{copyMsg}</p>}
+          </section>
+          <DailyNotesJournal harian={harian} activePeriod={activePeriod} />
+        </div>
       )}
       </div>
     </div>
