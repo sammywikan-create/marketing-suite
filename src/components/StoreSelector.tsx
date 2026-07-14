@@ -30,8 +30,9 @@ export default function StoreSelector({ onNavigate }: Props) {
       <div ref={ref} className="relative">
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 px-4 py-2 bg-white border-2 rounded-xl hover:shadow-md transition-all min-w-[180px]"
-          style={{ borderColor: activeStore?.color || "#E5E7EB" }}
+          className="flex min-h-10 min-w-44 items-center gap-2 rounded-xl border border-border bg-card px-3 text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+          aria-expanded={open}
+          aria-haspopup="menu"
         >
           <span className="text-lg">{activeStore?.avatar || "🛒"}</span>
           <span className="font-semibold text-gray-800 text-sm truncate flex-1 text-left">

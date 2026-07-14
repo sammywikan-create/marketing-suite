@@ -24,7 +24,7 @@ const tabGroups: TabGroup[] = [
   {
     title: "Home",
     items: [
-      { key: "home", label: "🏠 Executive Summary", icon: <LayoutDashboard size={18} /> },
+      { key: "home", label: "Executive Summary", icon: <LayoutDashboard size={18} /> },
     ],
   },
   {
@@ -51,51 +51,51 @@ const tabGroups: TabGroup[] = [
       { key: "gmv-upload", label: "Upload Data", icon: <Upload size={18} /> },
       { key: "gmv-dashboard", label: "GMV Dashboard", icon: <PieChart size={18} /> },
       { key: "gmv-overview", label: "Overview Bisnis", icon: <BarChart3 size={18} /> },
-      { key: "video-performance", label: "📹 Video Performance", icon: <Video size={18} /> },
-      { key: "affiliate", label: "🤝 Affiliate Manager", icon: <Users size={18} /> },
-      { key: "live-analytics", label: "🔴 Live Analytics", icon: <BarChart3 size={18} /> },
+      { key: "video-performance", label: "Video Performance", icon: <Video size={18} /> },
+      { key: "affiliate", label: "Affiliate Manager", icon: <Users size={18} /> },
+      { key: "live-analytics", label: "Live Analytics", icon: <BarChart3 size={18} /> },
       { key: "gmv-sku", label: "SKU Analyzer", icon: <Package size={18} /> },
       { key: "gmv-creative", label: "Creative Optimizer", icon: <Sparkles size={18} /> },
       { key: "gmv-benchmark", label: "Top Seller Metrics", icon: <Award size={18} /> },
       { key: "gmv-checklist", label: "Checklist Evaluasi", icon: <ClipboardCheck size={18} /> },
       { key: "gmv-optimasi", label: "Optimasi Kreatif", icon: <Wrench size={18} /> },
       { key: "gmv-kalkulator", label: "ROI Calculator", icon: <Calculator size={18} /> },
-      { key: "product-cards", label: "📦 Kartu Produk", icon: <Package size={18} /> },
+      { key: "product-cards", label: "Kartu Produk", icon: <Package size={18} /> },
       { key: "sku-tracking", label: "SKU Tracking", icon: <ScanBarcode size={18} /> },
     ],
   },
   {
     title: "GMV Maximizer",
     items: [
-      { key: "gmax-overview", label: "🚀 GMAX Overview", icon: <DollarSign size={18} /> },
+      { key: "gmax-overview", label: "GMAX Overview", icon: <DollarSign size={18} /> },
       { key: "gmax-evaluasi", label: "GMAX Evaluasi", icon: <ClipboardList size={16} /> },
     ],
   },
   {
     title: "Tim",
     items: [
-      { key: "staff-tracker", label: "👥 Staff Tracker", icon: <Users size={18} /> },
+      { key: "staff-tracker", label: "Staff Tracker", icon: <Users size={18} /> },
     ],
   },
   {
     title: "OKR",
     items: [
-      { key: "okr", label: "🎯 OKR Framework", icon: <Target size={18} /> },
+      { key: "okr", label: "OKR Framework", icon: <Target size={18} /> },
     ],
   },
   {
     title: "Laporan",
     items: [
-      { key: "report-builder", label: "📄 Report Builder", icon: <FileText size={18} /> },
-      { key: "laporan-harian", label: "📊 Laporan Harian", icon: <BarChart3 size={18} /> },
+      { key: "report-builder", label: "Report Builder", icon: <FileText size={18} /> },
+      { key: "laporan-harian", label: "Laporan Harian", icon: <BarChart3 size={18} /> },
     ],
   },
   {
     title: "Multi-Toko",
     items: [
-      { key: "compare-gabungan", label: "⚖️ Compare & Gabungan", icon: <GitCompareArrows size={18} /> },
-      { key: "store-compare", label: "📊 Bandingkan Toko", icon: <GitCompareArrows size={18} /> },
-      { key: "store-settings", label: "⚙️ Kelola Toko", icon: <Settings size={18} /> },
+      { key: "compare-gabungan", label: "Compare & Gabungan", icon: <GitCompareArrows size={18} /> },
+      { key: "store-compare", label: "Bandingkan Toko", icon: <GitCompareArrows size={18} /> },
+      { key: "store-settings", label: "Kelola Toko", icon: <Settings size={18} /> },
     ],
   },
 ];
@@ -140,17 +140,19 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
 
   const sidebarContent = (isMobile: boolean) => (
     <>
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-white/10">
+      <div className="flex min-h-16 items-center gap-2 border-b border-white/10 px-4">
         {(!collapsed || isMobile) && (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-lg shadow-lg shadow-blue-500/20">📊</div>
-            <div className="flex flex-col">
-              <span className="font-bold text-sm whitespace-nowrap leading-tight">Marketing Suite</span>
-              <span className="text-[9px] text-white/40 font-medium tracking-wider uppercase">FreshVision Analytics</span>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white shadow-sm">
+              <BarChart3 size={19} aria-hidden="true" />
+            </div>
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-bold leading-tight tracking-tight">Marketing Suite</span>
+              <span className="mt-0.5 truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/45">FreshVision Analytics</span>
             </div>
           </div>
         )}
-        {collapsed && !isMobile && <span className="text-2xl mx-auto">📊</span>}
+        {collapsed && !isMobile && <BarChart3 size={20} className="mx-auto" aria-hidden="true" />}
         {isMobile ? (
           <button onClick={onMobileClose} className="p-1 rounded hover:bg-white/10 shrink-0" aria-label="Close menu">
             <X size={20} />
@@ -175,7 +177,7 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
         </div>
       )}
 
-      <nav className="flex-1 overflow-y-auto py-1">
+      <nav className="flex-1 overflow-y-auto px-2 py-2" aria-label="Navigasi utama">
         {tabGroups.map((group) => {
           // Filter items berdasarkan role
           const visibleItems = group.items.filter(tab => canView(tab.key));
@@ -192,10 +194,10 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
                 <button
                   key={tab.key}
                   onClick={() => onSelect(tab.key)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-[13px] transition-all duration-200 ${
+                  className={`mb-0.5 flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-[13px] transition-colors ${
                     active === tab.key
                       ? "sidebar-active-glow text-white font-semibold"
-                      : "text-white/60 hover:bg-white/8 hover:text-white"
+                      : "text-white/65 hover:bg-white/8 hover:text-white"
                   } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
                   title={tab.label}
                   aria-label={tab.label}
