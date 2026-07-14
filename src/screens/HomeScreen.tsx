@@ -674,67 +674,55 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   // RENDER
   // ═══════════════════════════════════════════════════════
   return (
-    <div className="space-y-6">
+    <div className="dashboard-shell">
 
-      {/* ═══ ZONA 1: PREMIUM WELCOME CARD ═══ */}
-      <div className="welcome-card rounded-2xl p-6 text-white shadow-xl relative overflow-hidden stagger-1">
-        {/* Decorative elements */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
-
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-xl backdrop-blur-sm">👋</div>
-              <div>
-                <h1 className="text-xl font-bold leading-tight">{greeting}, Kak!</h1>
-                <p className="text-blue-200/70 text-xs mt-0.5">{dateStr}</p>
-              </div>
-            </div>
-            {/* Today's highlights */}
-            <div className="flex flex-wrap gap-2 mt-3">
-              {agg.totalGMV > 0 && (
-                <span className="text-[11px] bg-white/10 backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium">
-                  💰 GMV {fRp(agg.totalGMV)}
-                </span>
-              )}
-              {agg.activePromoters > 0 && (
-                <span className="text-[11px] bg-white/10 backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium">
-                  👥 {fN(agg.activePromoters)} kreator aktif
-                </span>
-              )}
+      {/* ═══ ZONA 1: EXECUTIVE COMMAND CENTER ═══ */}
+      <header className="dashboard-panel overflow-hidden stagger-1">
+        <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="dashboard-eyebrow">Executive command center</p>
+            <h1 className="dashboard-title mt-2 text-balance">{greeting}. Berikut kondisi bisnis Anda.</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              Ringkasan keputusan untuk {formatPeriod(activePeriod) || "periode terbaru"} · {activeStores.length} toko aktif · diperbarui {dateStr}.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground">Health score {healthScore.score}/100</span>
               {momGrowth !== null && (
-                <span className={`text-[11px] backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium ${momGrowth >= 0 ? 'bg-green-400/20' : 'bg-red-400/20'}`}>
-                  {momGrowth >= 0 ? '📈' : '📉'} {momGrowth >= 0 ? '+' : ''}{momGrowth.toFixed(1)}% MoM
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${momGrowth >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                  GMV {momGrowth >= 0 ? "+" : ""}{momGrowth.toFixed(1)}% vs bulan lalu
                 </span>
               )}
-              <span className="text-[11px] bg-white/10 backdrop-blur-sm rounded-lg px-2.5 py-1 font-medium">
-                🏪 {activeStores.map((s) => s.name).join(" & ")}
-              </span>
+              <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-muted">{visibleAlerts.length} perhatian aktif</span>
             </div>
           </div>
           {allPeriods.length > 0 && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-xs text-blue-200/60">Periode:</span>
-              <div className="flex gap-1 bg-white/10 backdrop-blur-sm rounded-xl p-1 flex-wrap">
-                {allPeriods.map((period) => (
-                  <button
-                    key={period}
-                    onClick={() => setSelectedPeriod(period)}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-                      activePeriod === period
-                        ? "bg-white text-indigo-700 shadow-sm"
-                        : "text-white/70 hover:text-white hover:bg-white/10"
-                    }`}
-                  >
-                    {formatPeriod(period)}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <label className="flex min-w-56 flex-col gap-2 text-xs font-semibold text-muted">
+              Periode laporan
+              <select
+                value={activePeriod}
+                onChange={(event) => setSelectedPeriod(event.target.value)}
+                className="min-h-11 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/25"
+                aria-label="Pilih periode executive summary"
+              >
+                {allPeriods.map((period) => <option key={period} value={period}>{formatPeriod(period)}</option>)}
+              </select>
+            </label>
           )}
         </div>
-      </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-5 py-3 sm:px-6">
+          <span className="mr-1 text-xs font-semibold text-muted">Buka detail:</span>
+          {[
+            { label: "Affiliate Manager", tab: "affiliate" },
+            { label: "Laporan Harian", tab: "laporan-harian" },
+            { label: "OKR", tab: "okr" },
+            { label: "Report Builder", tab: "report-builder" },
+          ].map((item) => (
+            <button key={item.tab} onClick={() => onNavigate(item.tab)} className="dashboard-action border border-border bg-card px-3 text-foreground hover:border-primary/30 hover:text-primary">
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </header>
 
       {/* ═══ ZONA 2: ALERT BANNERS ═══ */}
       {visibleAlerts.length > 0 && (
@@ -792,27 +780,6 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       )}
 
       {/* Quick Actions removed — not executive-level data */}
-
-      {/* ═══ ZONA 2.5: QUICK NAVIGATION SHORTCUTS ═══ */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 stagger-2">
-        {[
-          { icon: "📊", label: "Affiliate", tab: "affiliate", bg: "from-blue-500 to-indigo-600" },
-          { icon: "📋", label: "Lap. Harian", tab: "laporan-harian", bg: "from-emerald-500 to-teal-600" },
-          { icon: "📹", label: "Video Perf.", tab: "video-performance", bg: "from-purple-500 to-violet-600" },
-          { icon: "🏪", label: "Bandingkan", tab: "compare-gabungan", bg: "from-orange-500 to-amber-600" },
-          { icon: "🎯", label: "OKR", tab: "okr", bg: "from-rose-500 to-pink-600" },
-          { icon: "📄", label: "Report", tab: "report-builder", bg: "from-gray-500 to-slate-600" },
-        ].map((item) => (
-          <button
-            key={item.tab}
-            onClick={() => onNavigate(item.tab)}
-            className={`bg-gradient-to-br ${item.bg} text-white rounded-xl p-3 text-center hover:shadow-lg hover:scale-[1.02] transition-all duration-200`}
-          >
-            <span className="text-lg block">{item.icon}</span>
-            <span className="text-[11px] font-medium mt-1 block opacity-90">{item.label}</span>
-          </button>
-        ))}
-      </div>
 
       {/* ═══ ZONA 3: HERO KPI — 4 angka paling penting ═══ */}
       <div className="stagger-3">
