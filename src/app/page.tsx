@@ -178,24 +178,36 @@ export default function Home() {
     }
   }, [activeStoreId, activeStore, setGMVData]);
 
-  // Navigate: update tab + push hash
-  const navigate = useCallback((tab: string) => {
-    setActiveTab(tab as TabKey);
-    window.location.hash = `#/${tab}`;
-    setSidebarOpen(false);
+  // Update the URL without assigning location.hash directly. The preview runtime
+  // treats assigned hashes as CSS selectors, while our `#/tab` route format is
+  // intentionally not a valid selector. pushState preserves browser history and
+  // the existing popstate listener restores the selected tab on back/forward.
+  const updateTabUrl = useCallback((tab: TabKey) => {
+    const nextHash = `#/${tab}`;
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, "", nextHash);
+    }
   }, []);
+
+  // Navigate: update tab + push hash route
+  const navigate = useCallback((tab: string) => {
+    const nextTab = tab as TabKey;
+    setActiveTab(nextTab);
+    updateTabUrl(nextTab);
+    setSidebarOpen(false);
+  }, [updateTabUrl]);
 
   const handleLogout = useCallback(async () => {
     await fetch('/api/auth', { method: 'DELETE' });
     window.location.reload();
   }, []);
 
-  // Wrap setActiveTab for Sidebar to also update hash
+  // Wrap setActiveTab for Sidebar to also update the hash route
   const handleTabSelect = useCallback((tab: TabKey) => {
     setActiveTab(tab);
-    window.location.hash = `#/${tab}`;
+    updateTabUrl(tab);
     setSidebarOpen(false);
-  }, []);
+  }, [updateTabUrl]);
 
   // Update document title
   useEffect(() => {
