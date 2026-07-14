@@ -299,7 +299,7 @@ export default function AffiliateScreen() {
     return () => { cancelled = true; };
   }, [activeStore?.id, selectedPeriod, platformFilter, combinedMode, stores]);
 
-  // ─── UPLOAD HANDLER ───────────────────────────────────
+  // ─── UPLOAD HANDLER ─────────────────────────────────��─
   const handleUpload = useCallback(async (
     e: React.ChangeEvent<HTMLInputElement>,
     period: string,
@@ -628,9 +628,9 @@ export default function AffiliateScreen() {
   // RENDER
   // ═══════════════════════════════════════════════════════
   return (
-    <div className="space-y-6">
-      {/* ── HEADER ──────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+  <div className="dashboard-shell">
+  {/* ── HEADER ──────────────────────────────────── */}
+  <header className="dashboard-panel flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -759,7 +759,7 @@ export default function AffiliateScreen() {
           </button>
           {!combinedMode && <UploadButton onUpload={handleUpload} isUploading={isUploading} />}
         </div>
-      </div>
+      </header>
 
       {/* ── UPLOAD ERROR BANNER ──────────────────────── */}
       {uploadError && (
@@ -2074,10 +2074,10 @@ export default function AffiliateScreen() {
               </div>
 
               {/* Creator Table */}
-              <div className="bg-white rounded-xl border overflow-hidden">
-                <div className="overflow-x-auto">
+              <div className="dashboard-table-wrap" aria-label="Daftar performa kreator affiliate">
+                <div className="min-w-max">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
+                    <thead className="border-b">
                       <tr>
                         <th className="px-3 py-3 text-left font-medium text-gray-600 w-10">#</th>
                         <th className="px-3 py-3 text-left font-medium text-gray-600">Kreator</th>
@@ -2478,7 +2478,7 @@ export default function AffiliateScreen() {
   );
 }
 
-// ═══════════════════════════════════════════════════════
+// ═════════════════════════���═════════════════════════════
 // SUB COMPONENTS
 // ═══════════════════════════════════════════════════════
 

@@ -40,6 +40,91 @@ body {
   transition: background-color 0.2s, color 0.2s;
 }
 
+/* ─── Shared executive dashboard system ─── */
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-bottom: 2.5rem;
+}
+.dashboard-panel {
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-card);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px rgb(15 23 42 / 0.04);
+}
+.dashboard-eyebrow {
+  color: var(--color-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.dashboard-title {
+  color: var(--color-foreground);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+.dashboard-kpi {
+  position: relative;
+  min-height: 10rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-card);
+  padding: 1.25rem;
+  text-align: left;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.dashboard-kpi:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  box-shadow: 0 14px 30px rgb(15 23 42 / 0.08);
+  transform: translateY(-2px);
+}
+.dashboard-kpi:focus-visible,
+.dashboard-action:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  outline-offset: 2px;
+}
+.dashboard-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  border-radius: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.dashboard-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-card);
+  scrollbar-gutter: stable;
+}
+.dashboard-table-wrap thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--color-background) 88%, var(--color-card));
+}
+.dashboard-table-wrap th { white-space: nowrap; }
+.dashboard-table-wrap td { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ─── Dark Mode ─── */
 .dark body,
 html.dark body {
@@ -207,30 +292,26 @@ html.dark body {
 .splash-dot-2 { animation: splash-dots 1.4s ease-in-out 0.2s infinite; }
 .splash-dot-3 { animation: splash-dots 1.4s ease-in-out 0.4s infinite; }
 
-/* ─── Premium Sidebar Gradient ─── */
+/* ─── Premium application sidebar ─── */
 .sidebar-premium {
-  background: linear-gradient(180deg, #0f1647 0%, #1a237e 40%, #283593 100%);
-  box-shadow: 4px 0 24px rgba(15, 22, 71, 0.3);
+  background: var(--color-sidebar);
+  border-right: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: 8px 0 32px rgb(15 23 42 / 0.08);
 }
-.dark .sidebar-premium {
-  background: linear-gradient(180deg, #020617 0%, #0f172a 40%, #1e293b 100%);
-}
+.dark .sidebar-premium { background: #0b1120; }
 .sidebar-active-glow {
   position: relative;
-  background: linear-gradient(90deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%);
-  border-right: 3px solid #60a5fa;
-  box-shadow: inset 0 0 20px rgba(96, 165, 250, 0.1);
+  background: rgb(255 255 255 / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
 }
 .sidebar-active-glow::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 60%;
-  background: linear-gradient(180deg, transparent, #60a5fa, transparent);
-  border-radius: 0 2px 2px 0;
+  inset-block: 0.625rem;
+  left: -0.5rem;
+  width: 0.1875rem;
+  border-radius: 0 0.25rem 0.25rem 0;
+  background: #ffffff;
 }
 
 /* ─── Presentation Mode ─── */
@@ -252,15 +333,14 @@ html.dark body {
   display: inline-flex !important;
 }
 
-/* ─── Header Premium ─── */
+/* ─── Application header ─── */
 .header-bar {
-  background: linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(248,250,252,0.97) 100%);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--color-card) 94%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 1px 0 rgb(15 23 42 / 0.03);
 }
-.dark .header-bar {
-  background: linear-gradient(135deg, rgba(15,23,42,0.97) 0%, rgba(30,41,59,0.97) 100%);
-}
+.dark .header-bar { background: rgb(15 23 42 / 0.94); }
 
 /* ─── Breadcrumb Separator ─── */
 .breadcrumb-sep::before {

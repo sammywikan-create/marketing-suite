@@ -1340,8 +1340,8 @@ export default function LaporanHarianScreen() {
   ];
 
   return (
-    <div className="space-y-5 pb-10">
-      {/* ═══ MONTH SELECTOR & HEADER ═══ */}
+  <div className="dashboard-shell">
+  {/* ═══ MONTH SELECTOR & HEADER ═══ */}
       <MonthHeader
         selectedPeriod={selectedPeriod} savedPeriods={savedPeriods}
         onPeriodChange={handlePeriodChange} onImport={() => setShowImportModal(true)}
@@ -1352,8 +1352,8 @@ export default function LaporanHarianScreen() {
       {importMsg && <MsgBanner type={importMsg.type} text={importMsg.text} />}
 
       {/* ═══ HEADER ═══ */}
-      <div className="bg-white rounded-2xl border p-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <header className="dashboard-panel p-5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-4">
             <div>
               <h1 className="text-xl font-bold text-gray-900">
@@ -1409,7 +1409,7 @@ export default function LaporanHarianScreen() {
             )}
           </div>
         </div>
-      </div>
+      </header>
 
       {/* ═══ SETTINGS MODAL ═══ */}
       {showSettings && <SettingsModal target={target} onSave={setTarget} onClose={() => setShowSettings(false)} />}
@@ -1420,8 +1420,8 @@ export default function LaporanHarianScreen() {
       <ExecutiveSummary s={s} target={target} health={health} highlights={highlights} prevMonthData={prevMonthData} prevMonthPeriod={prevMonthPeriod} daysInPeriod={daysInCurrentPeriod} harian={harian} />
 
       {/* ═══ TAB BAR ═══ */}
-      <div className="relative">
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto scrollbar-hide">
+      <nav className="sticky top-0 z-10 rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur" aria-label="Bagian laporan harian">
+        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
           {tabs.map((t) => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${activeTab === t.key ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
@@ -1433,8 +1433,7 @@ export default function LaporanHarianScreen() {
           ))}
         </div>
         {/* Scroll gradient indicator for mobile */}
-        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-gray-100 to-transparent rounded-r-xl pointer-events-none sm:hidden" />
-      </div>
+      </nav>
 
       {/* ═══ TAB CONTENT ═══ */}
       <div className="animate-fade-slide-up" key={activeTab}>
@@ -3335,7 +3334,7 @@ function InsightsTab({ s, target, harian, channels, channelData, daysInPeriod, a
   );
 }
 
-// ═══════════════════════════════════════════════════════════
+// ═════════════���═════════════════════════════════════════════
 // 🚀 FORECAST TAB
 // ═══════════════════════════════════════════════════════════
 function ForecastTab({ s, target, harian, daysInPeriod }: {
@@ -4099,7 +4098,7 @@ function ScorecardTab({ s, target, harian, channels, daysInPeriod, prevMonthData
             <div className="text-8xl font-black animate-score-reveal drop-shadow-lg">{grade}</div>
             <div className="text-lg font-bold mt-1">{overall}/100</div>
             <div className="text-xs text-white/70 mt-1">
-              {overall >= 80 ? "Outstanding Performance! 🏆" : overall >= 60 ? "Good Performance 👍" : overall >= 40 ? "Needs Improvement ⚡" : "Urgent Action Required ⚠️"}
+              {overall >= 80 ? "Outstanding Performance! 🏆" : overall >= 60 ? "Good Performance ����" : overall >= 40 ? "Needs Improvement ⚡" : "Urgent Action Required ⚠️"}
             </div>
           </div>
 
