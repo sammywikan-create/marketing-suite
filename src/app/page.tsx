@@ -178,12 +178,12 @@ export default function Home() {
     }
   }, [activeStoreId, activeStore, setGMVData]);
 
-  // Update the URL without assigning location.hash directly. The preview runtime
-  // treats assigned hashes as CSS selectors, while our `#/tab` route format is
-  // intentionally not a valid selector. pushState preserves browser history and
-  // the existing popstate listener restores the selected tab on back/forward.
+  // Keep hashes valid as both URL fragments and CSS ID selectors. The preview
+  // runtime resolves fragments with querySelector, so the previous `#/tab`
+  // format threw a SyntaxError because `/` is not valid in an unescaped ID.
+  // getTabFromHash remains backward-compatible with existing `#/tab` links.
   const updateTabUrl = useCallback((tab: TabKey) => {
-    const nextHash = `#/${tab}`;
+    const nextHash = `#${tab}`;
     if (window.location.hash !== nextHash) {
       window.history.pushState(null, "", nextHash);
     }
