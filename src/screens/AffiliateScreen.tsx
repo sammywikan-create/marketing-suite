@@ -1129,7 +1129,7 @@ export default function AffiliateScreen() {
                       {creatorList.slice(0, 10).map((c, i) => {
                         const cNetGMV = c.affiliateGMV - c.affiliateRefundedGMV;
                         return (
-                        <tr key={c.creatorUsername} className="border-b hover:bg-gray-50 transition-colors">
+                        <tr key={`${c.creatorUsername}-${i}`} className="border-b hover:bg-gray-50 transition-colors">
                           <td className="py-2.5 font-bold text-gray-400">#{i + 1}</td>
                           <td className="py-2.5">
                             <p className="font-medium text-gray-900">@{c.creatorUsername}</p>
@@ -2103,7 +2103,7 @@ export default function AffiliateScreen() {
                       {creatorList.slice(0, 200).map((c, i) => {
                         const isExpanded = expandedCreator === c.creatorUsername;
                         return (
-                          <React.Fragment key={c.creatorUsername}>
+                          <React.Fragment key={`${c.creatorUsername}-${i}`}>
                           <tr
                             className={`hover:bg-gray-50 transition-colors cursor-pointer ${isExpanded ? "bg-blue-50 border-b-0" : ""}`}
                             onClick={() => setExpandedCreator(isExpanded ? null : c.creatorUsername)}
