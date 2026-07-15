@@ -2318,6 +2318,8 @@ export default function AffiliateScreen() {
           {view === "retention" && (
             <RetentionViewEnhanced
               filteredData={filteredData}
+              supabaseCreators={supabaseCreators}
+              allMonths={allMonths}
               onDrillDown={(u) => setDrillDownCreator(u)}
             />
           )}

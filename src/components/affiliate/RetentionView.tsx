@@ -1,10 +1,11 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
+import { loadAffiliateCreators } from "@/lib/db";
 import {
   Activity, Search, TrendingUp, ChevronDown, ChevronUp,
   DollarSign, PieChart, ArrowDownRight, Star, X, UserMinus,
-  Award, RefreshCw, Heart, ShieldAlert, Lightbulb, BarChart3
+  Award, RefreshCw, Heart, ShieldAlert, Lightbulb, BarChart3, Loader2
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════
@@ -81,9 +82,13 @@ function MiniSparkline({ values, width = 50, height = 16, highlightLast = false 
 // ═══════════════════════════════════════════════════════
 export default function RetentionViewEnhanced({
   filteredData,
+  supabaseCreators,
+  allMonths,
   onDrillDown,
 }: {
   filteredData: AffiliateMonthDataWithStore[];
+  supabaseCreators?: AffiliateCreatorItem[];
+  allMonths?: AffiliateMonthDataWithStore[];
   onDrillDown: (username: string) => void;
 }) {
   const [filter, setFilter] = useState<string>('all');
@@ -91,10 +96,79 @@ export default function RetentionViewEnhanced({
   const [showAllFollowUp, setShowAllFollowUp] = useState(false);
   const [compSort, setCompSort] = useState<'change' | 'changePct' | 'currGMV' | 'prevGMV'>('change');
   const [compSortAsc, setCompSortAsc] = useState(false);
+  const [perPeriodCreators, setPerPeriodCreators] = useState<Record<string, AffiliateCreatorItem[]>>({});
+  const [loadingCreators, setLoadingCreators] = useState(false);
+
+  // ── ENRICH: Load creators from Supabase per period when local data is empty ──
+  useEffect(() => {
+    // Check if ANY period has creators locally
+    const hasLocalCreators = filteredData.some(d => d.creators && d.creators.length > 0);
+    if (hasLocalCreators || filteredData.length < 2) return;
+
+    // Need to load from Supabase per period
+    let cancelled = false;
+    async function loadPerPeriod() {
+      setLoadingCreators(true);
+      try {
+        const monthsToLoad = allMonths && allMonths.length > 0 ? allMonths : filteredData;
+        const periodMap: Record<string, { storeId: string; platform?: string }[]> = {};
+        monthsToLoad.forEach(d => {
+          const key = d.periodRaw.split(" ~ ")[0]?.slice(0, 7) || d.periodRaw;
+          if (!periodMap[key]) periodMap[key] = [];
+          if (d.storeId) {
+            periodMap[key].push({ storeId: d.storeId, platform: d.platform });
+          }
+        });
+
+        const result: Record<string, AffiliateCreatorItem[]> = {};
+        await Promise.all(
+          Object.entries(periodMap).map(async ([period, stores]) => {
+            const uniqueStores = stores.filter((s, i, arr) =>
+              arr.findIndex(x => x.storeId === s.storeId && x.platform === s.platform) === i
+            );
+            const allCreators = await Promise.all(
+              uniqueStores.map(async ({ storeId, platform }) => {
+                try {
+                  return await loadAffiliateCreators(storeId, period, platform);
+                } catch {
+                  return [];
+                }
+              })
+            );
+            result[period] = allCreators.flat();
+          })
+        );
+        if (!cancelled) setPerPeriodCreators(result);
+      } catch (err) {
+        console.error("RetentionView: Failed to load creators per period:", err);
+      } finally {
+        if (!cancelled) setLoadingCreators(false);
+      }
+    }
+    loadPerPeriod();
+    return () => { cancelled = true; };
+  }, [filteredData, allMonths]);
+
+  // ── BUILD ENRICHED DATA: merge local + supabase per-period creators ──
+  const enrichedData = useMemo(() => {
+    return filteredData.map(d => {
+      // If local creators exist, use them
+      if (d.creators && d.creators.length > 0) return d;
+
+      // Try to get from per-period Supabase load
+      const periodKey = d.periodRaw.split(" ~ ")[0]?.slice(0, 7) || d.periodRaw;
+      const supaCreators = perPeriodCreators[periodKey];
+      if (supaCreators && supaCreators.length > 0) {
+        return { ...d, creators: supaCreators };
+      }
+
+      return d;
+    });
+  }, [filteredData, perPeriodCreators]);
 
   // ── MAIN ANALYSIS ───────────────────────────────────
   const analysis = useMemo(() => {
-    const sorted = [...filteredData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+    const sorted = [...enrichedData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
     if (sorted.length < 2) return null;
 
     const periods = sorted.map(d => d.period || d.periodRaw.slice(0, 7));
@@ -267,7 +341,7 @@ export default function RetentionViewEnhanced({
       periods, sorted, monthStats,
       heatmapCreators, activityMap, maxGMVInHeatmap,
     };
-  }, [filteredData]);
+  }, [enrichedData]);
 
   // ── FILTERED FOLLOW-UP LIST ─────────────────────────
   const filteredItems = useMemo(() => {
@@ -293,16 +367,27 @@ export default function RetentionViewEnhanced({
     });
   }, [analysis, compSort, compSortAsc]);
 
+  // ── LOADING STATE ────────────────────────────────────
+  if (loadingCreators) {
+    return (
+      <div className="bg-white rounded-xl border p-8 text-center text-gray-400">
+        <Loader2 className="w-10 h-10 mx-auto mb-3 animate-spin text-blue-500" />
+        <p className="font-medium text-gray-600">Memuat data kreator per periode...</p>
+        <p className="text-sm mt-1">Mengambil data dari database untuk analisis retensi.</p>
+      </div>
+    );
+  }
+
   // ── EMPTY STATE ─────────────────────────────────────
   if (!analysis) {
-    const sorted = [...filteredData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
+    const sorted = [...enrichedData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
     const allUsernames = Array.from(new Set(sorted.flatMap(d => d.creators.map(c => c.creatorUsername))));
-    if (filteredData.length >= 2 && allUsernames.length === 0) {
+    if (enrichedData.length >= 2 && allUsernames.length === 0) {
       return (
         <div className="bg-white rounded-xl border p-8 text-center text-gray-400">
           <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">Data retensi tidak tersedia</p>
-          <p className="text-sm mt-1">Data kreator per periode diperlukan. Data tersedia saat baru upload (belum refresh halaman) atau saat ada data in-memory.</p>
+          <p className="font-medium">Data kreator per periode tidak tersedia</p>
+          <p className="text-sm mt-1">Pastikan data kreator sudah tersimpan di database. Coba upload ulang file kreator.</p>
         </div>
       );
     }
