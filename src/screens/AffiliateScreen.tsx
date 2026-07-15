@@ -13,6 +13,7 @@ import {
   Star, Filter, X, Zap, Target, Lightbulb, PieChart, Activity, Plus, Edit3, Save, CheckCircle, Download, RefreshCw
 } from "lucide-react";
 import AffiliateAIInsightsCard from "@/components/AffiliateAIInsightsCard";
+import RetentionViewEnhanced from "@/components/affiliate/RetentionView";
 
 // ═══════════════════════════════════════════════════════
 // TYPES
@@ -2313,155 +2314,13 @@ export default function AffiliateScreen() {
             <ComparisonView data={mergedMonths} />
           )}
 
-          {/* ═══════════════════════════════════════════ */}
-          {/* FITUR 4: RETENTION VIEW                     */}
-          {/* ═══════════════════════════════════════════ */}
-          {view === "retention" && (() => {
-            const sorted = [...filteredData].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
-            const periods = sorted.map((d) => d.period || d.periodRaw.slice(0,7));
-            // Build set of all creator usernames
-            const allUsernames = Array.from(new Set(sorted.flatMap((d) => d.creators.map((c) => c.creatorUsername))));
-            if (!allUsernames.length) {
-              return (
-                <div className="bg-white rounded-xl border p-8 text-center text-gray-400">
-                  <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                  <p className="font-medium">Data retensi tidak tersedia</p>
-                  <p className="text-sm mt-1">Data kreator per periode diperlukan. Data tersedia saat baru upload (belum refresh halaman) atau saat ada data in-memory.</p>
-                </div>
-              );
-            }
-            // Activity map: username → Set of period indices they were active
-            const activityMap: Record<string, Set<number>> = {};
-            sorted.forEach((d, pi) => {
-              d.creators.filter((c) => c.affiliateGMV > 0).forEach((c) => {
-                if (!activityMap[c.creatorUsername]) activityMap[c.creatorUsername] = new Set();
-                activityMap[c.creatorUsername].add(pi);
-              });
-            });
-            // Churn & retention stats
-            const monthStats = sorted.map((d, pi) => {
-              if (pi === 0) return null;
-              const prevActive = new Set(sorted[pi-1].creators.filter((c) => c.affiliateGMV > 0).map((c) => c.creatorUsername));
-              const currActive = new Set(d.creators.filter((c) => c.affiliateGMV > 0).map((c) => c.creatorUsername));
-              const retained = [...prevActive].filter((u) => currActive.has(u)).length;
-              const churned = [...prevActive].filter((u) => !currActive.has(u)).length;
-              const newOnes = [...currActive].filter((u) => !prevActive.has(u)).length;
-              const retentionRate = prevActive.size > 0 ? (retained / prevActive.size) * 100 : 0;
-              return { period: periods[pi], retained, churned, newOnes, retentionRate, total: currActive.size };
-            }).filter(Boolean) as { period: string; retained: number; churned: number; newOnes: number; retentionRate: number; total: number }[];
-            // Sort creators by total active months desc
-            const sortedCreators = [...allUsernames].sort((a, b) => (activityMap[b]?.size || 0) - (activityMap[a]?.size || 0)).slice(0, 50);
-            return (
-              <div className="space-y-6">
-                {/* Retention KPIs */}
-                {monthStats.length > 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-xl border p-4">
-                      <p className="text-xs text-gray-500 font-medium uppercase">Avg Retention Rate</p>
-                      <p className={`text-2xl font-bold mt-1 ${
-                        (monthStats.reduce((a, m) => a + m.retentionRate, 0) / monthStats.length) >= 70 ? 'text-green-600' :
-                        (monthStats.reduce((a, m) => a + m.retentionRate, 0) / monthStats.length) >= 50 ? 'text-amber-600' : 'text-red-500'
-                      }`}>{(monthStats.reduce((a, m) => a + m.retentionRate, 0) / monthStats.length).toFixed(1)}%</p>
-                      <p className="text-xs text-gray-400 mt-1">Rata-rata {monthStats.length} periode</p>
-                    </div>
-                    <div className="bg-white rounded-xl border p-4">
-                      <p className="text-xs text-gray-500 font-medium uppercase">Total Kreator Unik</p>
-                      <p className="text-2xl font-bold text-blue-600 mt-1">{allUsernames.length}</p>
-                      <p className="text-xs text-gray-400 mt-1">Lintas semua periode</p>
-                    </div>
-                    <div className="bg-white rounded-xl border p-4">
-                      <p className="text-xs text-gray-500 font-medium uppercase">Avg Churn per Bulan</p>
-                      <p className="text-2xl font-bold text-red-500 mt-1">{Math.round(monthStats.reduce((a,m) => a+m.churned,0)/monthStats.length)}</p>
-                      <p className="text-xs text-gray-400 mt-1">Kreator hilang rata-rata</p>
-                    </div>
-                    <div className="bg-white rounded-xl border p-4">
-                      <p className="text-xs text-gray-500 font-medium uppercase">Avg Kreator Baru</p>
-                      <p className="text-2xl font-bold text-green-600 mt-1">{Math.round(monthStats.reduce((a,m) => a+m.newOnes,0)/monthStats.length)}</p>
-                      <p className="text-xs text-gray-400 mt-1">Kreator baru rata-rata</p>
-                    </div>
-                  </div>
-                )}
-                {/* Retention Rate Chart */}
-                {monthStats.length > 0 && (
-                  <div className="bg-white rounded-xl border p-5">
-                    <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <Activity className="w-4 h-4 text-indigo-600" />
-                      Retention Rate & Churn per Bulan
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead><tr className="border-b text-left text-gray-500">
-                          <th className="pb-2 font-medium">Periode</th>
-                          <th className="pb-2 font-medium text-right">Aktif</th>
-                          <th className="pb-2 font-medium text-right">Retained</th>
-                          <th className="pb-2 font-medium text-right text-green-600">+Baru</th>
-                          <th className="pb-2 font-medium text-right text-red-500">-Churn</th>
-                          <th className="pb-2 font-medium text-right">Retention %</th>
-                          <th className="pb-2 font-medium">Bar</th>
-                        </tr></thead>
-                        <tbody>
-                          {monthStats.map((m) => (
-                            <tr key={m.period} className="border-b hover:bg-gray-50">
-                              <td className="py-2.5 font-medium">{m.period}</td>
-                              <td className="py-2.5 text-right font-bold">{m.total}</td>
-                              <td className="py-2.5 text-right text-blue-600">{m.retained}</td>
-                              <td className="py-2.5 text-right text-green-600 font-medium">+{m.newOnes}</td>
-                              <td className="py-2.5 text-right text-red-500 font-medium">-{m.churned}</td>
-                              <td className={`py-2.5 text-right font-bold ${ m.retentionRate >= 70 ? 'text-green-600' : m.retentionRate >= 50 ? 'text-amber-600' : 'text-red-500'}`}>{m.retentionRate.toFixed(1)}%</td>
-                              <td className="py-2.5 w-32">
-                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${ m.retentionRate >= 70 ? 'bg-green-500' : m.retentionRate >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{width:`${m.retentionRate}%`}} />
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                {/* Activity Heatmap */}
-                <div className="bg-white rounded-xl border p-5">
-                  <h3 className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
-                    <PieChart className="w-4 h-4 text-purple-600" />
-                    Heatmap Aktivitas Kreator
-                  </h3>
-                  <p className="text-xs text-gray-400 mb-4">Hijau = aktif (ada GMV), Abu = tidak aktif. Menampilkan top 50 kreator by total bulan aktif.</p>
-                  <div className="overflow-x-auto">
-                    <table className="text-xs w-full">
-                      <thead><tr className="border-b">
-                        <th className="pb-2 text-left font-medium text-gray-600 min-w-[140px] pr-3">Kreator</th>
-                        <th className="pb-2 font-medium text-center text-gray-500">Total</th>
-                        {periods.map((p) => <th key={p} className="pb-2 font-medium text-center text-gray-400 px-0.5 whitespace-nowrap">{p.replace(/\s.*/,'')}</th>)}
-                      </tr></thead>
-                      <tbody>
-                        {sortedCreators.map((username) => {
-                          const acts = activityMap[username] || new Set();
-                          return (
-                            <tr key={username} className="border-b hover:bg-gray-50">
-                              <td className="py-1.5 pr-3 font-medium text-gray-800 truncate max-w-[140px]">@{username}</td>
-                              <td className="py-1.5 text-center">
-                                <span className={`px-1.5 py-0.5 rounded font-bold ${ acts.size === sorted.length ? 'bg-green-100 text-green-700' : acts.size >= sorted.length * 0.7 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{acts.size}/{sorted.length}</span>
-                              </td>
-                              {sorted.map((_, pi) => (
-                                <td key={pi} className="py-1.5 px-0.5 text-center">
-                                  <div className={`w-5 h-5 rounded mx-auto ${ acts.has(pi) ? 'bg-green-400' : 'bg-gray-100'}`} title={acts.has(pi) ? 'Aktif' : 'Tidak aktif'} />
-                                </td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-                    <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-green-400" /> Aktif (ada GMV)</span>
-                    <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-gray-100 border" /> Tidak aktif</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {/* RETENTION VIEW (ENHANCED) */}
+          {view === "retention" && (
+            <RetentionViewEnhanced
+              filteredData={filteredData}
+              onDrillDown={(u) => setDrillDownCreator(u)}
+            />
+          )}
         </>
       )}
 
