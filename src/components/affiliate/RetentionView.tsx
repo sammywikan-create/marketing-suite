@@ -1,7 +1,14 @@
 "use client";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
-import { loadAffiliateCreators } from "@/lib/db";
+import {
+  loadAffiliateCreators,
+  loadRetentionNotes, saveRetentionNote, deleteRetentionNote,
+  loadRetentionActions, saveRetentionAction,
+  loadCreatorTags, saveCreatorTag, deleteCreatorTag,
+  loadRetentionTargets, saveRetentionTarget,
+  type RetentionNote, type RetentionAction, type CreatorTag, type RetentionTarget,
+} from "@/lib/db";
 import {
   Activity, Search, TrendingUp, ChevronDown, ChevronUp,
   DollarSign, PieChart, ArrowDownRight, ArrowUpRight, Star, X, UserMinus,
@@ -9,7 +16,8 @@ import {
   Eye, Phone, Gift, MessageSquare, AlertTriangle, CheckCircle, Copy,
   Users, Flame, Crown, TrendingDown, Percent, Calendar, Download,
   Target, Zap, Clock, Layers, RotateCcw, Sprout, Skull,
-  Mail, FileDown, ArrowRight, Shield, CircleDot, Gauge
+  Mail, FileDown, ArrowRight, Shield, CircleDot, Gauge,
+  Tag, Plus, Trash2, History, StickyNote, Save, Edit3
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════
@@ -17,7 +25,27 @@ import {
 // ═══════════════════════════════════════════════════════
 type AffiliateMonthDataWithStore = AffiliateMonthData & { _storeName: string };
 type RetentionSeverity = 'kritis' | 'peringatan' | 'perhatian' | 'monitor' | 'naik' | 'baru' | 'stabil';
-type SubTab = 'overview' | 'followup' | 'comparison' | 'heatmap' | 'cohort' | 'lifecycle' | 'winback';
+type SubTab = 'overview' | 'followup' | 'comparison' | 'heatmap' | 'cohort' | 'lifecycle' | 'winback' | 'riwayat';
+
+const TAG_PRESETS = [
+  { tag: 'VIP', color: '#8B5CF6' },
+  { tag: 'Prioritas', color: '#EF4444' },
+  { tag: 'Loyal', color: '#10B981' },
+  { tag: 'Perlu Sampel', color: '#F59E0B' },
+  { tag: 'Sudah Call', color: '#3B82F6' },
+  { tag: 'Potensial', color: '#EC4899' },
+  { tag: 'Brand Fit', color: '#06B6D4' },
+];
+
+const ACTION_TYPE_LABELS: Record<string, { label: string; emoji: string }> = {
+  winback_status: { label: 'Win-Back Status', emoji: '🔄' },
+  call: { label: 'Telepon', emoji: '📞' },
+  sample: { label: 'Kirim Sampel', emoji: '📦' },
+  incentive: { label: 'Beri Insentif', emoji: '💰' },
+  note: { label: 'Catatan', emoji: '📝' },
+  tag: { label: 'Tag', emoji: '🏷️' },
+  general: { label: 'Umum', emoji: '📋' },
+};
 type LifecycleStage = 'onboarding' | 'growth' | 'mature' | 'at_risk' | 'dormant' | 'churned';
 type WinBackStatus = 'pending' | 'contacted' | 'success' | 'failed';
 
@@ -273,11 +301,13 @@ export default function RetentionViewEnhanced({
   filteredData,
   supabaseCreators,
   allMonths,
+  storeId,
   onDrillDown,
 }: {
   filteredData: AffiliateMonthDataWithStore[];
   supabaseCreators?: AffiliateCreatorItem[];
   allMonths?: AffiliateMonthDataWithStore[];
+  storeId?: string;
   onDrillDown: (username: string) => void;
 }) {
   const [subTab, setSubTab] = useState<SubTab>('overview');
@@ -294,6 +324,153 @@ export default function RetentionViewEnhanced({
   const [winBackStatuses, setWinBackStatuses] = useState<Record<string, WinBackStatus>>({});
   const [winBackFilter, setWinBackFilter] = useState<'all' | WinBackStatus>('all');
   const [copiedMessage, setCopiedMessage] = useState<string | null>(null);
+
+  // ── PERSISTENT DATA STATE ──
+  const [dbNotes, setDbNotes] = useState<RetentionNote[]>([]);
+  const [dbActions, setDbActions] = useState<RetentionAction[]>([]);
+  const [dbTags, setDbTags] = useState<CreatorTag[]>([]);
+  const [dbTargets, setDbTargets] = useState<RetentionTarget[]>([]);
+  const [savingNote, setSavingNote] = useState(false);
+  const [savingTag, setSavingTag] = useState(false);
+  const [noteInput, setNoteInput] = useState<Record<string, string>>({});
+  const [showNoteFor, setShowNoteFor] = useState<string | null>(null);
+  const [showTagFor, setShowTagFor] = useState<string | null>(null);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [targetRetentionRate, setTargetRetentionRate] = useState<number>(70);
+  const [showTargetForm, setShowTargetForm] = useState(false);
+  const [riwayatFilter, setRiwayatFilter] = useState<'all' | string>('all');
+  const [riwayatSearch, setRiwayatSearch] = useState('');
+
+  // ── LOAD PERSISTENT DATA FROM SUPABASE ──
+  useEffect(() => {
+    if (!storeId) return;
+    let cancelled = false;
+    async function loadAll() {
+      try {
+        const [notes, actions, tags, targets] = await Promise.all([
+          loadRetentionNotes(storeId!).catch(() => [] as RetentionNote[]),
+          loadRetentionActions(storeId!, undefined, 500).catch(() => [] as RetentionAction[]),
+          loadCreatorTags(storeId!).catch(() => [] as CreatorTag[]),
+          loadRetentionTargets(storeId!).catch(() => [] as RetentionTarget[]),
+        ]);
+        if (cancelled) return;
+        setDbNotes(notes);
+        setDbActions(actions);
+        setDbTags(tags);
+        setDbTargets(targets);
+
+        // Restore win-back statuses from action log
+        const wbStatuses: Record<string, WinBackStatus> = {};
+        actions
+          .filter(a => a.action_type === 'winback_status')
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .forEach(a => { wbStatuses[a.username] = a.status as WinBackStatus; });
+        setWinBackStatuses(wbStatuses);
+
+        // Restore target
+        const globalTarget = targets.find(t => t.period === 'global');
+        if (globalTarget) setTargetRetentionRate(globalTarget.target_retention_rate);
+      } catch (err) {
+        console.error('RetentionView: Failed to load persistent data:', err);
+      }
+    }
+    loadAll();
+    return () => { cancelled = true; };
+  }, [storeId]);
+
+  // ── HANDLERS: NOTES ──
+  const handleSaveNote = useCallback(async (username: string) => {
+    if (!storeId || !noteInput[username]?.trim()) return;
+    setSavingNote(true);
+    try {
+      const note = await saveRetentionNote(storeId, username, noteInput[username].trim());
+      setDbNotes(prev => [note, ...prev]);
+      setNoteInput(prev => ({ ...prev, [username]: '' }));
+      // Log action
+      const action = await saveRetentionAction(storeId, username, 'note', 'done', noteInput[username].trim());
+      setDbActions(prev => [action, ...prev]);
+    } catch (err) {
+      console.error('Failed to save note:', err);
+    } finally {
+      setSavingNote(false);
+    }
+  }, [storeId, noteInput]);
+
+  const handleDeleteNote = useCallback(async (noteId: number) => {
+    try {
+      await deleteRetentionNote(noteId);
+      setDbNotes(prev => prev.filter(n => n.id !== noteId));
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+    }
+  }, []);
+
+  // ── HANDLERS: TAGS ──
+  const handleAddTag = useCallback(async (username: string, tag: string, color?: string) => {
+    if (!storeId) return;
+    setSavingTag(true);
+    try {
+      const t = await saveCreatorTag(storeId, username, tag, color);
+      setDbTags(prev => {
+        const filtered = prev.filter(x => !(x.username === username && x.tag === tag));
+        return [t, ...filtered];
+      });
+      const action = await saveRetentionAction(storeId, username, 'tag', 'added', `Tag: ${tag}`);
+      setDbActions(prev => [action, ...prev]);
+    } catch (err) {
+      console.error('Failed to save tag:', err);
+    } finally {
+      setSavingTag(false);
+    }
+  }, [storeId]);
+
+  const handleRemoveTag = useCallback(async (username: string, tag: string) => {
+    if (!storeId) return;
+    try {
+      await deleteCreatorTag(storeId, username, tag);
+      setDbTags(prev => prev.filter(t => !(t.username === username && t.tag === tag)));
+    } catch (err) {
+      console.error('Failed to remove tag:', err);
+    }
+  }, [storeId]);
+
+  // ── HANDLERS: WIN-BACK STATUS (PERSISTENT) ──
+  const handleWinBackStatusChange = useCallback(async (username: string, newStatus: WinBackStatus) => {
+    setWinBackStatuses(prev => ({ ...prev, [username]: newStatus }));
+    if (!storeId) return;
+    try {
+      const statusLabels: Record<WinBackStatus, string> = { pending: 'Belum', contacted: 'Dihubungi', success: 'Berhasil', failed: 'Gagal' };
+      const action = await saveRetentionAction(storeId, username, 'winback_status', newStatus, `Status diubah ke: ${statusLabels[newStatus]}`);
+      setDbActions(prev => [action, ...prev]);
+    } catch (err) {
+      console.error('Failed to log win-back status:', err);
+    }
+  }, [storeId]);
+
+  // ── HANDLERS: TARGET ──
+  const handleSaveTarget = useCallback(async () => {
+    if (!storeId) return;
+    try {
+      const t = await saveRetentionTarget(storeId, 'global', targetRetentionRate);
+      setDbTargets(prev => {
+        const filtered = prev.filter(x => x.period !== 'global');
+        return [t, ...filtered];
+      });
+      setShowTargetForm(false);
+    } catch (err) {
+      console.error('Failed to save target:', err);
+    }
+  }, [storeId, targetRetentionRate]);
+
+  // ── HELPER: Get notes for a creator ──
+  const getNotesForUser = useCallback((username: string) => {
+    return dbNotes.filter(n => n.username === username);
+  }, [dbNotes]);
+
+  // ── HELPER: Get tags for a creator ──
+  const getTagsForUser = useCallback((username: string) => {
+    return dbTags.filter(t => t.username === username);
+  }, [dbTags]);
 
   // ── ENRICH: Load creators from Supabase per period ──
   // Always load from Supabase to ensure complete creator data per period.
@@ -953,6 +1130,7 @@ export default function RetentionViewEnhanced({
           { key: 'cohort' as SubTab, icon: <Layers className="w-4 h-4" />, label: 'Kohort', count: null },
           { key: 'lifecycle' as SubTab, icon: <Zap className="w-4 h-4" />, label: 'Lifecycle', count: null },
           { key: 'winback' as SubTab, icon: <RotateCcw className="w-4 h-4" />, label: 'Win-Back', count: ra.winBackCandidates.length },
+          { key: 'riwayat' as SubTab, icon: <History className="w-4 h-4" />, label: 'Riwayat', count: dbActions.length > 0 ? dbActions.length : null },
           { key: 'comparison' as SubTab, icon: <Users className="w-4 h-4" />, label: 'Semua Kreator', count: ra.items.length },
           { key: 'heatmap' as SubTab, icon: <Flame className="w-4 h-4" />, label: 'Heatmap', count: null },
         ]).map(tab => (
@@ -1353,6 +1531,67 @@ export default function RetentionViewEnhanced({
               </div>
             </div>
           )}
+
+          {/* Target Retention */}
+          <div className="bg-white rounded-xl border p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                <Target className="w-4 h-4 text-purple-600" />
+                Target Retention Rate
+              </h4>
+              <button onClick={() => setShowTargetForm(!showTargetForm)}
+                className="text-xs px-3 py-1.5 rounded-lg border text-gray-600 hover:bg-gray-50 flex items-center gap-1">
+                <Edit3 className="w-3 h-3" /> {showTargetForm ? 'Tutup' : 'Set Target'}
+              </button>
+            </div>
+            {showTargetForm && (
+              <div className="flex items-center gap-3 mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <label className="text-xs text-gray-600 font-medium">Target:</label>
+                <input type="number" value={targetRetentionRate}
+                  onChange={e => setTargetRetentionRate(Number(e.target.value))}
+                  min={0} max={100} step={1}
+                  className="w-20 text-sm px-2 py-1 rounded border text-center font-bold" />
+                <span className="text-xs text-gray-500">%</span>
+                <button onClick={handleSaveTarget}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 flex items-center gap-1">
+                  <Save className="w-3 h-3" /> Simpan ke Supabase
+                </button>
+              </div>
+            )}
+            {(() => {
+              const latestRetention = ra.monthStats.length > 0 ? ra.monthStats[ra.monthStats.length - 1].retentionRate : 0;
+              const avgRetention = ra.monthStats.length > 0 ? ra.monthStats.reduce((a, m) => a + m.retentionRate, 0) / ra.monthStats.length : 0;
+              const isAboveTarget = latestRetention >= targetRetentionRate;
+              const diff = latestRetention - targetRetentionRate;
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className={`rounded-lg border p-4 ${isAboveTarget ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <p className="text-xs text-gray-500 mb-1">Target vs Aktual</p>
+                    <div className="flex items-end gap-2">
+                      <span className={`text-3xl font-black ${isAboveTarget ? 'text-green-700' : 'text-red-700'}`}>{fP(latestRetention)}</span>
+                      <span className="text-gray-400 text-sm mb-1">/ {fP(targetRetentionRate)}</span>
+                    </div>
+                    <p className={`text-xs font-semibold mt-1 ${isAboveTarget ? 'text-green-600' : 'text-red-600'}`}>
+                      {isAboveTarget ? '✅' : '❌'} {diff > 0 ? '+' : ''}{fP(diff)} dari target
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-blue-50 border-blue-200 p-4">
+                    <p className="text-xs text-gray-500 mb-1">Rata-rata Retention</p>
+                    <p className="text-3xl font-black text-blue-700">{fP(avgRetention)}</p>
+                    <p className="text-xs text-blue-600 mt-1">rata-rata seluruh periode</p>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs text-gray-500 mb-1">Progress</p>
+                    <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden mt-2">
+                      <div className={`h-full rounded-full transition-all ${isAboveTarget ? 'bg-green-500' : latestRetention >= targetRetentionRate * 0.8 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        style={{ width: `${Math.min(100, (latestRetention / Math.max(targetRetentionRate, 1)) * 100)}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{((latestRetention / Math.max(targetRetentionRate, 1)) * 100).toFixed(0)}% tercapai</p>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 
@@ -1911,7 +2150,7 @@ export default function RetentionViewEnhanced({
                             return (
                               <button
                                 key={s}
-                                onClick={() => setWinBackStatuses(prev => ({ ...prev, [item.username]: s }))}
+                                onClick={() => handleWinBackStatusChange(item.username, s)}
                                 className={`text-[10px] px-2 py-1 rounded-full border font-medium transition-all ${
                                   status === s ? `${sConfig.color} ring-1 ring-offset-1` : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
                                 }`}
@@ -1920,6 +2159,73 @@ export default function RetentionViewEnhanced({
                               </button>
                             );
                           })}
+                        </div>
+
+                        {/* ── Tags & Notes (Persistent) ── */}
+                        <div className="mt-2 pt-2 border-t border-gray-100">
+                          {/* Tags */}
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                            <Tag className="w-3 h-3 text-gray-400" />
+                            {getTagsForUser(item.username).map(t => (
+                              <span key={t.tag} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: t.color }}>
+                                {t.tag}
+                                <button onClick={() => handleRemoveTag(item.username, t.tag)} className="hover:bg-white/30 rounded-full p-0.5"><X className="w-2.5 h-2.5" /></button>
+                              </span>
+                            ))}
+                            <button onClick={() => setShowTagFor(showTagFor === item.username ? null : item.username)}
+                              className="text-[10px] px-1.5 py-0.5 rounded-full border border-dashed border-gray-300 text-gray-400 hover:text-blue-600 hover:border-blue-300 flex items-center gap-0.5">
+                              <Plus className="w-2.5 h-2.5" /> Tag
+                            </button>
+                          </div>
+                          {showTagFor === item.username && (
+                            <div className="flex flex-wrap gap-1.5 mb-2 p-2 bg-gray-50 rounded-lg">
+                              {TAG_PRESETS.filter(p => !getTagsForUser(item.username).some(t => t.tag === p.tag)).map(p => (
+                                <button key={p.tag} onClick={() => { handleAddTag(item.username, p.tag, p.color); setShowTagFor(null); }}
+                                  className="text-[10px] px-2 py-1 rounded-full text-white font-medium hover:opacity-80 transition-opacity" style={{ backgroundColor: p.color }}>
+                                  + {p.tag}
+                                </button>
+                              ))}
+                              <div className="flex items-center gap-1">
+                                <input type="text" value={customTagInput} onChange={e => setCustomTagInput(e.target.value)}
+                                  placeholder="Tag lain..." className="text-[10px] px-2 py-1 rounded border w-20" />
+                                <button onClick={() => { if (customTagInput.trim()) { handleAddTag(item.username, customTagInput.trim()); setCustomTagInput(''); setShowTagFor(null); } }}
+                                  className="text-[10px] px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">+</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setShowNoteFor(showNoteFor === item.username ? null : item.username)}
+                              className="text-[10px] text-gray-400 hover:text-blue-600 flex items-center gap-1">
+                              <StickyNote className="w-3 h-3" />
+                              Catatan ({getNotesForUser(item.username).length})
+                            </button>
+                          </div>
+                          {showNoteFor === item.username && (
+                            <div className="mt-2 space-y-2">
+                              <div className="flex gap-1.5">
+                                <input type="text" value={noteInput[item.username] || ''}
+                                  onChange={e => setNoteInput(prev => ({ ...prev, [item.username]: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') handleSaveNote(item.username); }}
+                                  placeholder="Tulis catatan..." className="flex-1 text-xs px-3 py-1.5 rounded-lg border focus:ring-2 focus:ring-blue-300 outline-none" />
+                                <button onClick={() => handleSaveNote(item.username)} disabled={savingNote}
+                                  className="text-xs px-3 py-1.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1">
+                                  <Save className="w-3 h-3" /> Simpan
+                                </button>
+                              </div>
+                              {getNotesForUser(item.username).map(n => (
+                                <div key={n.id} className="flex items-start gap-2 bg-yellow-50 rounded-lg p-2 border border-yellow-100">
+                                  <StickyNote className="w-3 h-3 text-yellow-500 mt-0.5 shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-gray-700">{n.note}</p>
+                                    <p className="text-[9px] text-gray-400 mt-0.5">{new Date(n.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                  </div>
+                                  <button onClick={() => handleDeleteNote(n.id)} className="text-gray-300 hover:text-red-500 p-0.5"><Trash2 className="w-3 h-3" /></button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1941,6 +2247,117 @@ export default function RetentionViewEnhanced({
               <p className="text-sm text-green-600 mt-1">Semua kreator masih aktif.</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ═══ TAB: RIWAYAT (ACTION HISTORY) ═══ */}
+      {subTab === 'riwayat' && (
+        <div className="space-y-4">
+          {/* Header + Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-gradient-to-br from-violet-600 to-indigo-700 rounded-xl p-5 text-white relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/5 rounded-full -translate-y-6 translate-x-6" />
+              <p className="text-violet-200 text-xs font-medium uppercase tracking-wide">Total Aksi Tercatat</p>
+              <p className="text-4xl font-black mt-1">{dbActions.length}</p>
+              <p className="text-violet-200 text-xs mt-1">Tersimpan di Supabase</p>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <p className="text-xs text-gray-500 font-medium">Kreator Dikontak</p>
+              <p className="text-2xl font-bold text-blue-700 mt-1">{new Set(dbActions.filter(a => a.action_type === 'winback_status' && a.status !== 'pending').map(a => a.username)).size}</p>
+              <p className="text-[10px] text-gray-400 mt-1">kreator unik yang pernah dihubungi</p>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <p className="text-xs text-gray-500 font-medium">Catatan Tersimpan</p>
+              <p className="text-2xl font-bold text-amber-700 mt-1">{dbNotes.length}</p>
+              <p className="text-[10px] text-gray-400 mt-1">untuk {new Set(dbNotes.map(n => n.username)).size} kreator</p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input type="text" value={riwayatSearch} onChange={e => setRiwayatSearch(e.target.value)}
+                placeholder="Cari username..." className="w-full text-xs pl-8 pr-3 py-2 rounded-lg border focus:ring-2 focus:ring-violet-300 outline-none" />
+            </div>
+            <select value={riwayatFilter} onChange={e => setRiwayatFilter(e.target.value)}
+              className="text-xs px-3 py-2 rounded-lg border bg-white text-gray-600">
+              <option value="all">Semua Jenis</option>
+              {Object.entries(ACTION_TYPE_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v.emoji} {v.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Timeline */}
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2 mb-4">
+              <History className="w-4 h-4 text-violet-600" />
+              Timeline Riwayat Aksi
+            </h3>
+            <div className="space-y-0">
+              {dbActions
+                .filter(a => {
+                  if (riwayatFilter !== 'all' && a.action_type !== riwayatFilter) return false;
+                  if (riwayatSearch && !a.username.toLowerCase().includes(riwayatSearch.toLowerCase())) return false;
+                  return true;
+                })
+                .slice(0, 100)
+                .map((action, idx) => {
+                  const actionInfo = ACTION_TYPE_LABELS[action.action_type] || ACTION_TYPE_LABELS.general;
+                  const statusColors: Record<string, string> = {
+                    pending: 'bg-gray-100 text-gray-600',
+                    contacted: 'bg-blue-100 text-blue-700',
+                    success: 'bg-green-100 text-green-700',
+                    failed: 'bg-red-100 text-red-700',
+                    done: 'bg-emerald-100 text-emerald-700',
+                    added: 'bg-purple-100 text-purple-700',
+                  };
+                  const sColor = statusColors[action.status] || 'bg-gray-100 text-gray-600';
+                  return (
+                    <div key={action.id} className="flex gap-3 group">
+                      {/* Timeline connector */}
+                      <div className="flex flex-col items-center">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${
+                          action.action_type === 'winback_status' ? 'bg-orange-100' :
+                          action.action_type === 'note' ? 'bg-yellow-100' :
+                          action.action_type === 'tag' ? 'bg-purple-100' : 'bg-gray-100'
+                        }`}>
+                          {actionInfo.emoji}
+                        </div>
+                        {idx < dbActions.length - 1 && <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />}
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 pb-4">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button onClick={() => onDrillDown(action.username)} className="font-semibold text-sm text-gray-900 hover:text-blue-600 hover:underline">
+                            @{action.username}
+                          </button>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${sColor}`}>
+                            {action.status}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            {actionInfo.label}
+                          </span>
+                        </div>
+                        {action.note && <p className="text-xs text-gray-600 mt-0.5">{action.note}</p>}
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {new Date(action.created_at).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              {dbActions.length === 0 && (
+                <div className="text-center py-12">
+                  <History className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-gray-500 font-medium">Belum ada riwayat aksi</p>
+                  <p className="text-xs text-gray-400 mt-1">Riwayat akan otomatis tercatat saat kamu update status win-back, tambah catatan, atau tag kreator.</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

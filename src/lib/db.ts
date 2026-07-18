@@ -841,3 +841,191 @@ export async function deleteDailyNote(period: string, date: string) {
   }
 }
 
+// ─── RETENTION: NOTES ────────────────────────────────────
+export interface RetentionNote {
+  id: number
+  store_id: string
+  username: string
+  note: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export async function loadRetentionNotes(storeId: string, username?: string): Promise<RetentionNote[]> {
+  requireSupabase()
+  let query = supabase
+    .from('affiliate_retention_notes')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('created_at', { ascending: false })
+  if (username) query = query.eq('username', username)
+  const { data, error } = await query.limit(500)
+  if (error) throw error
+  return (data || []) as RetentionNote[]
+}
+
+export async function saveRetentionNote(storeId: string, username: string, note: string, createdBy?: string): Promise<RetentionNote> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('affiliate_retention_notes')
+    .insert({ store_id: storeId, username, note, created_by: createdBy || 'admin' })
+    .select()
+    .single()
+  if (error) throw error
+  return data as RetentionNote
+}
+
+export async function updateRetentionNote(noteId: number, note: string): Promise<void> {
+  requireSupabase()
+  const { error } = await supabase
+    .from('affiliate_retention_notes')
+    .update({ note, updated_at: new Date().toISOString() })
+    .eq('id', noteId)
+  if (error) throw error
+}
+
+export async function deleteRetentionNote(noteId: number): Promise<void> {
+  requireSupabase()
+  const { error } = await supabase
+    .from('affiliate_retention_notes')
+    .delete()
+    .eq('id', noteId)
+  if (error) throw error
+}
+
+// ─── RETENTION: ACTION LOG ───────────────────────────────
+export interface RetentionAction {
+  id: number
+  store_id: string
+  username: string
+  action_type: string
+  status: string
+  note: string
+  period: string
+  created_at: string
+}
+
+export async function loadRetentionActions(storeId: string, username?: string, limit = 200): Promise<RetentionAction[]> {
+  requireSupabase()
+  let query = supabase
+    .from('affiliate_retention_actions')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('created_at', { ascending: false })
+  if (username) query = query.eq('username', username)
+  const { data, error } = await query.limit(limit)
+  if (error) throw error
+  return (data || []) as RetentionAction[]
+}
+
+export async function saveRetentionAction(
+  storeId: string, username: string, actionType: string, status: string, note?: string, period?: string
+): Promise<RetentionAction> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('affiliate_retention_actions')
+    .insert({
+      store_id: storeId, username, action_type: actionType,
+      status, note: note || '', period: period || '',
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data as RetentionAction
+}
+
+// ─── RETENTION: CREATOR TAGS ─────────────────────────────
+export interface CreatorTag {
+  id: number
+  store_id: string
+  username: string
+  tag: string
+  color: string
+  created_at: string
+}
+
+export async function loadCreatorTags(storeId: string, username?: string): Promise<CreatorTag[]> {
+  requireSupabase()
+  let query = supabase
+    .from('affiliate_creator_tags')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('created_at', { ascending: false })
+  if (username) query = query.eq('username', username)
+  const { data, error } = await query.limit(5000)
+  if (error) throw error
+  return (data || []) as CreatorTag[]
+}
+
+export async function saveCreatorTag(storeId: string, username: string, tag: string, color?: string): Promise<CreatorTag> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('affiliate_creator_tags')
+    .upsert(
+      { store_id: storeId, username, tag, color: color || '#3B82F6' },
+      { onConflict: 'store_id,username,tag' }
+    )
+    .select()
+    .single()
+  if (error) throw error
+  return data as CreatorTag
+}
+
+export async function deleteCreatorTag(storeId: string, username: string, tag: string): Promise<void> {
+  requireSupabase()
+  const { error } = await supabase
+    .from('affiliate_creator_tags')
+    .delete()
+    .eq('store_id', storeId)
+    .eq('username', username)
+    .eq('tag', tag)
+  if (error) throw error
+}
+
+// ─── RETENTION: TARGETS ──────────────────────────────────
+export interface RetentionTarget {
+  id: number
+  store_id: string
+  period: string
+  target_retention_rate: number
+  target_active_creators: number
+  target_gmv: number
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export async function loadRetentionTargets(storeId: string): Promise<RetentionTarget[]> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('affiliate_retention_targets')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('period')
+  if (error) throw error
+  return (data || []) as RetentionTarget[]
+}
+
+export async function saveRetentionTarget(
+  storeId: string, period: string, targetRate: number, targetCreators?: number, targetGmv?: number, notes?: string
+): Promise<RetentionTarget> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('affiliate_retention_targets')
+    .upsert(
+      {
+        store_id: storeId, period,
+        target_retention_rate: targetRate,
+        target_active_creators: targetCreators || 0,
+        target_gmv: targetGmv || 0,
+        notes: notes || '',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'store_id,period' }
+    )
+    .select()
+    .single()
+  if (error) throw error
+  return data as RetentionTarget
+}

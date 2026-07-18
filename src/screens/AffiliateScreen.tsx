@@ -2320,6 +2320,7 @@ export default function AffiliateScreen() {
               filteredData={filteredData}
               supabaseCreators={supabaseCreators}
               allMonths={allMonths}
+              storeId={activeStore?.id || ''}
               onDrillDown={(u) => setDrillDownCreator(u)}
             />
           )}
