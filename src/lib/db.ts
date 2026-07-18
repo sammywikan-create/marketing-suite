@@ -375,15 +375,32 @@ export async function loadAffiliateCreators(
   platform?: string,
 ): Promise<AffiliateCreatorItem[]> {
   requireSupabase()
-  let query = supabase
-    .from('affiliate_creators')
-    .select('*')
-    .eq('store_id', storeId)
-  if (period) query = query.eq('period', period)
-  if (platform) query = query.eq('platform', platform)
-  const { data, error } = await query.order('gmv', { ascending: false })
-  if (error) throw error
-  return (data || []).map(rowToCreator)
+  // Supabase JS defaults to 1000 rows max per request.
+  // We paginate to fetch ALL creators (some stores have 3000+).
+  const PAGE_SIZE = 1000
+  const allRows: any[] = []
+  let from = 0
+  let hasMore = true
+  while (hasMore) {
+    let query = supabase
+      .from('affiliate_creators')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('gmv', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1)
+    if (period) query = query.eq('period', period)
+    if (platform) query = query.eq('platform', platform)
+    const { data, error } = await query
+    if (error) throw error
+    const rows = data || []
+    allRows.push(...rows)
+    if (rows.length < PAGE_SIZE) {
+      hasMore = false
+    } else {
+      from += PAGE_SIZE
+    }
+  }
+  return allRows.map(rowToCreator)
 }
 
 export async function deleteAffiliateCreatorsDb(

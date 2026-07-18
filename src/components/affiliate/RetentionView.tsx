@@ -295,18 +295,20 @@ export default function RetentionViewEnhanced({
   const [winBackFilter, setWinBackFilter] = useState<'all' | WinBackStatus>('all');
   const [copiedMessage, setCopiedMessage] = useState<string | null>(null);
 
-  // ── ENRICH: Load creators from Supabase per period when local data is empty ──
+  // ── ENRICH: Load creators from Supabase per period ──
+  // Always load from Supabase to ensure complete creator data per period.
+  // Local embedded creators may be truncated or incomplete (Supabase default 1000 row limit).
   useEffect(() => {
-    const hasLocalCreators = filteredData.some(d => d.creators && d.creators.length > 0);
-    if (hasLocalCreators || filteredData.length < 2) return;
+    // Use allMonths (unfiltered) so we always have ALL periods for retention analysis
+    const sourceData = allMonths && allMonths.length > 0 ? allMonths : filteredData;
+    if (sourceData.length < 2) return;
 
     let cancelled = false;
     async function loadPerPeriod() {
       setLoadingCreators(true);
       try {
-        const monthsToLoad = allMonths && allMonths.length > 0 ? allMonths : filteredData;
         const periodMap: Record<string, { storeId: string; platform?: string }[]> = {};
-        monthsToLoad.forEach(d => {
+        sourceData.forEach(d => {
           const key = d.periodRaw.split(" ~ ")[0]?.slice(0, 7) || d.periodRaw;
           if (!periodMap[key]) periodMap[key] = [];
           if (d.storeId) {
@@ -329,7 +331,16 @@ export default function RetentionViewEnhanced({
                 }
               })
             );
-            result[period] = allCreators.flat();
+            // Deduplicate creators by username within the same period
+            const flat = allCreators.flat();
+            const deduped = new Map<string, AffiliateCreatorItem>();
+            flat.forEach(c => {
+              const existing = deduped.get(c.creatorUsername);
+              if (!existing || c.affiliateGMV > existing.affiliateGMV) {
+                deduped.set(c.creatorUsername, c);
+              }
+            });
+            result[period] = Array.from(deduped.values());
           })
         );
         if (!cancelled) setPerPeriodCreators(result);
@@ -344,17 +355,51 @@ export default function RetentionViewEnhanced({
   }, [filteredData, allMonths]);
 
   // ── BUILD ENRICHED DATA ──
+  // Use allMonths (unfiltered, all periods) as primary source for retention analysis.
+  // Merge in Supabase-loaded creators which may have more complete data than embedded ones.
   const enrichedData = useMemo(() => {
-    return filteredData.map(d => {
-      if (d.creators && d.creators.length > 0) return d;
+    // Use allMonths if available (contains all periods regardless of selectedPeriod filter)
+    const sourceData = allMonths && allMonths.length > 0 ? allMonths : filteredData;
+
+    // Deduplicate periods: in combined mode, allMonths may have multiple entries per period (one per store).
+    // We need to merge them into one entry per period with combined creators.
+    const periodMap = new Map<string, AffiliateMonthDataWithStore>();
+    sourceData.forEach(d => {
+      const key = `${d.periodRaw}__${d.platform || 'tiktok'}`;
+      if (!periodMap.has(key)) {
+        periodMap.set(key, { ...d, creators: [...d.creators] });
+      } else {
+        const existing = periodMap.get(key)!;
+        existing.creators = [...existing.creators, ...d.creators];
+      }
+    });
+
+    return Array.from(periodMap.values()).map(d => {
       const periodKey = d.periodRaw.split(" ~ ")[0]?.slice(0, 7) || d.periodRaw;
       const supaCreators = perPeriodCreators[periodKey];
+
+      // Prefer Supabase data when available (it's paginated now and complete).
+      // Otherwise fallback to embedded local creators.
+      let creators = d.creators;
       if (supaCreators && supaCreators.length > 0) {
-        return { ...d, creators: supaCreators };
+        // Merge: start with Supabase, add any local-only creators
+        const supaMap = new Map(supaCreators.map(c => [c.creatorUsername, c]));
+        const localOnly = creators.filter(c => !supaMap.has(c.creatorUsername));
+        creators = [...supaCreators, ...localOnly];
       }
-      return d;
+
+      // Deduplicate by username (keep highest GMV)
+      const deduped = new Map<string, AffiliateCreatorItem>();
+      creators.forEach(c => {
+        const existing = deduped.get(c.creatorUsername);
+        if (!existing || c.affiliateGMV > existing.affiliateGMV) {
+          deduped.set(c.creatorUsername, c);
+        }
+      });
+
+      return { ...d, creators: Array.from(deduped.values()) };
     });
-  }, [filteredData, perPeriodCreators]);
+  }, [filteredData, allMonths, perPeriodCreators]);
 
   // ═══════════════════════════════════════════════════════
   // MAIN ANALYSIS
