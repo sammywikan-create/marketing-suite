@@ -7,7 +7,9 @@ import {
   DollarSign, PieChart, ArrowDownRight, ArrowUpRight, Star, X, UserMinus,
   Award, RefreshCw, Heart, ShieldAlert, Lightbulb, BarChart3, Loader2,
   Eye, Phone, Gift, MessageSquare, AlertTriangle, CheckCircle, Copy,
-  Users, Flame, Crown, TrendingDown, Percent, Calendar, Download
+  Users, Flame, Crown, TrendingDown, Percent, Calendar, Download,
+  Target, Zap, Clock, Layers, RotateCcw, Sprout, Skull,
+  Mail, FileDown, ArrowRight, Shield, CircleDot, Gauge
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════
@@ -15,7 +17,9 @@ import {
 // ═══════════════════════════════════════════════════════
 type AffiliateMonthDataWithStore = AffiliateMonthData & { _storeName: string };
 type RetentionSeverity = 'kritis' | 'peringatan' | 'perhatian' | 'monitor' | 'naik' | 'baru' | 'stabil';
-type SubTab = 'overview' | 'followup' | 'comparison' | 'heatmap';
+type SubTab = 'overview' | 'followup' | 'comparison' | 'heatmap' | 'cohort' | 'lifecycle' | 'winback';
+type LifecycleStage = 'onboarding' | 'growth' | 'mature' | 'at_risk' | 'dormant' | 'churned';
+type WinBackStatus = 'pending' | 'contacted' | 'success' | 'failed';
 
 interface RetentionItem {
   username: string;
@@ -36,6 +40,10 @@ interface RetentionItem {
   sparklineGMVs: number[];
   riskScore: number;
   daysSinceLastActive: number;
+  totalHistoricGMV: number;
+  activeMonths: number;
+  lifecycleStage: LifecycleStage;
+  priorityScore: number;
 }
 
 interface MonthStat {
@@ -47,6 +55,34 @@ interface MonthStat {
   total: number;
   totalGMV: number;
   avgGMVPerCreator: number;
+  churnRate: number;
+  netMovement: number;
+}
+
+interface CohortRow {
+  cohortPeriod: string;
+  startCount: number;
+  retention: number[]; // percentage retained at each subsequent period
+  counts: number[]; // absolute counts retained
+}
+
+interface LifecycleGroup {
+  stage: LifecycleStage;
+  items: RetentionItem[];
+  totalGMV: number;
+  avgGMV: number;
+  avgOrders: number;
+  avgVideos: number;
+}
+
+interface WinBackItem extends RetentionItem {
+  winBackScore: number;
+  winBackStatus: WinBackStatus;
+  suggestedAction: string;
+  suggestedMessage: string;
+  estimatedRecoveryGMV: number;
+  monthsSinceActive: number;
+  peakGMV: number;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -84,6 +120,39 @@ const ACTION_CONFIG: Record<string, { icon: React.ReactNode; label: string; colo
   none:       { icon: <CheckCircle className="w-3 h-3" />, label: 'OK', color: 'bg-gray-100 text-gray-600' },
 };
 
+const LIFECYCLE_CONFIG: Record<LifecycleStage, { label: string; icon: React.ReactNode; color: string; bg: string; border: string; emoji: string; description: string; strategy: string }> = {
+  onboarding: {
+    label: 'Onboarding', icon: <Sprout className="w-4 h-4" />, color: 'text-emerald-700', bg: 'bg-emerald-50',
+    border: 'border-emerald-200', emoji: '🌱', description: 'Kreator baru yang baru bergabung 1 bulan',
+    strategy: 'Kirim welcome kit, produk sampel, dan panduan konten. Berikan perhatian ekstra di bulan pertama untuk membangun kebiasaan.'
+  },
+  growth: {
+    label: 'Growth', icon: <TrendingUp className="w-4 h-4" />, color: 'text-blue-700', bg: 'bg-blue-50',
+    border: 'border-blue-200', emoji: '📈', description: 'Kreator yang GMV-nya naik konsisten',
+    strategy: 'Berikan exclusive deal, tingkatkan komisi, dan ajak kolaborasi konten premium untuk akselerasi pertumbuhan.'
+  },
+  mature: {
+    label: 'Mature', icon: <Star className="w-4 h-4" />, color: 'text-amber-700', bg: 'bg-amber-50',
+    border: 'border-amber-200', emoji: '⭐', description: 'Kreator konsisten aktif ≥3 bulan',
+    strategy: 'Jaga hubungan baik, berikan reward loyalty, akses produk baru lebih awal, dan libatkan dalam campaign khusus.'
+  },
+  at_risk: {
+    label: 'At Risk', icon: <ShieldAlert className="w-4 h-4" />, color: 'text-orange-700', bg: 'bg-orange-50',
+    border: 'border-orange-200', emoji: '⚠️', description: 'Kreator mature yang mulai menurun',
+    strategy: 'Segera hubungi, cari tahu kendala, tawarkan insentif khusus, dan evaluasi apakah perlu ganti strategi produk.'
+  },
+  dormant: {
+    label: 'Dormant', icon: <Clock className="w-4 h-4" />, color: 'text-gray-600', bg: 'bg-gray-50',
+    border: 'border-gray-300', emoji: '😴', description: 'Tidak aktif bulan terakhir tapi pernah aktif',
+    strategy: 'Kirim re-engagement message, tawarkan comeback bonus atau produk baru yang relevan dengan niche mereka.'
+  },
+  churned: {
+    label: 'Churned', icon: <Skull className="w-4 h-4" />, color: 'text-red-700', bg: 'bg-red-50',
+    border: 'border-red-200', emoji: '💀', description: '2+ bulan tidak aktif',
+    strategy: 'Evaluasi apakah masih worth pursuing. Jika ya, kirim win-back offer agresif. Jika tidak, fokus ke kreator baru.'
+  },
+};
+
 // ═══════════════════════════════════════════════════════
 // MINI SPARKLINE
 // ═══════════════════════════════════════════════════════
@@ -108,6 +177,56 @@ function MiniSparkline({ values, width = 60, height = 20, highlightLast = false 
 }
 
 // ═══════════════════════════════════════════════════════
+// RETENTION TREND LINE CHART (SVG)
+// ═══════════════════════════════════════════════════════
+function RetentionTrendChart({ monthStats }: { monthStats: MonthStat[] }) {
+  if (monthStats.length < 2) return null;
+  const W = 400, H = 120, PX = 40, PY = 20;
+  const cW = W - PX * 2, cH = H - PY * 2;
+  const maxRate = 100;
+  const points = monthStats.map((m, i) => ({
+    x: PX + (i / (monthStats.length - 1)) * cW,
+    y: PY + cH - (m.retentionRate / maxRate) * cH,
+    rate: m.retentionRate,
+    period: m.period,
+  }));
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${PY + cH} L ${points[0].x} ${PY + cH} Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+      {/* Grid */}
+      {[0, 25, 50, 75, 100].map(v => {
+        const y = PY + cH - (v / maxRate) * cH;
+        return (
+          <g key={v}>
+            <line x1={PX} y1={y} x2={W - PX} y2={y} stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray={v === 0 ? '' : '3,3'} />
+            <text x={PX - 5} y={y + 3} textAnchor="end" className="fill-gray-400" fontSize="8">{v}%</text>
+          </g>
+        );
+      })}
+      {/* Area */}
+      <path d={areaD} fill="url(#retGrad)" opacity="0.3" />
+      <defs>
+        <linearGradient id="retGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* Line */}
+      <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
+      {/* Dots + Labels */}
+      {points.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r="3.5" fill="white" stroke="#3b82f6" strokeWidth="2" />
+          <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-blue-600 font-bold" fontSize="8">{p.rate.toFixed(0)}%</text>
+          <text x={p.x} y={PY + cH + 12} textAnchor="middle" className="fill-gray-400" fontSize="7">{p.period.replace(/\s.*/, '').slice(5)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // RISK SCORE BADGE
 // ═══════════════════════════════════════════════════════
 function RiskBadge({ score }: { score: number }) {
@@ -124,6 +243,28 @@ function RiskBadge({ score }: { score: number }) {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════
+// CONCENTRATION RISK GAUGE
+// ═══════════════════════════════════════════════════════
+function ConcentrationGauge({ topNPct, n }: { topNPct: number; n: number }) {
+  const risk = topNPct >= 80 ? 'SANGAT TINGGI' : topNPct >= 60 ? 'TINGGI' : topNPct >= 40 ? 'SEDANG' : 'RENDAH';
+  const riskColor = topNPct >= 80 ? 'text-red-600' : topNPct >= 60 ? 'text-orange-600' : topNPct >= 40 ? 'text-yellow-600' : 'text-green-600';
+  const barColor = topNPct >= 80 ? 'bg-red-500' : topNPct >= 60 ? 'bg-orange-500' : topNPct >= 40 ? 'bg-yellow-500' : 'bg-green-500';
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-gray-500">Top {n} kreator</span>
+        <span className={`font-bold ${riskColor}`}>{topNPct.toFixed(1)}%</span>
+      </div>
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${topNPct}%` }} />
+      </div>
+      <span className={`text-[9px] font-bold ${riskColor}`}>{risk}</span>
+    </div>
+  );
+}
+
 
 // ═══════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -149,6 +290,10 @@ export default function RetentionViewEnhanced({
   const [loadingCreators, setLoadingCreators] = useState(false);
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [copied, setCopied] = useState(false);
+  const [lifecycleExpanded, setLifecycleExpanded] = useState<LifecycleStage | null>(null);
+  const [winBackStatuses, setWinBackStatuses] = useState<Record<string, WinBackStatus>>({});
+  const [winBackFilter, setWinBackFilter] = useState<'all' | WinBackStatus>('all');
+  const [copiedMessage, setCopiedMessage] = useState<string | null>(null);
 
   // ── ENRICH: Load creators from Supabase per period when local data is empty ──
   useEffect(() => {
@@ -237,13 +382,22 @@ export default function RetentionViewEnhanced({
       if (c.affiliateGMV > 0) relevantUsernames.add(c.creatorUsername);
     }));
 
-    // Sparklines
+    // Sparklines & historic GMV + active months per creator
     const sparklines: Record<string, number[]> = {};
-    sorted.forEach(d => {
+    const historicGMV: Record<string, number> = {};
+    const activeMonthsMap: Record<string, number> = {};
+    const firstActiveMonth: Record<string, number> = {};
+    sorted.forEach((d, pi) => {
       const gmvLookup = new Map(d.creators.map(c => [c.creatorUsername, c.affiliateGMV]));
       relevantUsernames.forEach(u => {
         if (!sparklines[u]) sparklines[u] = [];
-        sparklines[u].push(gmvLookup.get(u) || 0);
+        const gmv = gmvLookup.get(u) || 0;
+        sparklines[u].push(gmv);
+        historicGMV[u] = (historicGMV[u] || 0) + gmv;
+        if (gmv > 0) {
+          activeMonthsMap[u] = (activeMonthsMap[u] || 0) + 1;
+          if (firstActiveMonth[u] === undefined) firstActiveMonth[u] = pi;
+        }
       });
     });
 
@@ -288,6 +442,37 @@ export default function RetentionViewEnhanced({
         }
         daysSinceLastActive = consecutiveZeros * 30;
       }
+
+      // Lifecycle stage
+      const aMths = activeMonthsMap[username] || 0;
+      const isActiveLatest = currGMV > 0;
+      const isActivePrev = pGMV > 0;
+      let lifecycleStage: LifecycleStage;
+      if (!isActiveLatest && daysSinceLastActive >= 60) {
+        lifecycleStage = 'churned';
+      } else if (!isActiveLatest && isActivePrev) {
+        lifecycleStage = 'dormant';
+      } else if (isActiveLatest && aMths === 1) {
+        lifecycleStage = 'onboarding';
+      } else if (isActiveLatest && aMths >= 2 && changePct > 0 && pGMV > 0) {
+        lifecycleStage = 'growth';
+      } else if (isActiveLatest && aMths >= 3 && changePct >= -10) {
+        lifecycleStage = 'mature';
+      } else if (isActiveLatest && aMths >= 2 && changePct < -10) {
+        lifecycleStage = 'at_risk';
+      } else if (isActiveLatest) {
+        lifecycleStage = aMths >= 3 ? 'mature' : 'onboarding';
+      } else {
+        lifecycleStage = 'dormant';
+      }
+
+      // Enhanced priority score (0-100): considers historic GMV, tier, active months, trend
+      const tierWeight: Record<string, number> = { Mega: 25, Macro: 20, Mid: 15, Micro: 10, Nano: 5, Unknown: 3 };
+      const historicW = Math.min(30, (historicGMV[username] || 0) / 500000);
+      const activeW = Math.min(20, aMths * 5);
+      const tierW = tierWeight[(curr || prevC)?.creatorTier || 'Unknown'] || 3;
+      const trendW = changePct < -50 ? 25 : changePct < -20 ? 15 : changePct < 0 ? 8 : 0;
+      const priorityScore = Math.min(100, Math.round(historicW + activeW + tierW + trendW));
 
       let severity: RetentionSeverity;
       let recommendation = '';
@@ -339,6 +524,10 @@ export default function RetentionViewEnhanced({
         recommendation, actionType,
         sparklineGMVs: sparklines[username] || [],
         riskScore, daysSinceLastActive,
+        totalHistoricGMV: historicGMV[username] || 0,
+        activeMonths: aMths,
+        lifecycleStage,
+        priorityScore,
       });
     });
 
@@ -403,7 +592,7 @@ export default function RetentionViewEnhanced({
       recoveryRate = declined > 0 ? (recovered / declined) * 100 : 0;
     }
 
-    // Month stats
+    // Month stats (enhanced with churnRate and netMovement)
     const monthStats: MonthStat[] = sorted.map((d, pi) => {
       if (pi === 0) return null;
       const prevActive = new Set(sorted[pi - 1].creators.filter(c => c.affiliateGMV > 0).map(c => c.creatorUsername));
@@ -412,10 +601,33 @@ export default function RetentionViewEnhanced({
       const churned = [...prevActive].filter(u => !currActive.has(u)).length;
       const newOnes = [...currActive].filter(u => !prevActive.has(u)).length;
       const retentionRate = prevActive.size > 0 ? (retained / prevActive.size) * 100 : 0;
+      const churnRate = prevActive.size > 0 ? (churned / prevActive.size) * 100 : 0;
+      const netMovement = newOnes - churned;
       const totalGMV = d.creators.filter(c => c.affiliateGMV > 0).reduce((a, c) => a + c.affiliateGMV, 0);
       const avgGMVPerCreator = currActive.size > 0 ? totalGMV / currActive.size : 0;
-      return { period: periods[pi], retained, churned, newOnes, retentionRate, total: currActive.size, totalGMV, avgGMVPerCreator };
+      return { period: periods[pi], retained, churned, newOnes, retentionRate, total: currActive.size, totalGMV, avgGMVPerCreator, churnRate, netMovement };
     }).filter(Boolean) as MonthStat[];
+
+    // Churn velocity (trend of churn rates)
+    const churnRates = monthStats.map(m => m.churnRate);
+    let churnVelocity: 'accelerating' | 'decelerating' | 'stable' | 'na' = 'na';
+    if (churnRates.length >= 2) {
+      const lastChurn = churnRates[churnRates.length - 1];
+      const prevChurn = churnRates[churnRates.length - 2];
+      if (lastChurn > prevChurn + 5) churnVelocity = 'accelerating';
+      else if (lastChurn < prevChurn - 5) churnVelocity = 'decelerating';
+      else churnVelocity = 'stable';
+    }
+
+    // GMV Concentration Risk
+    const activeItems = items.filter(i => i.currGMV > 0).sort((a, b) => b.currGMV - a.currGMV);
+    const totalActiveGMV = activeItems.reduce((a, i) => a + i.currGMV, 0);
+    const top5GMV = activeItems.slice(0, 5).reduce((a, i) => a + i.currGMV, 0);
+    const top10GMV = activeItems.slice(0, 10).reduce((a, i) => a + i.currGMV, 0);
+    const top20GMV = activeItems.slice(0, 20).reduce((a, i) => a + i.currGMV, 0);
+    const top5Pct = totalActiveGMV > 0 ? (top5GMV / totalActiveGMV) * 100 : 0;
+    const top10Pct = totalActiveGMV > 0 ? (top10GMV / totalActiveGMV) * 100 : 0;
+    const top20Pct = totalActiveGMV > 0 ? (top20GMV / totalActiveGMV) * 100 : 0;
 
     // Heatmap data
     const allHeatmapUsernames = Array.from(new Set(sorted.flatMap(d => d.creators.map(c => c.creatorUsername))));
@@ -451,6 +663,110 @@ export default function RetentionViewEnhanced({
     const gmvChange = latestTotalGMV - prevTotalGMV;
     const gmvChangePct = prevTotalGMV > 0 ? (gmvChange / prevTotalGMV) * 100 : 0;
 
+    // ── COHORT ANALYSIS ──
+    const cohortRows: CohortRow[] = [];
+    // For each period, identify creators who appeared for the first time
+    const allCreatorFirstPeriod: Record<string, number> = {};
+    sorted.forEach((d, pi) => {
+      d.creators.forEach(c => {
+        if (c.affiliateGMV > 0 && allCreatorFirstPeriod[c.creatorUsername] === undefined) {
+          allCreatorFirstPeriod[c.creatorUsername] = pi;
+        }
+      });
+    });
+    // Build cohort for each period except the last (need at least 1 subsequent period)
+    for (let cohortIdx = 0; cohortIdx < sorted.length - 1; cohortIdx++) {
+      const cohortMembers = Object.entries(allCreatorFirstPeriod)
+        .filter(([, pi]) => pi === cohortIdx)
+        .map(([u]) => u);
+      if (cohortMembers.length === 0) continue;
+
+      const retention: number[] = [];
+      const counts: number[] = [];
+      for (let nextIdx = cohortIdx + 1; nextIdx < sorted.length; nextIdx++) {
+        const activeInPeriod = new Set(
+          sorted[nextIdx].creators.filter(c => c.affiliateGMV > 0).map(c => c.creatorUsername)
+        );
+        const retainedCount = cohortMembers.filter(u => activeInPeriod.has(u)).length;
+        const retPct = (retainedCount / cohortMembers.length) * 100;
+        retention.push(retPct);
+        counts.push(retainedCount);
+      }
+      cohortRows.push({
+        cohortPeriod: periods[cohortIdx],
+        startCount: cohortMembers.length,
+        retention,
+        counts,
+      });
+    }
+
+    // ── LIFECYCLE GROUPS ──
+    const lifecycleGroups: Record<LifecycleStage, LifecycleGroup> = {
+      onboarding: { stage: 'onboarding', items: [], totalGMV: 0, avgGMV: 0, avgOrders: 0, avgVideos: 0 },
+      growth: { stage: 'growth', items: [], totalGMV: 0, avgGMV: 0, avgOrders: 0, avgVideos: 0 },
+      mature: { stage: 'mature', items: [], totalGMV: 0, avgGMV: 0, avgOrders: 0, avgVideos: 0 },
+      at_risk: { stage: 'at_risk', items: [], totalGMV: 0, avgGMV: 0, avgOrders: 0, avgVideos: 0 },
+      dormant: { stage: 'dormant', items: [], totalGMV: 0, avgGMV: 0, avgOrders: 0, avgVideos: 0 },
+      churned: { stage: 'churned', items: [], totalGMV: 0, avgGMV: 0, avgOrders: 0, avgVideos: 0 },
+    };
+    items.forEach(item => {
+      const g = lifecycleGroups[item.lifecycleStage];
+      g.items.push(item);
+      g.totalGMV += item.currGMV || item.prevGMV;
+    });
+    (Object.values(lifecycleGroups) as LifecycleGroup[]).forEach(g => {
+      if (g.items.length > 0) {
+        g.avgGMV = g.totalGMV / g.items.length;
+        g.avgOrders = g.items.reduce((a, i) => a + (i.currOrders || i.prevOrders), 0) / g.items.length;
+        g.avgVideos = g.items.reduce((a, i) => a + (i.currVideos || i.prevVideos), 0) / g.items.length;
+      }
+    });
+
+    // ── WIN-BACK ITEMS ──
+    const winBackCandidates: WinBackItem[] = items
+      .filter(i => i.lifecycleStage === 'dormant' || i.lifecycleStage === 'churned' || i.severity === 'kritis')
+      .map(item => {
+        const peakGMV = Math.max(...item.sparklineGMVs, 0);
+        const monthsSinceActive = Math.ceil(item.daysSinceLastActive / 30);
+        // Win-back score: higher = more worth pursuing
+        const recencyScore = Math.max(0, 30 - monthsSinceActive * 10);
+        const valueScore = Math.min(35, (item.totalHistoricGMV / 1000000) * 10);
+        const loyaltyScore = Math.min(20, item.activeMonths * 5);
+        const tierBonus: Record<string, number> = { Mega: 15, Macro: 12, Mid: 8, Micro: 5, Nano: 2, Unknown: 1 };
+        const tBonus = tierBonus[item.tier] || 1;
+        const winBackScore = Math.min(100, Math.round(recencyScore + valueScore + loyaltyScore + tBonus));
+
+        const estimatedRecoveryGMV = peakGMV * 0.5; // conservative: 50% of peak
+
+        let suggestedAction = '';
+        let suggestedMessage = '';
+        if (peakGMV > 10000000) {
+          suggestedAction = '🔥 Hubungi langsung + Exclusive deal';
+          suggestedMessage = `Hai kak @${item.username}! 👋 Kami kangen sama konten-konten kece dari kakak nih. Ada produk baru yang cocok banget sama audience kakak. Yuk kita diskusi kolaborasi spesial? Kami siapkan bonus komisi khusus! 🎁`;
+        } else if (peakGMV > 3000000) {
+          suggestedAction = '📦 Kirim sampel baru + Bonus komisi';
+          suggestedMessage = `Hai kak @${item.username}! 🌟 Ada update produk baru yang wajib dicoba! Kami mau kirim sample gratis + bonus komisi 5% untuk kakak. Tertarik? Reply ya kak! 💕`;
+        } else if (item.activeMonths >= 3) {
+          suggestedAction = '💌 Re-engagement message + Incentive';
+          suggestedMessage = `Hai kak @${item.username}! Lama ga ketemu nih 😊 Mau ngasih tau ada promo eksklusif untuk kreator loyal. Komisi up to 15% + bonus produk! Yuk aktif lagi kak! 🚀`;
+        } else {
+          suggestedAction = '📱 DM singkat + Info produk baru';
+          suggestedMessage = `Hai kak @${item.username}! 👋 Ada produk-produk baru keren yang bisa banget kakak review. Cek yuk! Link: [produk] 😊`;
+        }
+
+        return {
+          ...item,
+          winBackScore,
+          winBackStatus: 'pending' as WinBackStatus,
+          suggestedAction,
+          suggestedMessage,
+          estimatedRecoveryGMV,
+          monthsSinceActive: monthsSinceActive,
+          peakGMV,
+        };
+      })
+      .sort((a, b) => b.winBackScore - a.winBackScore);
+
     return {
       items, needFollowUp, lostGMV,
       criticalCount, warningCount, attentionCount, monitorCount, risingCount, newCount, stableCount,
@@ -461,6 +777,8 @@ export default function RetentionViewEnhanced({
       prevPeriod: prev.period || prev.periodRaw,
       periods, sorted, monthStats,
       heatmapCreators, activityMap, maxGMVInHeatmap,
+      churnVelocity, top5Pct, top10Pct, top20Pct,
+      cohortRows, lifecycleGroups, winBackCandidates,
     };
   }, [enrichedData]);
 
@@ -510,6 +828,37 @@ export default function RetentionViewEnhanced({
     });
   }, [analysis]);
 
+  // ── EXPORT CSV ──
+  const handleExportCSV = useCallback(() => {
+    if (!analysis) return;
+    const headers = ['No', 'Username', 'Tier', 'Status', 'Priority Score', 'Risk Score', 'GMV Sebelumnya', 'GMV Sekarang', 'Selisih', 'Perubahan %', 'Orders Sebelumnya', 'Orders Sekarang', 'Videos Sebelumnya', 'Videos Sekarang', 'Bulan Aktif', 'Lifecycle', 'Rekomendasi'];
+    const rows = analysis.needFollowUp.map((item, i) => [
+      i + 1, `@${item.username}`, item.tier, SEV_CONFIG[item.severity].label,
+      item.priorityScore, item.riskScore,
+      Math.round(item.prevGMV), Math.round(item.currGMV),
+      Math.round(item.change), `${item.changePct.toFixed(1)}%`,
+      item.prevOrders, item.currOrders, item.prevVideos, item.currVideos,
+      item.activeMonths, LIFECYCLE_CONFIG[item.lifecycleStage].label,
+      `"${item.recommendation.replace(/"/g, '""')}"`,
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `follow-up-retensi-${analysis.latestPeriod.replace(/\s/g, '_')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [analysis]);
+
+  // ── COPY WIN-BACK MESSAGE ──
+  const handleCopyMessage = useCallback((msg: string, username: string) => {
+    navigator.clipboard.writeText(msg).then(() => {
+      setCopiedMessage(username);
+      setTimeout(() => setCopiedMessage(null), 2000);
+    });
+  }, []);
+
   // ── LOADING STATE ──
   if (loadingCreators) {
     return (
@@ -552,27 +901,30 @@ export default function RetentionViewEnhanced({
   return (
     <div className="space-y-4">
       {/* ═══ NAVIGATION TABS ═══ */}
-      <div className="flex items-center gap-2 bg-white rounded-xl border p-1.5">
+      <div className="flex items-center gap-1.5 bg-white rounded-xl border p-1.5 flex-wrap">
         {([
           { key: 'overview' as SubTab, icon: <BarChart3 className="w-4 h-4" />, label: 'Ringkasan', count: null },
           { key: 'followup' as SubTab, icon: <ShieldAlert className="w-4 h-4" />, label: 'Follow-Up', count: ra.needFollowUp.length },
+          { key: 'cohort' as SubTab, icon: <Layers className="w-4 h-4" />, label: 'Kohort', count: null },
+          { key: 'lifecycle' as SubTab, icon: <Zap className="w-4 h-4" />, label: 'Lifecycle', count: null },
+          { key: 'winback' as SubTab, icon: <RotateCcw className="w-4 h-4" />, label: 'Win-Back', count: ra.winBackCandidates.length },
           { key: 'comparison' as SubTab, icon: <Users className="w-4 h-4" />, label: 'Semua Kreator', count: ra.items.length },
           { key: 'heatmap' as SubTab, icon: <Flame className="w-4 h-4" />, label: 'Heatmap', count: null },
         ]).map(tab => (
           <button
             key={tab.key}
             onClick={() => setSubTab(tab.key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
               subTab === tab.key
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
             {tab.icon}
-            {tab.label}
+            <span className="hidden sm:inline">{tab.label}</span>
             {tab.count !== null && tab.count > 0 && (
-              <span className={`text-xs px-1.5 py-0 rounded-full font-bold ${
-                subTab === tab.key ? 'bg-white/20 text-white' : tab.key === 'followup' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600'
+              <span className={`text-[10px] px-1.5 py-0 rounded-full font-bold ${
+                subTab === tab.key ? 'bg-white/20 text-white' : tab.key === 'followup' ? 'bg-red-100 text-red-700' : tab.key === 'winback' ? 'bg-orange-100 text-orange-700' : 'bg-gray-200 text-gray-600'
               }`}>{tab.count}</span>
             )}
           </button>
@@ -695,6 +1047,82 @@ export default function RetentionViewEnhanced({
             })}
           </div>
 
+          {/* ── NEW: Retention Trend Chart ── */}
+          {ra.monthStats.length >= 2 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 bg-white rounded-xl border p-5">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-blue-600" /> Tren Retention Rate
+                </h3>
+                <RetentionTrendChart monthStats={ra.monthStats} />
+              </div>
+
+              {/* Churn Velocity + Net Movement + Concentration */}
+              <div className="space-y-4">
+                {/* Churn Velocity */}
+                <div className={`rounded-xl border p-4 ${
+                  ra.churnVelocity === 'accelerating' ? 'bg-red-50 border-red-200' :
+                  ra.churnVelocity === 'decelerating' ? 'bg-green-50 border-green-200' :
+                  'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Gauge className="w-4 h-4 text-gray-600" />
+                    <span className="text-xs font-semibold text-gray-700">Kecepatan Churn</span>
+                  </div>
+                  <p className={`text-lg font-bold ${
+                    ra.churnVelocity === 'accelerating' ? 'text-red-600' :
+                    ra.churnVelocity === 'decelerating' ? 'text-green-600' :
+                    'text-gray-600'
+                  }`}>
+                    {ra.churnVelocity === 'accelerating' ? '⚡ Meningkat' :
+                     ra.churnVelocity === 'decelerating' ? '✅ Melambat' :
+                     ra.churnVelocity === 'stable' ? '➖ Stabil' : '—'}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    {ra.churnVelocity === 'accelerating'
+                      ? 'Churn rate naik — perlu tindakan segera!'
+                      : ra.churnVelocity === 'decelerating'
+                      ? 'Churn rate turun — strategi retention bekerja!'
+                      : 'Churn rate relatif stabil'}
+                  </p>
+                </div>
+
+                {/* Net Creator Movement */}
+                {ra.monthStats.length > 0 && (() => {
+                  const latestStat = ra.monthStats[ra.monthStats.length - 1];
+                  return (
+                    <div className={`rounded-xl border p-4 ${latestStat.netMovement >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users className="w-4 h-4 text-gray-600" />
+                        <span className="text-xs font-semibold text-gray-700">Net Pergerakan Kreator</span>
+                      </div>
+                      <p className={`text-2xl font-bold ${latestStat.netMovement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {latestStat.netMovement >= 0 ? '+' : ''}{latestStat.netMovement}
+                      </p>
+                      <div className="flex gap-3 mt-1 text-xs">
+                        <span className="text-green-600">+{latestStat.newOnes} baru</span>
+                        <span className="text-red-500">-{latestStat.churned} churn</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* GMV Concentration Risk */}
+                <div className="bg-white rounded-xl border p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Target className="w-4 h-4 text-gray-600" />
+                    <span className="text-xs font-semibold text-gray-700">Risiko Konsentrasi GMV</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    <ConcentrationGauge topNPct={ra.top5Pct} n={5} />
+                    <ConcentrationGauge topNPct={ra.top10Pct} n={10} />
+                    <ConcentrationGauge topNPct={ra.top20Pct} n={20} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Tier Health Matrix */}
           {Object.keys(ra.tierDistribution).length > 0 && (
             <div className="bg-white rounded-xl border p-5">
@@ -809,6 +1237,8 @@ export default function RetentionViewEnhanced({
                       <th className="pb-2 font-medium text-right text-green-600">+Baru</th>
                       <th className="pb-2 font-medium text-right text-red-500">-Churn</th>
                       <th className="pb-2 font-medium text-right">Retention %</th>
+                      <th className="pb-2 font-medium text-right">Churn %</th>
+                      <th className="pb-2 font-medium text-right">Net</th>
                       <th className="pb-2 font-medium text-right">Total GMV</th>
                       <th className="pb-2 font-medium text-right">Avg/Kreator</th>
                       <th className="pb-2 font-medium w-32">Bar</th>
@@ -824,6 +1254,12 @@ export default function RetentionViewEnhanced({
                         <td className="py-2.5 text-right text-red-500 font-medium">-{m.churned}</td>
                         <td className={`py-2.5 text-right font-bold ${m.retentionRate >= 70 ? 'text-green-600' : m.retentionRate >= 50 ? 'text-amber-600' : 'text-red-500'}`}>
                           {m.retentionRate.toFixed(1)}%
+                        </td>
+                        <td className={`py-2.5 text-right text-xs font-medium ${m.churnRate <= 30 ? 'text-green-600' : m.churnRate <= 50 ? 'text-amber-600' : 'text-red-500'}`}>
+                          {m.churnRate.toFixed(1)}%
+                        </td>
+                        <td className={`py-2.5 text-right font-bold text-xs ${m.netMovement >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {m.netMovement >= 0 ? '+' : ''}{m.netMovement}
                         </td>
                         <td className="py-2.5 text-right text-gray-700">{fRp(m.totalGMV)}</td>
                         <td className="py-2.5 text-right text-gray-500 text-xs">{fRp(m.avgGMVPerCreator)}</td>
@@ -860,6 +1296,8 @@ export default function RetentionViewEnhanced({
                   if (ra.comebackCreators.length > 0) recs.push({ icon: '🎉', text: `${fN(ra.comebackCreators.length)} kreator comeback! Apresiasi mereka.`, type: 'info' });
                   const avgRet = ra.monthStats.length > 0 ? ra.monthStats.reduce((a, m) => a + m.retentionRate, 0) / ra.monthStats.length : 0;
                   if (avgRet < 50) recs.push({ icon: '⚠️', text: `Retention ${fP(avgRet)} — sangat rendah! Evaluasi menyeluruh diperlukan.`, type: 'danger' });
+                  if (ra.top5Pct > 70) recs.push({ icon: '🎯', text: `Konsentrasi GMV tinggi: top 5 kreator = ${ra.top5Pct.toFixed(0)}% GMV. Diversifikasi kreator!`, type: 'warning' });
+                  if (ra.churnVelocity === 'accelerating') recs.push({ icon: '⚡', text: `Churn meningkat! Evaluasi strategi retention dan percepat follow-up.`, type: 'danger' });
                   const bgMap = { danger: 'bg-red-50 border-red-200', warning: 'bg-yellow-50 border-yellow-200', info: 'bg-blue-50 border-blue-200' };
                   return recs.map((r, i) => (
                     <div key={i} className={`rounded-lg border p-3 ${bgMap[r.type]}`}>
@@ -884,6 +1322,12 @@ export default function RetentionViewEnhanced({
                 🚨 Daftar Follow-Up — {fN(filteredItems.length)} Kreator
               </h3>
               <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-white border-gray-200 text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all"
+                >
+                  <FileDown className="w-3.5 h-3.5" /> Export CSV
+                </button>
                 <button
                   onClick={handleCopyFollowUp}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
@@ -924,11 +1368,27 @@ export default function RetentionViewEnhanced({
               </select>
             </div>
 
+            {/* Priority summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+              {[
+                { label: 'Prioritas Tinggi', count: filteredItems.filter(i => i.priorityScore >= 70).length, color: 'bg-red-100 text-red-700 border-red-200' },
+                { label: 'Prioritas Sedang', count: filteredItems.filter(i => i.priorityScore >= 40 && i.priorityScore < 70).length, color: 'bg-orange-100 text-orange-700 border-orange-200' },
+                { label: 'Prioritas Rendah', count: filteredItems.filter(i => i.priorityScore < 40).length, color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+                { label: 'Total Potensi Hilang', count: null, value: fRp(filteredItems.reduce((a, i) => a + Math.abs(i.change), 0)), color: 'bg-gray-100 text-gray-700 border-gray-200' },
+              ].map(s => (
+                <div key={s.label} className={`rounded-lg border p-2.5 ${s.color}`}>
+                  <p className="text-[10px] font-medium opacity-70">{s.label}</p>
+                  <p className="text-lg font-bold">{s.count !== null ? s.count : s.value}</p>
+                </div>
+              ))}
+            </div>
+
             {/* Follow-up items */}
             <div className="space-y-2">
               {(showAllFollowUp ? filteredItems : filteredItems.slice(0, 15)).map((item, idx) => {
                 const sev = SEV_CONFIG[item.severity];
                 const action = ACTION_CONFIG[item.actionType];
+                const lcConfig = LIFECYCLE_CONFIG[item.lifecycleStage];
                 return (
                   <div key={`fu-${item.username}-${idx}`} className={`bg-white rounded-lg border ${sev.cardBorder} border-l-4 p-3 hover:shadow-md transition-all group`}>
                     <div className="flex items-start gap-3">
@@ -943,6 +1403,9 @@ export default function RetentionViewEnhanced({
                           {item.followers > 0 && <span className="text-[10px] text-gray-400">{fN(item.followers)} followers</span>}
                           <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${sev.badge}`}>{sev.label}</span>
                           {item.consecutiveDecline && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">📉 Berturut</span>}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${lcConfig.bg} ${lcConfig.color} border ${lcConfig.border}`}>
+                            {lcConfig.emoji} {lcConfig.label}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
@@ -969,6 +1432,8 @@ export default function RetentionViewEnhanced({
                               🎬 {item.prevVideos}→{item.currVideos}
                             </span>
                           )}
+                          <span className="text-[10px] text-gray-400">📊 Prioritas: <b className={item.priorityScore >= 70 ? 'text-red-600' : item.priorityScore >= 40 ? 'text-orange-600' : 'text-gray-600'}>{item.priorityScore}</b></span>
+                          <span className="text-[10px] text-gray-400">🗓 {item.activeMonths} bln aktif</span>
                         </div>
 
                         {item.recommendation && (
@@ -998,6 +1463,439 @@ export default function RetentionViewEnhanced({
             )}
             {filteredItems.length === 0 && <p className="text-sm text-gray-400 text-center py-6">Tidak ada kreator yang memenuhi filter saat ini.</p>}
           </div>
+        </div>
+      )}
+
+      {/* ═══ TAB: COHORT ANALYSIS ═══ */}
+      {subTab === 'cohort' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-600" /> Analisis Kohort Kreator
+            </h3>
+            <p className="text-xs text-gray-400 mb-4">
+              Setiap baris menunjukkan kreator yang pertama kali aktif di bulan tersebut. Kolom menunjukkan persentase yang masih aktif di bulan-bulan berikutnya.
+            </p>
+            {ra.cohortRows.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="text-xs w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="pb-2 text-left font-semibold text-gray-700 min-w-[120px] pr-3">Kohort</th>
+                      <th className="pb-2 text-center font-semibold text-gray-700 w-14">Total</th>
+                      {ra.periods.slice(1).map((p, i) => (
+                        <th key={i} className="pb-2 font-medium text-center text-gray-400 px-1 whitespace-nowrap min-w-[56px]">
+                          Bln +{i + 1}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ra.cohortRows.map((row) => (
+                      <tr key={row.cohortPeriod} className="border-b hover:bg-gray-50">
+                        <td className="py-2 pr-3 font-medium text-gray-800">{row.cohortPeriod.replace(/\s.*/, '')}</td>
+                        <td className="py-2 text-center">
+                          <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{row.startCount}</span>
+                        </td>
+                        {/* Fill retention cells with proper alignment to the periods */}
+                        {ra.periods.slice(1).map((_, pi) => {
+                          const ret = row.retention[pi];
+                          const count = row.counts[pi];
+                          if (ret === undefined) {
+                            return <td key={pi} className="py-2 px-1 text-center"><span className="text-gray-200">—</span></td>;
+                          }
+                          const intensity = ret / 100;
+                          const bgColor = ret >= 70 ? `rgba(34, 197, 94, ${Math.max(0.1, intensity)})` :
+                                         ret >= 40 ? `rgba(245, 158, 11, ${Math.max(0.1, intensity)})` :
+                                         `rgba(239, 68, 68, ${Math.max(0.1, intensity * 0.8 + 0.2)})`;
+                          return (
+                            <td key={pi} className="py-2 px-1 text-center">
+                              <div
+                                className="rounded px-1.5 py-1 cursor-default"
+                                style={{ backgroundColor: bgColor }}
+                                title={`${count}/${row.startCount} kreator masih aktif (${ret.toFixed(1)}%)`}
+                              >
+                                <span className={`font-bold text-[11px] ${ret >= 50 ? 'text-gray-800' : 'text-gray-700'}`}>{ret.toFixed(0)}%</span>
+                                <br />
+                                <span className="text-[9px] text-gray-500">{count}</span>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-6">Data belum cukup untuk analisis kohort.</p>
+            )}
+          </div>
+
+          {/* Cohort Insights */}
+          {ra.cohortRows.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Best Cohort */}
+              {(() => {
+                const withFirst = ra.cohortRows.filter(r => r.retention.length > 0);
+                if (withFirst.length === 0) return null;
+                const best = withFirst.reduce((a, b) => (a.retention[0] > b.retention[0] ? a : b));
+                return (
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200/60 p-4">
+                    <h4 className="font-semibold text-green-800 text-sm mb-2 flex items-center gap-2">
+                      <Award className="w-4 h-4" /> Kohort Terbaik 🏆
+                    </h4>
+                    <p className="text-2xl font-bold text-green-700">{best.cohortPeriod.replace(/\s.*/, '')}</p>
+                    <p className="text-xs text-green-600 mt-1">Retention Bln +1: {best.retention[0].toFixed(1)}% ({best.counts[0]}/{best.startCount})</p>
+                  </div>
+                );
+              })()}
+              {/* Worst Cohort */}
+              {(() => {
+                const withFirst = ra.cohortRows.filter(r => r.retention.length > 0);
+                if (withFirst.length === 0) return null;
+                const worst = withFirst.reduce((a, b) => (a.retention[0] < b.retention[0] ? a : b));
+                return (
+                  <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl border border-red-200/60 p-4">
+                    <h4 className="font-semibold text-red-800 text-sm mb-2 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" /> Kohort Terlemah ⚠️
+                    </h4>
+                    <p className="text-2xl font-bold text-red-700">{worst.cohortPeriod.replace(/\s.*/, '')}</p>
+                    <p className="text-xs text-red-600 mt-1">Retention Bln +1: {worst.retention[0].toFixed(1)}% ({worst.counts[0]}/{worst.startCount})</p>
+                  </div>
+                );
+              })()}
+              {/* Avg Month 1 Retention */}
+              {(() => {
+                const withFirst = ra.cohortRows.filter(r => r.retention.length > 0);
+                if (withFirst.length === 0) return null;
+                const avg = withFirst.reduce((a, r) => a + r.retention[0], 0) / withFirst.length;
+                return (
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-4">
+                    <h4 className="font-semibold text-blue-800 text-sm mb-2 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4" /> Rata-rata Bln +1 📊
+                    </h4>
+                    <p className="text-2xl font-bold text-blue-700">{avg.toFixed(1)}%</p>
+                    <p className="text-xs text-blue-600 mt-1">Dari {withFirst.length} kohort</p>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Color Legend */}
+          <div className="flex items-center gap-6 text-xs text-gray-500 bg-white rounded-lg border p-3">
+            <span className="font-medium text-gray-600">Legenda:</span>
+            <span className="flex items-center gap-1"><div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(34, 197, 94, 0.7)' }} /> ≥70% (Baik)</span>
+            <span className="flex items-center gap-1"><div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(245, 158, 11, 0.5)' }} /> 40-69% (Sedang)</span>
+            <span className="flex items-center gap-1"><div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(239, 68, 68, 0.5)' }} /> &lt;40% (Rendah)</span>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TAB: LIFECYCLE ═══ */}
+      {subTab === 'lifecycle' && (
+        <div className="space-y-4">
+          {/* Funnel Visualization */}
+          <div className="bg-white rounded-xl border p-5">
+            <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-purple-600" /> Siklus Hidup Kreator
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {(['onboarding', 'growth', 'mature', 'at_risk', 'dormant', 'churned'] as LifecycleStage[]).map((stage) => {
+                const group = ra.lifecycleGroups[stage];
+                const config = LIFECYCLE_CONFIG[stage];
+                const pct = ra.items.length > 0 ? (group.items.length / ra.items.length * 100) : 0;
+                const isExpanded = lifecycleExpanded === stage;
+                return (
+                  <button
+                    key={stage}
+                    onClick={() => setLifecycleExpanded(isExpanded ? null : stage)}
+                    className={`rounded-xl border-2 p-4 text-left transition-all hover:shadow-lg ${
+                      isExpanded ? `${config.bg} ${config.border} shadow-md ring-2 ring-offset-1 ring-blue-300` : `${config.bg} ${config.border} hover:${config.border}`
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xl">{config.emoji}</span>
+                      <span className={`text-xs font-bold ${config.color}`}>{config.label}</span>
+                    </div>
+                    <p className="text-2xl font-black text-gray-900">{group.items.length}</p>
+                    <p className="text-[10px] text-gray-500">{pct.toFixed(1)}% dari total</p>
+                    <div className="mt-2 space-y-1">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-gray-500">Avg GMV</span>
+                        <span className="font-medium text-gray-700">{fRp(group.avgGMV)}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-gray-500">Avg Orders</span>
+                        <span className="font-medium text-gray-700">{group.avgOrders.toFixed(1)}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-gray-500">Avg Videos</span>
+                        <span className="font-medium text-gray-700">{group.avgVideos.toFixed(1)}</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-200 rounded-full mt-2 overflow-hidden">
+                      <div className={`h-full rounded-full`}
+                        style={{ width: `${pct}%`, backgroundColor: stage === 'onboarding' ? '#10b981' : stage === 'growth' ? '#3b82f6' : stage === 'mature' ? '#f59e0b' : stage === 'at_risk' ? '#f97316' : stage === 'dormant' ? '#6b7280' : '#ef4444' }} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Lifecycle Flow Arrow */}
+          <div className="bg-gradient-to-r from-emerald-50 via-blue-50 via-amber-50 to-red-50 rounded-xl border p-4">
+            <div className="flex items-center justify-center gap-1 flex-wrap">
+              {(['onboarding', 'growth', 'mature', 'at_risk', 'dormant', 'churned'] as LifecycleStage[]).map((stage, i) => {
+                const config = LIFECYCLE_CONFIG[stage];
+                const group = ra.lifecycleGroups[stage];
+                return (
+                  <React.Fragment key={stage}>
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${config.bg} border ${config.border}`}>
+                      <span className="text-sm">{config.emoji}</span>
+                      <span className={`text-xs font-bold ${config.color}`}>{group.items.length}</span>
+                    </div>
+                    {i < 5 && <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" />}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-400 text-center mt-2">
+              Alur ideal: Onboarding → Growth → Mature | Risiko: Mature → At Risk → Dormant → Churned
+            </p>
+          </div>
+
+          {/* Expanded Stage Detail */}
+          {lifecycleExpanded && (
+            <div className={`rounded-xl border-2 p-5 ${LIFECYCLE_CONFIG[lifecycleExpanded].bg} ${LIFECYCLE_CONFIG[lifecycleExpanded].border}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className={`font-bold ${LIFECYCLE_CONFIG[lifecycleExpanded].color} flex items-center gap-2`}>
+                  <span className="text-xl">{LIFECYCLE_CONFIG[lifecycleExpanded].emoji}</span>
+                  {LIFECYCLE_CONFIG[lifecycleExpanded].label} — {ra.lifecycleGroups[lifecycleExpanded].items.length} Kreator
+                </h4>
+                <button onClick={() => setLifecycleExpanded(null)} className="p-1 rounded hover:bg-white/50"><X className="w-4 h-4" /></button>
+              </div>
+
+              {/* Strategy */}
+              <div className="bg-white/80 rounded-lg border p-3 mb-3">
+                <div className="flex items-start gap-2">
+                  <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700 mb-0.5">Strategi Rekomendasi</p>
+                    <p className="text-xs text-gray-600">{LIFECYCLE_CONFIG[lifecycleExpanded].strategy}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Creator List */}
+              <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-white/90">
+                    <tr className="border-b">
+                      <th className="pb-2 text-left font-medium">#</th>
+                      <th className="pb-2 text-left font-medium">Kreator</th>
+                      <th className="pb-2 text-center font-medium">Tier</th>
+                      <th className="pb-2 text-right font-medium">GMV</th>
+                      <th className="pb-2 text-right font-medium">Orders</th>
+                      <th className="pb-2 text-right font-medium">Videos</th>
+                      <th className="pb-2 text-center font-medium">Bln Aktif</th>
+                      <th className="pb-2 text-center font-medium">Trend</th>
+                      <th className="pb-2 text-center font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {ra.lifecycleGroups[lifecycleExpanded].items
+                      .sort((a, b) => (b.currGMV || b.prevGMV) - (a.currGMV || a.prevGMV))
+                      .slice(0, 50)
+                      .map((item, i) => (
+                      <tr key={item.username} className="hover:bg-white/60">
+                        <td className="py-2 text-gray-400 font-bold">{i + 1}</td>
+                        <td className="py-2">
+                          <button onClick={() => onDrillDown(item.username)} className="font-medium text-gray-900 hover:text-blue-600 hover:underline">@{item.username}</button>
+                        </td>
+                        <td className="py-2 text-center">
+                          <span className={`text-[10px] px-1.5 py-0 rounded ${TIER_COLORS[item.tier]}`}>{item.tier}</span>
+                        </td>
+                        <td className="py-2 text-right font-medium text-gray-700">{item.currGMV > 0 ? fRp(item.currGMV) : item.prevGMV > 0 ? <span className="text-gray-400">{fRp(item.prevGMV)}</span> : '—'}</td>
+                        <td className="py-2 text-right text-gray-600">{item.currOrders || item.prevOrders || '—'}</td>
+                        <td className="py-2 text-right text-gray-600">{item.currVideos || item.prevVideos || '—'}</td>
+                        <td className="py-2 text-center"><span className="px-1.5 py-0.5 rounded bg-gray-100 font-bold">{item.activeMonths}</span></td>
+                        <td className="py-2 text-center"><MiniSparkline values={item.sparklineGMVs} width={45} height={16} /></td>
+                        <td className="py-2 text-center">
+                          <button onClick={() => onDrillDown(item.username)} className="text-[10px] px-2 py-1 rounded bg-gray-100 hover:bg-blue-100 hover:text-blue-700">Detail</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ TAB: WIN-BACK ═══ */}
+      {subTab === 'winback' && (
+        <div className="space-y-4">
+          {/* Win-Back Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-gradient-to-br from-orange-600 to-red-700 rounded-xl p-5 text-white relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/5 rounded-full -translate-y-6 translate-x-6" />
+              <p className="text-orange-200 text-xs font-medium uppercase tracking-wide">Kandidat Win-Back</p>
+              <p className="text-4xl font-black mt-1">{ra.winBackCandidates.length}</p>
+              <p className="text-orange-200 text-xs mt-1">kreator dormant & churned</p>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <p className="text-xs text-gray-500 font-medium">Estimasi Revenue Recovery</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">{fRp(ra.winBackCandidates.reduce((a, i) => a + i.estimatedRecoveryGMV, 0))}</p>
+              <p className="text-[10px] text-gray-400 mt-1">Jika 50% peak GMV tercapai</p>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <p className="text-xs text-gray-500 font-medium">Sudah Dihubungi</p>
+              <p className="text-2xl font-bold text-blue-700 mt-1">{Object.values(winBackStatuses).filter(s => s !== 'pending').length}</p>
+              <p className="text-[10px] text-gray-400 mt-1">dari {ra.winBackCandidates.length} kandidat</p>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <p className="text-xs text-gray-500 font-medium">Success Rate</p>
+              {(() => {
+                const contacted = Object.values(winBackStatuses).filter(s => s === 'success' || s === 'failed');
+                const success = Object.values(winBackStatuses).filter(s => s === 'success');
+                const rate = contacted.length > 0 ? (success.length / contacted.length) * 100 : 0;
+                return (
+                  <>
+                    <p className="text-2xl font-bold text-purple-700 mt-1">{rate > 0 ? fP(rate) : '—'}</p>
+                    <p className="text-[10px] text-gray-400 mt-1">{success.length} berhasil / {contacted.length} selesai</p>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Win-Back Filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {([
+              { key: 'all' as const, label: `Semua (${ra.winBackCandidates.length})` },
+              { key: 'pending' as const, label: `⏳ Belum (${ra.winBackCandidates.filter(i => (winBackStatuses[i.username] || 'pending') === 'pending').length})` },
+              { key: 'contacted' as const, label: `📞 Dihubungi (${Object.values(winBackStatuses).filter(s => s === 'contacted').length})` },
+              { key: 'success' as const, label: `✅ Berhasil (${Object.values(winBackStatuses).filter(s => s === 'success').length})` },
+              { key: 'failed' as const, label: `❌ Gagal (${Object.values(winBackStatuses).filter(s => s === 'failed').length})` },
+            ]).map(f => (
+              <button key={f.key} onClick={() => setWinBackFilter(f.key)}
+                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${
+                  winBackFilter === f.key ? 'bg-orange-100 text-orange-700 border-orange-300 ring-2 ring-offset-1 ring-orange-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}>{f.label}</button>
+            ))}
+          </div>
+
+          {/* Win-Back Priority List */}
+          <div className="space-y-3">
+            {ra.winBackCandidates
+              .filter(item => {
+                const status = winBackStatuses[item.username] || 'pending';
+                return winBackFilter === 'all' || status === winBackFilter;
+              })
+              .slice(0, 30)
+              .map((item, idx) => {
+                const status = winBackStatuses[item.username] || 'pending';
+                const statusConfig: Record<WinBackStatus, { label: string; color: string; icon: string }> = {
+                  pending: { label: 'Belum', color: 'bg-gray-100 text-gray-600', icon: '⏳' },
+                  contacted: { label: 'Dihubungi', color: 'bg-blue-100 text-blue-700', icon: '📞' },
+                  success: { label: 'Berhasil', color: 'bg-green-100 text-green-700', icon: '✅' },
+                  failed: { label: 'Gagal', color: 'bg-red-100 text-red-700', icon: '❌' },
+                };
+                const sc = statusConfig[status];
+                return (
+                  <div key={`wb-${item.username}`} className={`bg-white rounded-xl border p-4 hover:shadow-md transition-all ${status === 'success' ? 'border-green-200 bg-green-50/30' : status === 'failed' ? 'opacity-60' : ''}`}>
+                    <div className="flex items-start gap-4">
+                      {/* Score */}
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-black text-lg ${
+                          item.winBackScore >= 70 ? 'bg-gradient-to-br from-red-500 to-orange-500' :
+                          item.winBackScore >= 40 ? 'bg-gradient-to-br from-orange-400 to-yellow-500' :
+                          'bg-gradient-to-br from-gray-400 to-gray-500'
+                        }`}>
+                          {item.winBackScore}
+                        </div>
+                        <span className="text-[9px] text-gray-400 mt-0.5">Score</span>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        {/* Header */}
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-gray-400 text-xs font-bold">#{idx + 1}</span>
+                          <button onClick={() => onDrillDown(item.username)} className="font-bold text-gray-900 hover:text-blue-600 hover:underline">@{item.username}</button>
+                          <span className={`text-[10px] px-1.5 py-0 rounded ${TIER_COLORS[item.tier]}`}>{item.tier}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${sc.color}`}>{sc.icon} {sc.label}</span>
+                          {item.lifecycleStage === 'churned' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-200">💀 Churned</span>}
+                          {item.lifecycleStage === 'dormant' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">😴 Dormant</span>}
+                        </div>
+
+                        {/* Stats */}
+                        <div className="flex items-center gap-4 text-xs text-gray-500 mb-2 flex-wrap">
+                          <span>🏆 Peak: <b className="text-gray-700">{fRp(item.peakGMV)}</b></span>
+                          <span>📊 Total Histori: <b className="text-gray-700">{fRp(item.totalHistoricGMV)}</b></span>
+                          <span>🗓 {item.activeMonths} bln aktif</span>
+                          <span>⏱ {item.monthsSinceActive} bln tidak aktif</span>
+                          <span>💰 Est. Recovery: <b className="text-green-600">{fRp(item.estimatedRecoveryGMV)}</b></span>
+                        </div>
+
+                        {/* Suggested Action */}
+                        <div className="bg-amber-50 rounded-lg border border-amber-200 p-3 mb-2">
+                          <p className="text-xs font-semibold text-amber-800 mb-1">{item.suggestedAction}</p>
+                          <div className="bg-white rounded border border-amber-100 p-2.5 relative group">
+                            <p className="text-xs text-gray-700 pr-8">{item.suggestedMessage}</p>
+                            <button
+                              onClick={() => handleCopyMessage(item.suggestedMessage, item.username)}
+                              className={`absolute top-2 right-2 p-1.5 rounded transition-all ${
+                                copiedMessage === item.username ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-blue-100 hover:text-blue-600'
+                              }`}
+                              title="Copy pesan"
+                            >
+                              {copiedMessage === item.username ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Status Buttons */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400 mr-1">Update status:</span>
+                          {(['pending', 'contacted', 'success', 'failed'] as WinBackStatus[]).map(s => {
+                            const sConfig = statusConfig[s];
+                            return (
+                              <button
+                                key={s}
+                                onClick={() => setWinBackStatuses(prev => ({ ...prev, [item.username]: s }))}
+                                className={`text-[10px] px-2 py-1 rounded-full border font-medium transition-all ${
+                                  status === s ? `${sConfig.color} ring-1 ring-offset-1` : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
+                                }`}
+                              >
+                                {sConfig.icon} {sConfig.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Sparkline */}
+                      <div className="shrink-0 text-center">
+                        <MiniSparkline values={item.sparklineGMVs} width={60} height={24} highlightLast />
+                        <p className="text-[9px] text-gray-400 mt-0.5">Trend GMV</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {ra.winBackCandidates.length === 0 && (
+            <div className="bg-green-50 rounded-xl border border-green-200 p-8 text-center">
+              <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
+              <p className="font-semibold text-green-800">Tidak ada kreator yang perlu di-win-back! 🎉</p>
+              <p className="text-sm text-green-600 mt-1">Semua kreator masih aktif.</p>
+            </div>
+          )}
         </div>
       )}
 
