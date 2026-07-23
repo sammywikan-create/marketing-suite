@@ -76,19 +76,41 @@ export default function RevenueBreakdownScreen() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between bg-card border border-border p-6 rounded-2xl shadow-sm gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-1">
-            <Sparkles size={16} /> Data Real Toko: {activeStore?.name}
+      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-1">
+              <Sparkles size={16} /> Fitur 1: Revenue Breakdown & Trend Dashboard
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Revenue Breakdown & Trend Dashboard</h1>
+            <p className="text-sm text-muted">
+              Menjawab pertanyaan: <span className="font-medium text-foreground">&quot;Omset turun dari channel mana?&quot;</span>
+            </p>
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Revenue Breakdown & Trend Dashboard</h1>
-          <p className="text-sm text-muted">
-            Menjawab pertanyaan: <span className="font-medium text-foreground">&quot;Omset turun dari channel mana?&quot;</span>
-          </p>
+          <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl text-right">
+            <div className="text-xs text-muted">Total GMV Real ({activeStore?.name || "Toko Aktif"})</div>
+            <div className="text-2xl font-extrabold text-primary">{formatRupiah(grandTotal)}</div>
+          </div>
         </div>
-        <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl text-right">
-          <div className="text-xs text-muted">Total GMV Real (Periode Data)</div>
-          <div className="text-2xl font-extrabold text-primary">{formatRupiah(grandTotal)}</div>
+
+        {/* Detailed Purpose & Benefit Explanation Card */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border text-xs leading-relaxed">
+          <div className="bg-muted/30 p-3.5 rounded-xl space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              🎯 Tujuan Halaman Ini:
+            </span>
+            <p className="text-muted">
+              Memecah omset secara terperinci ke 4 saluran penjualan (*LIVE Penjual, Video Penjual, Afiliasi Kreator, dan Kartu Produk*) serta memetakan tren harian untuk mendeteksi titik awal penurunan omset.
+            </p>
+          </div>
+          <div className="bg-muted/30 p-3.5 rounded-xl space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              💡 Manfaat untuk Anda & Direksi:
+            </span>
+            <p className="text-muted">
+              Memberikan **Alert Penurunan &gt;20%** otomatis dibanding rata-rata 7 hari sebelumnya. Tim tidak perlu menghitung manual, dapat langsung fokus mengintervensi saluran yang bermasalah.
+            </p>
+          </div>
         </div>
       </div>
 

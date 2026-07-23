@@ -71,48 +71,70 @@ export default function OmsetDoctorScreen() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between bg-card border border-border p-6 rounded-2xl shadow-sm gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-1">
-            <Sparkles size={16} /> Diagnosis Real Toko: {activeStore?.name}
+      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-1">
+              <Sparkles size={16} /> Fitur 5: Omset Doctor AI (Diagnosis Otomatis)
+            </div>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              <Stethoscope className="text-primary" size={28} /> Omset Doctor (Diagnosis Otomatis Real)
+            </h1>
+            <p className="text-sm text-muted">
+              Menjawab pertanyaan: <span className="font-medium text-foreground">&quot;Penyebab utama omset turun apa & bagaimana cara memperbaikinya?&quot;</span>
+            </p>
           </div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Stethoscope className="text-primary" size={28} /> Omset Doctor (Diagnosis Otomatis Real)
-          </h1>
-          <p className="text-sm text-muted">
-            Menjawab pertanyaan: <span className="font-medium text-foreground">&quot;Penyebab utama omset turun apa & bagaimana cara memperbaikinya?&quot;</span>
-          </p>
+
+          {/* Health Score Box */}
+          <div className="flex items-center gap-4 bg-muted/20 border border-border p-4 rounded-xl">
+            <div className="relative size-16 flex items-center justify-center">
+              <svg className="size-full -rotate-90" viewBox="0 0 36 36">
+                <path
+                  className="text-muted/30"
+                  strokeWidth="3.5"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path
+                  className={healthScore >= 80 ? "text-green-500" : healthScore >= 60 ? "text-amber-500" : "text-red-500"}
+                  strokeDasharray={`${healthScore}, 100`}
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+              <span className="absolute text-base font-black text-foreground">{healthScore}</span>
+            </div>
+
+            <div>
+              <div className="text-xs text-muted">Skor Kesehatan Real Toko</div>
+              <div className={`text-sm font-extrabold px-2.5 py-0.5 rounded border inline-block mt-0.5 ${getStatusBadge(healthStatus)}`}>
+                {healthStatus}
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Health Score Box */}
-        <div className="flex items-center gap-4 bg-muted/20 border border-border p-4 rounded-xl">
-          <div className="relative size-16 flex items-center justify-center">
-            <svg className="size-full -rotate-90" viewBox="0 0 36 36">
-              <path
-                className="text-muted/30"
-                strokeWidth="3.5"
-                stroke="currentColor"
-                fill="none"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                className={healthScore >= 80 ? "text-green-500" : healthScore >= 60 ? "text-amber-500" : "text-red-500"}
-                strokeDasharray={`${healthScore}, 100`}
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                stroke="currentColor"
-                fill="none"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
-            <span className="absolute text-base font-black text-foreground">{healthScore}</span>
+        {/* Detailed Purpose & Benefit Explanation Card */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border text-xs leading-relaxed">
+          <div className="bg-muted/30 p-3.5 rounded-xl space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              🎯 Tujuan Halaman Ini:
+            </span>
+            <p className="text-muted">
+              Bertindak sebagai "Dokter AI Pribadi" yang mengevaluasi seluruh indikator bisnis & pemasaran toko Anda secara simultan tanpa analisis manual.
+            </p>
           </div>
-
-          <div>
-            <div className="text-xs text-muted">Skor Kesehatan Real Toko</div>
-            <div className={`text-sm font-extrabold px-2.5 py-0.5 rounded border inline-block mt-0.5 ${getStatusBadge(healthStatus)}`}>
-              {healthStatus}
-            </div>
+          <div className="bg-muted/30 p-3.5 rounded-xl space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              💡 Manfaat untuk Anda & Direksi:
+            </span>
+            <p className="text-muted">
+              Sangat ideal untuk bahan rapat direksi: Menyajikan **Skor Kesehatan Toko (0-100)**, diagnosis ringkas, akar masalah (*root cause*), dan rekomendasi solusi praktis secara instan.
+            </p>
           </div>
         </div>
       </div>

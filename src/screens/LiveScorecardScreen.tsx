@@ -60,15 +60,37 @@ export default function LiveScorecardScreen() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between bg-card border border-border p-6 rounded-2xl shadow-sm gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-1">
-            <Sparkles size={16} /> Data Real Toko: {activeStore?.name}
+      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-1">
+              <Sparkles size={16} /> Fitur 3: Live Performance Scorecard
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Live Performance Scorecard</h1>
+            <p className="text-sm text-muted">
+              Menjawab pertanyaan: <span className="font-medium text-foreground">&quot;Sesi LIVE kamu efektif atau tidak?&quot;</span>
+            </p>
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Live Performance Scorecard</h1>
-          <p className="text-sm text-muted">
-            Menjawab pertanyaan: <span className="font-medium text-foreground">&quot;Sesi LIVE kamu efektif atau tidak?&quot;</span>
-          </p>
+        </div>
+
+        {/* Detailed Purpose & Benefit Explanation Card */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border text-xs leading-relaxed">
+          <div className="bg-muted/30 p-3.5 rounded-xl space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              🎯 Tujuan Halaman Ini:
+            </span>
+            <p className="text-muted">
+              Mengukur performa siaran langsung (*LIVE streaming*) toko melalui metrik GPM (*GMV per 1.000 tayangan*), rasio keberhasilan sesi, dan retensi penonton.
+            </p>
+          </div>
+          <div className="bg-muted/30 p-3.5 rounded-xl space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              💡 Manfaat untuk Anda & Direksi:
+            </span>
+            <p className="text-muted">
+              Menyediakan indikator benchmark (&gt;Rp15.000 per 1k views = Bagus), menghitung berapa persen sesi LIVE yang menghasilkan uang, dan menyajikan **Rekomendasi Jam LIVE Terbaik**.
+            </p>
+          </div>
         </div>
       </div>
 
