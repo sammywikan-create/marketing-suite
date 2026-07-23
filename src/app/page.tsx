@@ -54,6 +54,11 @@ const LaporanHarianScreen = dynamic(() => import("@/screens/LaporanHarianScreen"
 const SKUTrackingScreen = dynamic(() => import("@/screens/SKUTrackingScreen"), { ssr: false });
 const GmaxEvaluasiScreen = dynamic(() => import("@/screens/GmaxEvaluasiScreen"), { ssr: false });
 const StaffTrackerScreen = dynamic(() => import("@/screens/StaffTrackerScreen"), { ssr: false });
+const RevenueBreakdownScreen = dynamic(() => import("@/screens/RevenueBreakdownScreen"), { ssr: false });
+const FunnelAnalyzerScreen = dynamic(() => import("@/screens/FunnelAnalyzerScreen"), { ssr: false });
+const LiveScorecardScreen = dynamic(() => import("@/screens/LiveScorecardScreen"), { ssr: false });
+const AffiliateTrackerScreen = dynamic(() => import("@/screens/AffiliateTrackerScreen"), { ssr: false });
+const OmsetDoctorScreen = dynamic(() => import("@/screens/OmsetDoctorScreen"), { ssr: false });
 
 // ─── Valid tab keys for hash routing ───
 const VALID_TABS = new Set<string>([
@@ -64,6 +69,7 @@ const VALID_TABS = new Set<string>([
   "gmv-overview","video-performance","store-compare","store-settings","compare-gabungan",
   "okr","affiliate","report-builder","live-analytics","gmax-overview","product-cards",
   "laporan-harian","sku-tracking","gmax-evaluasi","staff-tracker",
+  "revenue-breakdown","funnel-analyzer","live-scorecard","affiliate-tracker","omset-doctor",
 ]);
 
 const PAGE_TITLES: Record<TabKey, string> = {
@@ -86,6 +92,11 @@ const PAGE_TITLES: Record<TabKey, string> = {
   "laporan-harian": "Laporan Harian", "sku-tracking": "SKU Tracking",
   "gmax-evaluasi": "GMAX Evaluasi",
   "staff-tracker": "Staff Tracker",
+  "revenue-breakdown": "Revenue Breakdown",
+  "funnel-analyzer": "Funnel Conversion Analyzer",
+  "live-scorecard": "Live Performance Scorecard",
+  "affiliate-tracker": "Affiliate Performance Tracker",
+  "omset-doctor": "Omset Doctor (Diagnosis Otomatis)",
 };
 
 function getTabFromHash(): TabKey {
@@ -337,6 +348,11 @@ export default function Home() {
       case "sku-tracking": return <SKUTrackingScreen />;
       case "gmax-evaluasi": return <GmaxEvaluasiScreen />;
       case "staff-tracker": return <StaffTrackerScreen />;
+      case "revenue-breakdown": return <RevenueBreakdownScreen />;
+      case "funnel-analyzer": return <FunnelAnalyzerScreen />;
+      case "live-scorecard": return <LiveScorecardScreen />;
+      case "affiliate-tracker": return <AffiliateTrackerScreen />;
+      case "omset-doctor": return <OmsetDoctorScreen />;
       default: return <DashboardScreen />;
     }
   };

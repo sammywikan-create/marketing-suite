@@ -199,7 +199,41 @@ export type TabKey =
   | "laporan-harian"
   | "sku-tracking"
   | "gmax-evaluasi"
-  | "staff-tracker";
+  | "staff-tracker"
+  | "revenue-breakdown"
+  | "funnel-analyzer"
+  | "live-scorecard"
+  | "affiliate-tracker"
+  | "omset-doctor";
+
+export interface ChannelDropAlert {
+  channel: string;
+  date: string;
+  dropPct: number;
+  currentValue: number;
+  avg7Days: number;
+  severity: "critical" | "warning";
+}
+
+export interface FunnelComparisonStage {
+  stage: string;
+  highPeriodValue: number;
+  lowPeriodValue: number;
+  dropPct: number;
+  conversionRateHigh: number;
+  conversionRateLow: number;
+}
+
+export interface OmsetDiagnosisItem {
+  id: string;
+  category: "TRAFFIC" | "CTR" | "CTOR" | "GPM_LIVE" | "AFFILIATE";
+  severity: "CRITICAL" | "WARNING" | "HEALTHY";
+  title: string;
+  diagnosis: string;
+  rootCause: string;
+  recommendation: string;
+  impactScore: number;
+}
 
 export interface TabConfig {
   key: TabKey;

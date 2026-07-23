@@ -5,7 +5,7 @@ import {
   Target, Filter, DollarSign, Layers, CalendarCheck, CalendarDays, BarChart3,
   ChevronLeft, ChevronRight, Upload, PieChart, Package, Sparkles, Award,
   ClipboardCheck, Wrench, Calculator, Video, GitCompareArrows, Settings, ScanBarcode, ClipboardList,
-  X, ShieldCheck,
+  X, ShieldCheck, Stethoscope, TrendingUp, Radio,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -62,6 +62,16 @@ const tabGroups: TabGroup[] = [
       { key: "gmv-kalkulator", label: "ROI Calculator", icon: <Calculator size={18} /> },
       { key: "product-cards", label: "Kartu Produk", icon: <Package size={18} /> },
       { key: "sku-tracking", label: "SKU Tracking", icon: <ScanBarcode size={18} /> },
+    ],
+  },
+  {
+    title: "Analitik Lanjutan ⭐",
+    items: [
+      { key: "revenue-breakdown", label: "Revenue Breakdown", icon: <TrendingUp size={18} /> },
+      { key: "funnel-analyzer", label: "Funnel Analyzer", icon: <Filter size={18} /> },
+      { key: "live-scorecard", label: "Live Scorecard", icon: <Radio size={18} /> },
+      { key: "affiliate-tracker", label: "Affiliate Tracker", icon: <Users size={18} /> },
+      { key: "omset-doctor", label: "Omset Doctor AI", icon: <Stethoscope size={18} /> },
     ],
   },
   {
