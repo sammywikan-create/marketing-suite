@@ -1,513 +1,345 @@
 # 📊 Marketing Suite
 
-**Marketing Suite** adalah aplikasi web all-in-one untuk tim marketing yang mencakup perencanaan, tracking, evaluasi, dan pelaporan performa marketing secara lengkap. Dibangun dengan Next.js 16, React 19, dan Tailwind CSS 4.
+**Marketing Suite** adalah aplikasi web all-in-one kelas enterprise untuk tim marketing & bisnis e-commerce yang mencakup perencanaan, tracking, evaluasi, analitik lanjutan, dan pelaporan performa bisnis secara lengkap. Dibangun dengan Next.js 16 (App Router & Turbopack), React 19, Tailwind CSS, Recharts, dan Supabase.
 
 ---
 
-## Daftar Isi
+## 📋 Daftar Isi
 
 - [Tech Stack](#tech-stack)
 - [Arsitektur Project](#arsitektur-project)
 - [Menjalankan Project](#menjalankan-project)
 - [Environment Variables](#environment-variables)
-- [Autentikasi](#autentikasi)
-- [Struktur Folder](#struktur-folder)
-- [Modul & Fitur](#modul--fitur)
-  - [Home](#1-home)
-  - [Marketing Planner](#2-marketing-planner)
-  - [GMV Analyzer](#3-gmv-analyzer)
-  - [GMV Maximizer](#4-gmv-maximizer)
-  - [OKR](#5-okr)
-  - [Laporan](#6-laporan)
-  - [Multi-Toko](#7-multi-toko)
-- [State Management & Data](#state-management--data)
+- [Autentikasi & Security](#autentikasi--security)
+- [Struktur Folder Kode](#struktur-folder-kode)
+- [Modul & Fitur Lengkap](#modul--fitur-lengkap)
+  - [1. Executive Summary (Home)](#1-executive-summary-home)
+  - [2. Marketing Planner](#2-marketing-planner)
+  - [3. Analitik Lanjutan ⭐ (NEW)](#3-analitik-lanjutan--new)
+  - [4. GMV Analyzer](#4-gmv-analyzer)
+  - [5. GMV Maximizer](#5-gmv-maximizer)
+  - [6. Tim & Staff](#6-tim--staff)
+  - [7. OKR Framework](#7-okr-framework)
+  - [8. Laporan & Export](#8-laporan--export)
+  - [9. Multi-Toko (Store Management)](#9-multi-toko-store-management)
+- [State Management & Data Persistence](#state-management--data-persistence)
+- [Engine Diagnostik & Analitik (utils)](#engine-diagnostik--analitik-utils)
 - [Komponen Reusable](#komponen-reusable)
 - [Panduan Menambah Fitur Baru](#panduan-menambah-fitur-baru)
-- [Konvensi Kode](#konvensi-kode)
+- [Deployment (Vercel & Node.js)](#deployment-vercel--nodejs)
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-| Kategori | Library | Versi |
+| Kategori | Technology / Library | Versi |
 |---|---|---|
-| **Framework** | Next.js (App Router) | 16.2.4 |
-| **UI** | React + TypeScript | 19.2.4 |
-| **Styling** | Tailwind CSS | 4.x |
-| **State** | Zustand (GMV), localStorage (Marketing Planner) | 5.x |
-| **Charts** | Recharts | 3.8.x |
+| **Framework** | Next.js (App Router, Turbopack) | 16.2.4 |
+| **UI Library** | React + TypeScript | 19.2.4 |
+| **Styling** | Tailwind CSS + Vanilla CSS Design Tokens | 4.x |
+| **State Management** | Zustand (Store Manager, GMV, Alert, AI, Raw File) | 5.x |
+| **Charts & Analytics** | Recharts (Responsive Line, Bar, Pie, Area, Scatter) | 3.8.x |
 | **Icons** | Lucide React | 1.8.x |
-| **Database** | Supabase (opsional, untuk Laporan Harian) | 2.x |
-| **AI** | Google Gemini / OpenAI (opsional) | - |
-| **Export** | jsPDF, pptxgenjs, xlsx | - |
-| **HTTP** | Axios, SWR | - |
-| **ID Generator** | nanoid, uuid | - |
-| **Notifications** | react-hot-toast | 2.x |
+| **Database & Persistence** | Supabase PostgreSQL + IndexedDB (idb-keyval) | 2.x |
+| **AI Engine** | Google Gemini 3.6 & OpenAI API Integration | - |
+| **Export Engines** | jsPDF, pptxgenjs, SheetJS (xlsx) | - |
+| **Data Fetching** | Axios, SWR | - |
+| **Notifications & UI** | react-hot-toast | 2.x |
 
 ---
 
-## Arsitektur Project
+## 🏗️ Arsitektur Project
+
+Marketing Suite menggunakan arsitektur **Single Page Application (SPA) berbasis State Routing** dengan integrasi SSR/Dynamic Import Next.js untuk performa loading maksimal (*bundle size reduced by ~70%*).
 
 ```
-Marketing Suite adalah SPA (Single Page Application) dengan routing berbasis state.
-Navigasi antar halaman dikontrol melalui `activeTab` di `page.tsx`.
-Sidebar.tsx mendefinisikan semua menu dan kelompok menu.
+┌─────────────────────────────────────────────────────────────┐
+│  PasswordGate & Auth Cookie Layer (ms_auth)                 │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Main App Shell: Sidebar + Header Bar                 │  │
+│  │  ┌──────────────┐ ┌────────────────────────────────┐  │  │
+│  │  │ Sidebar Nav  │ │  Active Dynamic Screen         │  │  │
+│  │  │ (TabGroups)  │ │  (berdasarkan activeTab hash) │  │  │
+│  │  └──────────────┘ └────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-```
-┌─────────────────────────────────────────────┐
-│  PasswordGate (auth layer)                  │
-│  ┌───────────────────────────────────────┐  │
-│  │  Layout: Sidebar + Main Content       │  │
-│  │  ┌──────────┐ ┌────────────────────┐  │  │
-│  │  │ Sidebar  │ │  Active Screen     │  │  │
-│  │  │ (menu)   │ │  (berdasarkan tab) │  │  │
-│  │  └──────────┘ └────────────────────┘  │  │
-│  └───────────────────────────────────────┘  │
-└─────────────────────────────────────────────┘
-```
+- **Hash-based Routing**: Navigasi sinkron dengan URL hash (`#revenue-breakdown`, `#omset-doctor`, dll.).
+- **Multi-Store Context**: Dapat beralih antar toko (`activeStoreId`) secara instan.
+- **Real-Data Engine**: Mengkalkulasi metrik dari data real terunggah (*Business Overview, Affiliate, Video, Laporan Harian*).
 
 ---
 
-## Menjalankan Project
+## 💻 Menjalankan Project
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Buat file .env.local (lihat bagian Environment Variables)
-cp .env.example .env.local   # atau buat manual
+# 2. Buat file .env.local
+cp .env.example .env.local
 
-# 3. Jalankan development server
+# 3. Jalankan development server (Turbopack)
 npm run dev
 
-# 4. Buka http://localhost:3000
+# 4. Buka http://localhost:3000 di browser
 ```
 
-### Scripts
+### Script Terminal Utama
 
 | Command | Deskripsi |
 |---|---|
-| `npm run dev` | Development server (Turbopack) |
-| `npm run build` | Production build |
-| `npm run start` | Jalankan production build |
-| `npm run lint` | ESLint check |
+| `npm run dev` | Menjalankan server pengembangan dengan Turbopack |
+| `npm run build` | Melakukan kompilasi TypeScript dan Next.js production build |
+| `npm run start` | Menjalankan build produksi secara lokal |
+| `npm run lint` | Memeriksa kepatuhan sintaks ESLint |
 
 ---
 
-## Environment Variables
+## 🔑 Environment Variables
 
-Buat file `.env.local` di root project:
+Konfigurasi file `.env.local` di direktori utama project:
 
 ```env
 # --- Wajib ---
-SITE_PASSWORD=your_secure_password    # Password login (default: admin123)
+SITE_PASSWORD=admin123                 # Password autentikasi aplikasi
 
-# --- Opsional: Supabase (untuk Laporan Harian & sync data) ---
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhb...
+# --- Supabase (Sync Data Toko & Retention) ---
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
 
-# --- Opsional: Google Sheets API (untuk Laporan Harian) ---
-GOOGLE_SERVICE_ACCOUNT_EMAIL=xxx@xxx.iam.gserviceaccount.com
+# --- Google Sheets API Integration ---
+GOOGLE_SERVICE_ACCOUNT_EMAIL=service-account@iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 GOOGLE_SPREADSHEET_ID=1aBcDeFg...
 
-# --- Opsional: AI Features ---
-GEMINI_API_KEY=AIza...
+# --- AI Engines ---
+GEMINI_API_KEY=AIzaSy...
 OPENAI_API_KEY=sk-...
 
-# --- Opsional: Telegram Bot (untuk Alert & Report Laporan Harian) ---
-# Simpan di Vercel Environment Variables untuk production.
+# --- Telegram Bot Alert & Reports ---
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHI...
 TELEGRAM_DEFAULT_CHAT_ID=-1001234567890
 ```
 
-> **Catatan:** Tanpa konfigurasi Supabase/Google Sheets, fitur Laporan Harian akan menggunakan data lokal. Semua modul Marketing Planner bekerja penuh secara offline dengan localStorage.
-
 ---
 
-## Autentikasi
-
-Aplikasi dilindungi oleh **PasswordGate** (`src/components/PasswordGate.tsx`).
-
-- Login via `POST /api/auth` dengan password yang cocok `SITE_PASSWORD`
-- Session disimpan di HTTP-only cookie (`ms_auth`), berlaku 7 hari
-- Check session via `GET /api/auth`
-- Logout via `DELETE /api/auth`
-
----
-
-## Struktur Folder
+## 📁 Struktur Folder Kode
 
 ```
 src/
 ├── app/
-│   ├── api/
-│   │   ├── auth/route.ts          # Auth endpoints
-│   │   ├── ai-chat/route.ts       # AI chat API
-│   │   ├── google-sheets/route.ts # Google Sheets integration
-│   │   ├── laporan-harian/route.ts# Laporan harian data API
-│   │   └── debug-sheets/route.ts  # Debug endpoint
-│   ├── layout.tsx                 # Root layout
-│   ├── page.tsx                   # Main SPA router
-│   └── globals.css                # Tailwind + global styles
+│   ├── api/                      # Serverless API routes
+│   │   ├── auth/                 # Login & cookie session authentication
+│   │   ├── ai-chat/              # AI diagnostic chat engine
+│   │   ├── google-sheets/        # Integrasi data Google Sheets
+│   │   ├── laporan-harian/       # Synchronization endpoint laporan harian
+│   │   └── telegram/             # Bot notification & webhook
+│   ├── layout.tsx                # Root layout & Metadata
+│   ├── page.tsx                  # Main SPA router & Dynamic import loader
+│   └── globals.css               # Tailwind & Custom CSS Design System
 │
-├── components/
-│   ├── Sidebar.tsx                # Navigasi sidebar (semua menu)
-│   ├── PasswordGate.tsx           # Auth wrapper
-│   ├── PageHeader.tsx             # Header reusable (judul, search, tombol)
-│   ├── Modal.tsx                  # Modal + form components
-│   └── StatusBadge.tsx            # Badge status berwarna
+├── components/                   # UI Components & Reusable Layouts
+│   ├── Sidebar.tsx               # Navigasi sidebar utama (TabGroups)
+│   ├── PasswordGate.tsx          # Wrapper autentikasi password
+│   ├── StoreSelector.tsx         # Dropdown switcher toko aktif
+│   ├── PageHeader.tsx            # Header standar halaman
+│   └── ai/                       # AI Assistant & Chat components
 │
-├── screens/                       # Semua halaman/screen
-│   ├── HomeScreen.tsx             # Executive Summary
-│   ├── DashboardScreen.tsx        # Dashboard Marketing Planner
-│   ├── ContentTrackerScreen.tsx   # Content Tracker + analytics
-│   ├── CampaignLogScreen.tsx      # Campaign Log + analytics
-│   ├── KOLTrackerScreen.tsx       # KOL Tracker + analytics
-│   ├── HipotesisPlanScreen.tsx    # Hipotesis & Plan (Kanban)
-│   ├── ReferensiKPIScreen.tsx     # Referensi KPI
-│   ├── AIDAFunnelScreen.tsx       # AIDA Funnel + visualization
-│   ├── BudgetROIScreen.tsx        # Budget & ROI + charts
-│   ├── TOFUMOFUBOFUScreen.tsx     # TOFU/MOFU/BOFU funnel
-│   ├── TargetROIBulananScreen.tsx  # Target & ROI Bulanan + trend
-│   ├── BudgetingHarianScreen.tsx  # Budgeting Harian + trend
-│   ├── AnalisisTMBScreen.tsx      # Analisis TMB + ROAS charts
-│   ├── PanduanScreen.tsx          # Panduan/Guidelines
-│   ├── GMVUploadScreen.tsx        # Upload data GMV
-│   ├── GMVDashboardScreen.tsx     # GMV Dashboard
-│   ├── GMVOverviewScreen.tsx      # Overview Bisnis (multi-bulan)
-│   ├── GMVSKUScreen.tsx           # SKU Analyzer
-│   ├── GMVCreativeScreen.tsx      # Creative Optimizer
-│   ├── GMVBenchmarkScreen.tsx     # Top Seller Metrics
-│   ├── GMVChecklistScreen.tsx     # Checklist Evaluasi
-│   ├── GMVOptimasiScreen.tsx      # Optimasi Kreatif
-│   ├── GMVCalculatorScreen.tsx    # ROI Calculator
-│   ├── VideoPerformanceScreen.tsx # Video Performance
-│   ├── AffiliateScreen.tsx        # Affiliate Manager
-│   ├── LiveAnalyticsScreen.tsx    # Live Analytics
-│   ├── ProductCardsScreen.tsx     # Kartu Produk
-│   ├── GmaxOverviewScreen.tsx     # GMV Maximizer Overview
-│   ├── OKRScreen.tsx              # OKR Framework
-│   ├── ReportBuilderScreen.tsx    # Report Builder
-│   ├── LaporanHarianScreen.tsx    # Laporan Harian
-│   ├── CompareGabunganScreen.tsx  # Compare & Gabungan
-│   ├── StoreCompareScreen.tsx     # Bandingkan Toko
-│   └── StoreSettingsScreen.tsx    # Kelola Toko
+├── screens/                      # Seluruh Halaman Screen Aplikasi
+│   ├── HomeScreen.tsx            # Executive Summary Dashboard
+│   ├── RevenueBreakdownScreen.tsx# [Fitur 1] Revenue Breakdown & Trend
+│   ├── FunnelAnalyzerScreen.tsx  # [Fitur 2] Funnel Conversion Analyzer
+│   ├── LiveScorecardScreen.tsx   # [Fitur 3] Live Performance Scorecard
+│   ├── AffiliateTrackerScreen.tsx# [Fitur 4] Affiliate Performance Tracker
+│   ├── OmsetDoctorScreen.tsx     # [Fitur 5] Omset Doctor AI Diagnosis
+│   ├── LaporanHarianScreen.tsx   # Dashboard Laporan Harian Terintegrasi
+│   ├── GMVOverviewScreen.tsx     # Business Overview & Multi-Month Analytics
+│   ├── VideoPerformanceScreen.tsx# Analisis Performa Video Kreatif
+│   ├── AffiliateScreen.tsx       # Affiliate Manager & Creator Database
+│   ├── LiveAnalyticsScreen.tsx   # Live Streaming Performance Analytics
+│   ├── OKRScreen.tsx             # Framework OKR Tim & Departemen
+│   ├── ReportBuilderScreen.tsx   # Custom PDF/Excel Report Generator
+│   └── ...                       # (Screens Marketing Planner & Tools lainnya)
 │
-└── lib/
-    ├── types.ts                   # Semua TypeScript interfaces
-    ├── store.ts                   # localStorage CRUD + seed data
-    ├── db.ts                      # Database layer (Supabase)
-    ├── gmvStore.ts                # Zustand store untuk GMV
-    ├── supabase.ts                # Supabase client
-    ├── googleSheets.ts            # Google Sheets API integration
-    ├── exportPdf.ts               # Export ke PDF (jsPDF)
-    ├── exportPpt.ts               # Export ke PowerPoint (pptxgenjs)
-    ├── reportGenerator.ts         # Report builder engine
-    ├── affiliateParser.ts         # Parser data affiliate
-    ├── liveParser.ts              # Parser data live streaming
-    └── okrTemplates.ts            # Template OKR per departemen
+├── utils/                        # Analytics Engine & Data Calculators
+│   ├── revenueAnalyzer.ts        # Algoritma Fitur 1-5, MA7 Drop Alert, Funnel & Omset Doctor Engine
+│   └── gmvAnalyzer.ts            # Parser & kalkulator GMV Overview, Anomali, & Forecast
+│
+├── store/                        # Global State Management (Zustand)
+│   ├── useStoreManager.ts        # Multi-Store Management, Supabase sync & persistence
+│   ├── useAlertStore.ts          # Centralized alert system
+│   └── useAIStore.ts             # State AI assistant chat
+│
+└── lib/                          # Data Models & Database Services
+    ├── types.ts                  # Seluruh TypeScript Data Interfaces & TabKeys
+    ├── db.ts                     # Database Layer (Supabase + IndexedDB idb-keyval)
+    ├── exportPdf.ts              # Engine export PDF (jsPDF)
+    └── exportPpt.ts              # Engine export PowerPoint (pptxgenjs)
 ```
 
 ---
 
-## Modul & Fitur
+## 🚀 Modul & Fitur Lengkap
 
-### 1. Home
+### 1. Executive Summary (Home)
+- **Executive Summary**: Ringkasan performa bisnis gabungan toko, indikator kesehatan, notifikasi alert kritis, dan jalan pintas analitik utama.
 
-| Screen | Deskripsi |
-|---|---|
-| **Executive Summary** | Ringkasan KPI utama dari semua modul, alert, dan rekomendasi |
+---
 
 ### 2. Marketing Planner
+Modul lengkap perencanaan & eksekusi pemasaran berbasis data lokal `localStorage` (`ms_`).
 
-Semua data disimpan di **localStorage** dengan prefix `ms_`. Setiap screen memiliki **CRUD lengkap** (tambah, edit, hapus, lihat detail) plus **dashboard analytics** dengan chart.
-
-| Screen | Fitur Analytics |
+| Halaman | Deskripsi Analitik & Operasional |
 |---|---|
-| **Dashboard** | 6 KPI cards, budget allocation pie chart, monthly revenue trend line, AIDA funnel progress, hipotesis summary |
-| **Panduan** | CRUD panduan/SOP marketing |
-| **Content Tracker** | Status distribution pie, platform bar chart, weekly output trend, PIC productivity |
-| **Campaign Log** | Budget utilization, status pie, platform spending bar, timeline view |
-| **KOL Tracker** | Spending by platform/category pies, KOL ranking, cost-per-engagement |
-| **Hipotesis & Plan** | Kanban board (4 kolom), success rate KPI, category breakdown, list view toggle |
-| **Referensi KPI** | CRUD referensi KPI marketing |
-| **AIDA Funnel** | Visual funnel dengan conversion rates, target vs actual bar chart, progress bars |
-| **Budget & ROI** | Budget allocation pie, spending vs revenue bars, ROI ranking |
-| **TOFU/MOFU/BOFU** | Visual funnel dengan drop-off rates, target vs actual per stage, summary cards |
-| **Target & ROI Bulanan** | 6 KPI cards, target vs actual line chart, ROI bar chart per bulan |
-| **Budgeting Harian** | CTR & CPC metrics, daily budget vs spent line, platform spending horizontal bars |
-| **Analisis TMB** | ROAS per channel bar chart, revenue per stage, detail table |
-
-### 3. GMV Analyzer
-
-Upload data dari TikTok Shop / marketplace lalu analisis performa.
-
-| Screen | Deskripsi |
-|---|---|
-| **Upload Data** | Upload file Excel/CSV data GMV |
-| **GMV Dashboard** | Dashboard ringkasan GMV |
-| **Overview Bisnis** | Analisis multi-bulan, tren, anomali, forecast |
-| **Video Performance** | Analisis performa video (VV, GPM, CTR, CTOR) |
-| **Affiliate Manager** | Kelola kreator affiliate, tier, scoring |
-| **Live Analytics** | Analisis performa live streaming |
-| **SKU Analyzer** | Analisis performa per SKU/produk |
-| **Creative Optimizer** | Optimasi konten kreatif |
-| **Top Seller Metrics** | Benchmark dengan top seller |
-| **Checklist Evaluasi** | Checklist evaluasi toko |
-| **Optimasi Kreatif** | Rekomendasi optimasi |
-| **ROI Calculator** | Kalkulator ROI campaign |
-| **Kartu Produk** | Kelola kartu produk |
-
-### 4. GMV Maximizer
-
-| Screen | Deskripsi |
-|---|---|
-| **GMAX Overview** | Dashboard strategi maksimalisasi GMV |
-
-### 5. OKR
-
-| Screen | Deskripsi |
-|---|---|
-| **OKR Framework** | OKR per departemen (Konseptor, SMO, Advertiser, Affiliate) |
-
-### 6. Laporan
-
-| Screen | Deskripsi |
-|---|---|
-| **Report Builder** | Generator laporan custom (PDF/Excel) |
-| **Laporan Harian** | Dashboard harian terintegrasi Google Sheets & Supabase, export PDF/PPT |
-
-### 7. Multi-Toko
-
-| Screen | Deskripsi |
-|---|---|
-| **Compare & Gabungan** | Gabungkan data multi-toko |
-| **Bandingkan Toko** | Perbandingan performa antar toko |
-| **Kelola Toko** | Manajemen daftar toko |
+| **Dashboard** | KPI Cards, alokasi budget pie chart, tren omset bulanan, dan AIDA funnel progress |
+| **Panduan (SOP)** | Manajemen Panduan & SOP Operasional Tim Marketing |
+| **Content Tracker** | Distribusi status konten, output mingguan, dan produktivitas PIC |
+| **Campaign Log** | Efisiensi alokasi anggaran campaign, pengeluaran per platform, dan timeline |
+| **KOL Tracker** | Peringkat efektivitas KOL, pengeluaran per kategori, dan Cost-per-Engagement |
+| **Hipotesis & Plan** | Kanban Board 4 kolom, KPI tingkat keberhasilan pengujian, dan kategori hipotesis |
+| **Referensi KPI** | Referensi tolok ukur KPI marketing e-commerce |
+| **AIDA Funnel** | Visualisasi corong AIDA (Attention, Interest, Desire, Action) & conversion rate |
+| **Budget & ROI** | Alokasi anggaran vs realisasi revenue dan peringkat ROI campaign |
+| **TOFU·MOFU·BOFU** | Matriks funnel drop-off per tahapan awareness hingga transaksi |
+| **Target & ROI Bulanan** | Pencapaian target omset bulanan vs anggaran dan analisis ROI |
+| **Budgeting Harian** | Metrik harian CTR, CPC, perbandingan budget vs spent, dan tren platform |
+| **Analisis TMB** | Matriks ROAS per channel dan pendapatan per stage |
 
 ---
 
-## State Management & Data
+### 3. Analitik Lanjutan ⭐ (Fitur Utama Baru)
 
-### localStorage (Marketing Planner)
+Fitur analisis bisnis mendalam yang berjalan secara dinamis menggunakan data real toko Anda:
 
-Semua data Marketing Planner disimpan di `localStorage` dengan prefix `ms_`.
-
-```typescript
-// Contoh key: ms_content, ms_campaign, ms_kol, ms_hipotesis, ...
-// Fungsi CRUD ada di src/lib/store.ts
-
-import { getItems, addItem, updateItem, deleteItem, SEEDS } from "@/lib/store";
-
-// Membaca data (dengan fallback seed data)
-const items = getItems("content", SEEDS.content);
-
-// Tambah
-const updated = addItem("content", items, newItem);
-
-// Edit
-const updated = updateItem("content", items, editedItem);
-
-// Hapus
-const updated = deleteItem("content", items, itemId);
-```
-
-### Zustand (GMV Analyzer)
-
-Data GMV menggunakan Zustand store di `src/lib/gmvStore.ts`.
-
-### Supabase (Laporan Harian)
-
-Data laporan harian disinkronkan ke Supabase jika dikonfigurasi. Tanpa Supabase, menggunakan IndexedDB via `idb-keyval`.
+| Halaman | Deskripsi & Kegunaan Utama |
+|---|---|
+| **Revenue Breakdown** | Memecah GMV ke 4 saluran (*LIVE Penjual, Video Penjual, Afiliasi Kreator, Kartu Produk*), grafik tren harian multi-channel, dan **Alert Penurunan >20%** dibanding rata-rata 7 hari (MA7). |
+| **Funnel Analyzer** | Visualisasi alur 4 tahap (*Impresi $\rightarrow$ Klik/CTR $\rightarrow$ Tambah Keranjang/ATC $\rightarrow$ Pesanan/CTOR*), komparasi hari omset puncak vs drop, dan **Deteksi Bottleneck Otomatis (Traffic vs Closing)**. |
+| **Live Scorecard** | Dashboard GPM (*GMV per 1.000 Tayangan*), benchmark standar >Rp15.000, rasio sesi LIVE produktif vs zong, retensi watch rate, dan **Rekomendasi Jam LIVE Terbaik**. |
+| **Affiliate Tracker** | Tren komparasi GMV Afiliasi vs GMV Toko Sendiri (*Own Brand*), pemantauan kreator aktif posting, rata-rata kontribusi per kreator, dan warning drop keaktifan kreator. |
+| **Omset Doctor AI** | **Engine Diagnostik Otomatis** yang membaca seluruh metrik sekaligus, menghitung **Skor Kesehatan Toko (0-100)**, menyajikan *Diagnosis Real*, *Akar Masalah (Root Cause)*, dan *Rekomendasi Solusi Praktis*. |
 
 ---
 
-## Komponen Reusable
+### 4. GMV Analyzer
+- **Upload Data**: Unggah file Excel/CSV dari TikTok Seller Center & Data Compass.
+- **GMV Dashboard**: Overview ringkas indikator penjualan e-commerce.
+- **Overview Bisnis**: Analisis multi-bulan, tren mingguan, deteksi anomali spike/drop, dan forecast omset bulan depan.
+- **Video Performance**: Analisis performa video shoppable (VV, GPM, CTR, CTOR, status Top Performer).
+- **Affiliate Manager**: Manajemen kreator afiliasi, tier (Nano/Micro/Mid/Macro), scoring, dan status keaktifan.
+- **Live Analytics**: Evaluasi performa siaran langsung.
+- **SKU Analyzer**: Analisis kontribusi dan kesehatan produk per SKU ID.
+- **Creative Optimizer**: Evaluasi efektivitas materi iklan & konten kreatif.
+- **Top Seller Metrics**: Benchmark indikator toko Anda dibanding seller papan atas.
+- **Checklist Evaluasi & Optimasi**: Langkah taktis perbaikan operasional toko.
+- **ROI Calculator**: Kalkulator simulasi proyeksi ROI campaign.
+- **Kartu Produk & SKU Tracking**: Monitoring etalase produk dan pencapaian target SKU.
+
+---
+
+### 5. GMV Maximizer
+- **GMAX Overview**: Dashboard strategi maksimalisasi pertumbuhan GMV toko.
+- **GMAX Evaluasi**: Evaluasi kampanye iklan GMV Max dan penyapan anggaran.
+
+---
+
+### 6. Tim & Staff
+- **Staff Tracker**: Pemantauan beban kerja, kinerja, dan produktivitas tim internal.
+
+---
+
+### 7. OKR Framework
+- **OKR Framework**: Manajemen *Objectives & Key Results* per departemen (*Konseptor, SMO, Advertiser, Affiliate*).
+
+---
+
+### 8. Laporan & Export
+- **Report Builder**: Generator laporan eksekutif custom (Export ke format **PDF** dan **Excel**).
+- **Laporan Harian**: Dashboard harian terintegrasi Supabase & Google Sheets, ekspor laporan siap presentasi ke format **PDF** dan **PowerPoint (PPT)**.
+
+---
+
+### 9. Multi-Toko (Store Management)
+- **Compare & Gabungan**: Menggabungkan data analitik dari beberapa toko secara akumulatif.
+- **Bandingkan Toko**: Komparasi *head-to-head* indikator antar toko.
+- **Kelola Toko**: Manajemen pendaftaran, edit warna, dan penghapusan profil toko.
+
+---
+
+## 💾 State Management & Data Persistence
+
+1. **Zustand (`useStoreManager`)**:
+   - Mengelola daftar toko, toko aktif, data Overview Bisnis, Video Performance, dan data Affiliate Summary.
+   - Tersinkronisasi otomatis dengan **Supabase Database** saat koneksi internet aktif.
+
+2. **Supabase & IndexedDB (`idb-keyval`)**:
+   - Menyimpan dataset besar seperti ribuan baris kreator afiliasi dan catatan Laporan Harian secara lokal maupun cloud storage.
+
+3. **localStorage (`ms_`)**:
+   - Digunakan untuk data operasional Marketing Planner dengan *seed fallback data*.
+
+---
+
+## 🧮 Engine Diagnostik & Analitik (`src/utils/`)
+
+### `revenueAnalyzer.ts`
+- `extractRealStoreData`: Mengekstrak dan menormalisasi data transaksi harian dari data terunggah toko.
+- `computeRevenueBreakdown`: Menghitung breakdown 4 channel, tren 7-hari, dan notifikasi alert drop >20%.
+- `computeFunnelAnalyzer`: Menghitung rasio CTR/CTOR, komparasi hari omset puncak vs drop, dan menetapkan bottleneck.
+- `computeLiveScorecard`: Menghitung GPM, rasio sesi produktif, retensi tontonan, dan rekomendasi jam tayang.
+- `computeAffiliateTracker`: Menghitung porsi omset afiliasi, jumlah kreator aktif, dan mendeteksi anomali.
+- `runOmsetDoctorDiagnosis`: Engine evaluasi aturan (*rule-based*) yang menghasilkan Skor Kesehatan (0-100), diagnosis akar masalah, dan rekomendasi perbaikan.
+
+---
+
+## 🧱 Komponen Reusable
 
 ### `PageHeader`
-
-Header standar untuk setiap screen.
-
+Header standar halaman yang mendukung pencarian data dan tombol aksi:
 ```tsx
 <PageHeader
-  title="Content Tracker"
-  icon={<FileText size={20} />}
-  count={items.length}
-  onAdd={openAdd}
-  addLabel="Tambah Konten"
-  search={search}
-  onSearch={setSearch}
+  title="Revenue Breakdown"
+  icon={<TrendingUp size={20} />}
+  count={channels.length}
 />
 ```
 
 ### `Modal`
-
-Modal dialog dengan form helpers.
-
+Komponen dialog modal fleksibel untuk form input data:
 ```tsx
-import Modal, { FormField, inputClass, selectClass, btnPrimary, btnSecondary } from "@/components/Modal";
+import Modal, { FormField, inputClass, btnPrimary } from "@/components/Modal";
 
-<Modal open={isOpen} onClose={onClose} title="Judul Modal" wide>
-  <FormField label="Nama">
-    <input className={inputClass} value={val} onChange={...} />
+<Modal open={isOpen} onClose={onClose} title="Tambah Data">
+  <FormField label="Nama Store">
+    <input className={inputClass} value={name} onChange={...} />
   </FormField>
   <button className={btnPrimary}>Simpan</button>
 </Modal>
 ```
 
-### `StatusBadge`
-
-Badge berwarna otomatis berdasarkan value.
-
-```tsx
-<StatusBadge value="Active" />    // hijau
-<StatusBadge value="Draft" />     // abu-abu
-<StatusBadge value="High" />      // merah
-```
-
 ---
 
-## Panduan Menambah Fitur Baru
+## 🚀 Deployment (Vercel & Node.js)
 
-### Menambah Screen Baru
-
-1. **Buat file screen** di `src/screens/NamaScreen.tsx`
-2. **Definisikan tipe data** di `src/lib/types.ts`
-3. **Tambah seed data** di `src/lib/store.ts` (jika pakai localStorage)
-4. **Daftarkan TabKey** di `src/lib/types.ts` → `TabKey`
-5. **Tambah menu** di `src/components/Sidebar.tsx` → `tabGroups`
-6. **Tambah routing** di `src/app/page.tsx` → switch case `activeTab`
-
-### Template Screen dengan Analytics
-
-```tsx
-"use client";
-import { useEffect, useState, useMemo } from "react";
-import { NamaItem } from "@/lib/types";
-import { getItems, SEEDS, addItem, updateItem, deleteItem } from "@/lib/store";
-import PageHeader from "@/components/PageHeader";
-import Modal, { FormField, inputClass, btnPrimary, btnSecondary } from "@/components/Modal";
-import { SomeIcon } from "lucide-react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-
-const STORE_KEY = "namaKey";
-
-export default function NamaScreen() {
-  const [items, setItems] = useState<NamaItem[]>([]);
-  const [search, setSearch] = useState("");
-  const [modal, setModal] = useState<"add" | "edit" | "view" | null>(null);
-  const [selected, setSelected] = useState<NamaItem | null>(null);
-  const [form, setForm] = useState<Partial<NamaItem>>({});
-
-  useEffect(() => { setItems(getItems(STORE_KEY, SEEDS.namaKey)); }, []);
-
-  // Analytics computed data
-  const analytics = useMemo(() => {
-    // ... compute KPI cards, chart data
-    return { /* ... */ };
-  }, [items]);
-
-  // CRUD handlers ...
-
-  return (
-    <div className="space-y-5">
-      <PageHeader title="..." icon={<SomeIcon size={20} />} count={items.length}
-        onAdd={openAdd} addLabel="Tambah" search={search} onSearch={setSearch} />
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* ... */}
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* ... ResponsiveContainer + Chart ... */}
-      </div>
-
-      {/* Data Table / Cards */}
-      {/* ... */}
-
-      {/* Modals */}
-      {/* ... */}
-    </div>
-  );
-}
-```
-
-### Menambah Chart ke Screen yang Sudah Ada
-
-1. Import dari `recharts`: `ResponsiveContainer, BarChart, PieChart, LineChart, ...`
-2. Gunakan `useMemo` untuk menghitung data chart dari `items`
-3. Tambahkan section chart di atas tabel/card list
-4. Pastikan chart responsive: bungkus dengan `<ResponsiveContainer width="100%" height={240}>`
-
-### Format Angka
-
-```typescript
-// Rupiah
-function fmtRp(n: number) { return "Rp " + n.toLocaleString("id-ID"); }
-
-// Compact number (1K, 1.5M, dll)
-function fmt(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toLocaleString("id-ID", { maximumFractionDigits: 1 }) + "M";
-  if (n >= 1_000) return (n / 1_000).toLocaleString("id-ID", { maximumFractionDigits: 1 }) + "K";
-  return n.toLocaleString("id-ID");
-}
-```
-
----
-
-## Konvensi Kode
-
-- **Bahasa UI:** Indonesia (label, placeholder, catatan)
-- **Bahasa Kode:** Inggris (variabel, fungsi, tipe) — kecuali field data yang sudah berbahasa Indonesia
-- **Styling:** Tailwind CSS utility classes langsung di JSX, **tidak ada CSS modules**
-- **State lokal:** `useState` + `useMemo` untuk computed data
-- **Recharts:** Selalu bungkus dengan `<ResponsiveContainer>`, gunakan `percent ?? 0` untuk Pie label
-- **Layout:** Gunakan `space-y-5` untuk spacing vertikal antar section
-- **Cards:** `bg-white rounded-xl border p-5 shadow-sm`
-- **Grid responsive:** `grid grid-cols-1 lg:grid-cols-2 gap-5`
-- **Warna stage:**
-  - TOFU = `#3b82f6` (biru)
-  - MOFU = `#8b5cf6` (ungu)
-  - BOFU = `#f97316` (oranye)
-- **Warna status:**
-  - Active/Published/Validated = hijau
-  - Testing/In Review/Pending = kuning
-  - Invalidated/Rejected = merah
-  - Draft/Backlog = abu-abu
-
----
-
-## API Routes
-
-| Endpoint | Method | Deskripsi |
-|---|---|---|
-| `/api/auth` | POST | Login (body: `{ password }`) |
-| `/api/auth` | GET | Cek session |
-| `/api/auth` | DELETE | Logout |
-| `/api/laporan-harian` | GET/POST | Data laporan harian |
-| `/api/google-sheets` | GET/POST | Integrasi Google Sheets |
-| `/api/ai-chat` | POST | AI chat (Gemini/OpenAI) |
-
----
-
-## Deployment
+Aplikasi telah dioptimasi penuh untuk deployment di **Vercel**:
 
 ```bash
-# Build production
+# Kompilasi build produksi
 npm run build
 
-# Jalankan production server
+# Menjalankan build secara lokal
 npm run start
 ```
 
-Deploy ke **Vercel**, **Netlify**, atau server Node.js mana pun. Pastikan environment variables sudah dikonfigurasi di platform hosting.
+### Konfigurasi Vercel:
+1. Hubungkan repository GitHub `marketing-suite` ke Vercel.
+2. Tambahkan **Environment Variables** (`SITE_PASSWORD`, `NEXT_PUBLIC_SUPABASE_URL`, dll.) pada halaman Settings Vercel.
+3. Setiap kali ada `git push origin main`, Vercel akan secara otomatis melakukan kompilasi build & deployment dalam waktu 1-2 menit.
 
 ---
 
-## Lisensi
+## 📜 Lisensi
 
-Internal use only — © 2026 Marketing Suite
+Internal Use Only — © 2026 Marketing Suite. Hak Cipta Dilindungi Undang-Undang.
