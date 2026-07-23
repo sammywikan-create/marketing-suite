@@ -200,59 +200,22 @@ export default function Sidebar({ active, onSelect, mobileOpen = false, onMobile
                 </div>
               )}
               {collapsed && !isMobile && <div className="border-t border-white/10 my-1" />}
-              {visibleItems.map((tab) => {
-                const help = getPageHelp(tab.key);
-                return (
-                  <div key={tab.key} className="relative flex items-center mb-0.5 group/item">
-                    <button
-                      onClick={() => onSelect(tab.key)}
-                      className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-[13px] transition-colors ${
-                        active === tab.key
-                          ? "sidebar-active-glow text-white font-semibold"
-                          : "text-white/65 hover:bg-white/8 hover:text-white"
-                      } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
-                      title={tab.label}
-                      aria-label={tab.label}
-                    >
-                      {tab.icon}
-                      {(!collapsed || isMobile) && <span className="truncate flex-1 text-left">{tab.label}</span>}
-                    </button>
-
-                    {/* Interactive ? Icon with Detailed Hover Tooltip */}
-                    {(!collapsed || isMobile) && (
-                      <div className="relative group/help mr-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelect(tab.key);
-                          }}
-                          className="size-4.5 rounded-full bg-white/10 hover:bg-primary text-white/80 hover:text-white flex items-center justify-center text-[10px] font-bold transition-all border border-white/15 shadow-sm"
-                          title="Lihat Keterangan Tab"
-                        >
-                          ?
-                        </button>
-
-                        {/* Detailed Tooltip Popover on Hover */}
-                        <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 w-64 p-3.5 bg-slate-900/95 backdrop-blur-md text-white rounded-xl shadow-2xl border border-white/20 opacity-0 pointer-events-none group-hover/help:opacity-100 group-hover/help:pointer-events-auto transition-all z-50 text-xs">
-                          <div className="font-bold text-white mb-1.5 flex items-center justify-between border-b border-white/15 pb-1">
-                            <span>{help.title}</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-bold">
-                              {help.targetUser}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-white/90 leading-relaxed mb-2 font-medium">
-                            🎯 <strong>Tujuan:</strong> {help.tujuan}
-                          </p>
-                          <div className="text-[10px] text-emerald-300 leading-relaxed border-t border-white/10 pt-1.5 font-semibold">
-                            💡 <strong>Manfaat:</strong> {help.manfaat[0]}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {visibleItems.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => onSelect(tab.key)}
+                  className={`mb-0.5 flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-[13px] transition-colors ${
+                    active === tab.key
+                      ? "sidebar-active-glow text-white font-semibold"
+                      : "text-white/65 hover:bg-white/8 hover:text-white"
+                  } ${collapsed && !isMobile ? "justify-center px-2" : ""}`}
+                  title={tab.label}
+                  aria-label={tab.label}
+                >
+                  {tab.icon}
+                  {(!collapsed || isMobile) && <span className="truncate">{tab.label}</span>}
+                </button>
+              ))}
             </div>
           );
         })}

@@ -1,6 +1,6 @@
-"use client";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
 import { loadAffiliateCreators } from "@/lib/db";
 import { listLaporanHarianPeriods, loadLaporanHarianData } from "@/lib/db";
@@ -809,18 +809,28 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: GMV vs Target */}
-          <button onClick={() => document.getElementById("goals-section")?.scrollIntoView({ behavior: "smooth" })}
-            className="text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+          <div className="relative text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">💰</span>
-              {momGrowth !== null && (
-                <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`}>
-                  {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {momGrowth !== null && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`}>
+                    {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
+                  </span>
+                )}
+                <MetricHelpTooltip
+                  title="Total GMV Affiliate"
+                  desc="Total nilai omset kotor (Gross Merchandise Value) yang dihasilkan dari seluruh promosi kreator afiliasi sebelum dikurangi refund."
+                  formula="GMV Video + GMV Live + GMV Kartu Produk"
+                  benchmark="Porsi ideal >70% dari total omset toko"
+                  dark
+                />
+              </div>
             </div>
-            <p className="text-3xl font-extrabold leading-tight">{fRp(agg.totalGMV)}</p>
-            <p className="text-blue-200 text-xs mt-1 font-medium">Total GMV Affiliate</p>
+            <button onClick={() => document.getElementById("goals-section")?.scrollIntoView({ behavior: "smooth" })} className="w-full text-left">
+              <p className="text-3xl font-extrabold leading-tight">{fRp(agg.totalGMV)}</p>
+              <p className="text-blue-200 text-xs mt-1 font-medium">Total GMV Affiliate</p>
+            </button>
             {targetGMV > 0 && (
               <div className="mt-3">
                 <div className="flex justify-between text-xs text-blue-200 mb-1">
@@ -833,46 +843,64 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                 </div>
               </div>
             )}
-          </button>
+          </div>
 
           {/* Card 2: Omzet FreshVision (Laporan Harian) */}
-          <button onClick={() => onNavigate("laporan-harian")}
-            className="text-left bg-gradient-to-br from-emerald-600 to-teal-700 dark:from-emerald-700 dark:to-teal-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+          <div className="relative text-left bg-gradient-to-br from-emerald-600 to-teal-700 dark:from-emerald-700 dark:to-teal-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">📋</span>
-              {heroCards.daysElapsed > 0 && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{heroCards.daysElapsed} hari</span>}
+              <div className="flex items-center gap-2">
+                {heroCards.daysElapsed > 0 && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{heroCards.daysElapsed} hari</span>}
+                <MetricHelpTooltip
+                  title="Omset Store (FreshVision)"
+                  desc="Total akumulasi omset penjualan toko berdasarkan pembukuan laporan harian terverifikasi."
+                  formula="Sum Omzet Harian (Shop Tab + Ads + Channel)"
+                  benchmark="Bandingkan vs Rata-Rata Omset Harian x 30 Hari"
+                  dark
+                />
+              </div>
             </div>
-            <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
-            <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet FreshVision</p>
+            <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
+              <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
+              <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet FreshVision</p>
+            </button>
             {heroCards.displayOmzet > 0 && heroCards.daysElapsed > 0 && (
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-xs text-emerald-200">Rata-rata:</span>
                 <span className="text-xs font-bold text-white">{fRp(heroCards.dailyAvgOmzet)}/hari</span>
               </div>
             )}
-          </button>
+          </div>
 
           {/* Card 3: Kreator Aktif Promosi */}
-          <button onClick={() => onNavigate("affiliate")}
-            className="text-left bg-gradient-to-br from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+          <div className="relative text-left bg-gradient-to-br from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">🎥</span>
-              <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-                {agg.totalCreators > 0 ? fP((agg.activePromoters / agg.totalCreators) * 100) : "0%"} aktif
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                  {agg.totalCreators > 0 ? fP((agg.activePromoters / agg.totalCreators) * 100) : "0%"} aktif
+                </span>
+                <MetricHelpTooltip
+                  title="Kreator Aktif Promosi"
+                  desc="Jumlah kreator afiliasi yang aktif mengunggah video shoppable atau siaran langsung (LIVE) dan menghasilkan penjualan."
+                  benchmark="Tingkat keaktifan ideal >25% dari total database"
+                  dark
+                />
+              </div>
             </div>
-            <p className="text-3xl font-extrabold leading-tight">{fN(agg.activePromoters)}</p>
-            <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif Promosi dari {fN(agg.totalCreators)}</p>
+            <button onClick={() => onNavigate("affiliate")} className="w-full text-left">
+              <p className="text-3xl font-extrabold leading-tight">{fN(agg.activePromoters)}</p>
+              <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif Promosi dari {fN(agg.totalCreators)}</p>
+            </button>
             <div className="mt-3 flex items-center gap-2 text-xs flex-wrap">
               <span className="bg-white/15 px-1.5 py-0.5 rounded">📹 {fN(agg.videoCreators)} video</span>
               <span className="bg-white/15 px-1.5 py-0.5 rounded">🔴 {fN(agg.liveCreators)} LIVE</span>
               <span className="bg-white/15 px-1.5 py-0.5 rounded">🔄 {fN(agg.bothVideoAndLive)} keduanya</span>
             </div>
-          </button>
+          </div>
 
           {/* Card 4: ROAS */}
-          <button onClick={() => onNavigate("laporan-harian")}
-            className={`text-left rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group ${
+          <div className={`relative text-left rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group ${
               heroCards.displayRoas >= 3 ? "bg-gradient-to-br from-green-600 to-emerald-700 dark:from-green-700 dark:to-emerald-800"
                 : heroCards.displayRoas >= 2 ? "bg-gradient-to-br from-yellow-600 to-amber-700"
                   : heroCards.displayRoas > 0 ? "bg-gradient-to-br from-red-600 to-rose-700"
@@ -880,32 +908,46 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             }`}>
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">🎯</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                heroCards.displayRoas >= 3 ? "bg-green-400/20 text-green-200" : heroCards.displayRoas >= 2 ? "bg-yellow-400/20 text-yellow-200" : "bg-red-400/20 text-red-200"
-              }`}>{heroCards.displayRoas >= 3 ? "✅ Sehat" : heroCards.displayRoas >= 2 ? "⚠️ Waspada" : heroCards.displayRoas > 0 ? "🔴 Rendah" : "—"}</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  heroCards.displayRoas >= 3 ? "bg-green-400/20 text-green-200" : heroCards.displayRoas >= 2 ? "bg-yellow-400/20 text-yellow-200" : "bg-red-400/20 text-red-200"
+                }`}>{heroCards.displayRoas >= 3 ? "✅ Sehat" : heroCards.displayRoas >= 2 ? "⚠️ Waspada" : heroCards.displayRoas > 0 ? "🔴 Rendah" : "—"}</span>
+                <MetricHelpTooltip
+                  title="ROAS (Return on Ad Spend)"
+                  desc="Rasio efisiensi perolehan omset dibandingkan total biaya pengeluaran iklan (Ad Spend)."
+                  formula="Total Omzet Penjualan / Total Biaya Iklan"
+                  benchmark=">3.0x (Sehat), 2.0x-2.9x (Waspada), <2.0x (Rendah)"
+                  dark
+                />
+              </div>
             </div>
-            <p className="text-3xl font-extrabold leading-tight">{heroCards.displayRoas > 0 ? `${heroCards.displayRoas.toFixed(2)}×` : "—"}</p>
-            <p className="text-white/70 text-xs mt-1 font-medium">ROAS (Return on Ad Spend)</p>
+            <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
+              <p className="text-3xl font-extrabold leading-tight">{heroCards.displayRoas > 0 ? `${heroCards.displayRoas.toFixed(2)}×` : "—"}</p>
+              <p className="text-white/70 text-xs mt-1 font-medium">ROAS (Return on Ad Spend)</p>
+            </button>
             {heroCards.displayRoas > 0 && lhData?.summary && (
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-xs text-white/60">Ad Spend:</span>
                 <span className="text-xs font-bold text-white">{fRp(lhData.summary.total_biaya_iklan || 0)}</span>
               </div>
             )}
-          </button>
+          </div>
         </div>
 
         {/* Secondary KPIs row */}
         <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mt-3">
           {[
-            { label: "Net GMV", value: fRp(agg.netGMV), ok: true },
-            { label: "Refund Rate", value: fP(agg.refundRate), ok: agg.refundRate <= 15 },
-            { label: "Total Pesanan", value: fN(agg.totalOrders), ok: true },
-            { label: "AOV", value: fRp(agg.aov), ok: true },
-            { label: "Komisi Aff", value: fRp(agg.totalCommission), ok: true },
-            { label: "Net - Komisi", value: fRp(agg.netAfterComm), ok: agg.netAfterComm > 0 },
+            { label: "Net GMV", value: fRp(agg.netGMV), ok: true, tooltip: { title: "Net GMV", desc: "Nilai omset bersih setelah dikurangi total refund barang.", formula: "Total GMV - Total Refund" } },
+            { label: "Refund Rate", value: fP(agg.refundRate), ok: agg.refundRate <= 15, tooltip: { title: "Refund Rate", desc: "Persentase nilai refund pengembalian barang dibanding total GMV.", benchmark: "Batas aman ideal <15%" } },
+            { label: "Total Pesanan", value: fN(agg.totalOrders), ok: true, tooltip: { title: "Total Pesanan", desc: "Jumlah transaksi pesanan yang berhasil diselesaikan oleh pembeli." } },
+            { label: "AOV", value: fRp(agg.aov), ok: true, tooltip: { title: "Average Order Value (AOV)", desc: "Rata-rata nilai belanja transaksi per satu pesanan.", formula: "Total GMV / Total Pesanan" } },
+            { label: "Komisi Aff", value: fRp(agg.totalCommission), ok: true, tooltip: { title: "Komisi Affiliate", desc: "Total estimasi komisi yang dibayarkan kepada kreator afiliasi." } },
+            { label: "Net - Komisi", value: fRp(agg.netAfterComm), ok: agg.netAfterComm > 0, tooltip: { title: "Net GMV setelah Komisi", desc: "Perolehan bersih toko setelah dikurangi refund & komisi.", formula: "Net GMV - Total Komisi" } },
           ].map((item) => (
-            <div key={item.label} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-3 text-center">
+            <div key={item.label} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-3 text-center relative group">
+              <div className="absolute top-2 right-2">
+                <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} formula={item.tooltip.formula} benchmark={item.tooltip.benchmark} />
+              </div>
               <div className={`text-sm font-bold ${item.ok ? "text-gray-900 dark:text-white" : "text-red-600"}`}>{item.value}</div>
               <div className="text-[11px] text-gray-400 mt-0.5">{item.label}</div>
             </div>
@@ -918,8 +960,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* ── HEALTH SCORE ── */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col items-center justify-center text-center">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">🏥 Skor Kesehatan Bisnis</h3>
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col items-center justify-center text-center relative">
+            <div className="flex items-center justify-center gap-1.5 mb-3">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">🏥 Skor Kesehatan Bisnis</h3>
+              <MetricHelpTooltip
+                title="Skor Kesehatan Bisnis (0-100)"
+                desc="Indikator komposit mengukur kesehatan toko berdasarkan 4 pilar: pencapaian target GMV (30pt), refund rate (20pt), keaktifan kreator (25pt), dan ROAS (25pt)."
+              />
+            </div>
             <div className="relative w-28 h-28 mb-3">
               <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="8" />
@@ -946,9 +994,15 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
           {/* ── MoM COMPARISON STRIP ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              📈 Perubahan vs {momAll?.prevPeriodLabel || "Bulan Lalu"}
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                📈 Perubahan vs {momAll?.prevPeriodLabel || "Bulan Lalu"}
+              </h3>
+              <MetricHelpTooltip
+                title="Perubahan MoM (Month-over-Month)"
+                desc="Persentase pertumbuhan atau penurunan tiap indikator dibandingkan dengan periode bulan sebelumnya."
+              />
+            </div>
             {momAll ? (
               <div className="grid grid-cols-2 gap-2">
                 {[
@@ -978,7 +1032,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
           {/* ── DAILY AVERAGES + PROJECTED EOM ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">⚡ Rata-rata Harian & Proyeksi</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">⚡ Rata-rata Harian & Proyeksi</h3>
+              <MetricHelpTooltip
+                title="Rata-rata Harian & Proyeksi"
+                desc="Rata-rata perolehan harian real dan estimasi total omset di akhir bulan (End of Month / EOM)."
+                formula="Rata-rata Omset Harian × Jumlah Hari Bulan Ini"
+              />
+            </div>
             <div className="space-y-2.5">
               {[
                 { icon: "💰", label: "Revenue/Hari", value: fRp(dailyAvg.revenuePerDay) },
