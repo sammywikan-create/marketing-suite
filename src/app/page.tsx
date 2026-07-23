@@ -7,6 +7,7 @@ import type { UserRole } from "@/components/Sidebar";
 import StoreSelector from "@/components/StoreSelector";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import CommandPalette from "@/components/CommandPalette";
+import PageHelpButton from "@/components/PageHelpButton";
 import { Toaster } from "react-hot-toast";
 import { useGMVStore } from "@/lib/gmvStore";
 import { useStoreManager } from "@/store/useStoreManager";
@@ -375,6 +376,9 @@ export default function Home() {
             <StoreSelector onNavigate={navigate} />
           </div>
           <div className="flex items-center gap-2">
+            {/* Universal Page Help Button available on EVERY tab */}
+            <PageHelpButton tabKey={activeTab} />
+
             {isGMVPage && fileName && (
               <div className="flex items-center gap-2 text-sm hidden md:flex">
                 <span className="text-muted">📄</span>

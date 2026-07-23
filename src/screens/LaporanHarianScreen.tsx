@@ -1435,6 +1435,25 @@ export default function LaporanHarianScreen() {
         onSave={handleManualSave} isSaving={isSaving} isLive={isLive}
         onDelete={handleDeletePeriod}
       />
+      {/* Detailed Purpose & Benefit Explanation Card */}
+      <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
+        <div className="space-y-1">
+          <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+            🎯 Tujuan Laporan Harian:
+          </span>
+          <p className="text-muted">
+            Menyajikan pembukuan dan analisis kinerja harian toko secara otomatis yang terintegrasi dengan Google Sheets, Supabase, serta ekspor PDF dan slide PowerPoint (PPT).
+          </p>
+        </div>
+        <div className="space-y-1">
+          <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+            💡 Manfaat untuk Direksi & Manajemen:
+          </span>
+          <p className="text-muted">
+            Menyediakan bahan presentasi rapat harian/mingguan otomatis tanpa buat slide manual, memantau proyeksi omset EOM vs target, serta mengendalikan efisiensi biaya iklan (ROAS) dan CAC total.
+          </p>
+        </div>
+      </div>
       {saveMsg && <MsgBanner type={saveMsg.type} text={saveMsg.text} />}
       {importMsg && <MsgBanner type={importMsg.type} text={importMsg.text} />}
 

@@ -709,6 +709,27 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             </label>
           )}
         </div>
+
+        {/* Detailed Purpose & Benefit Explanation Card for Executive Summary */}
+        <div className="mx-5 mb-5 sm:mx-6 p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
+          <div className="space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              🎯 Tujuan Executive Summary:
+            </span>
+            <p className="text-muted">
+              Menyajikan gambaran besar (*bird&apos;s-eye view*) seluruh kondisi bisnis dan pemasaran toko Anda dalam 1 layar komando eksekutif tanpa perlu membaca puluhan tabel terpisah.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+              💡 Manfaat untuk Direksi & Manajemen:
+            </span>
+            <p className="text-muted">
+              Memungkinkan evaluasi kesehatan bisnis (*Health Score*) dalam 10 detik, memantau perolehan omset vs target bulanan real, serta menerima notifikasi peringatan (*Alert Panel*) untuk potensi kerugian.
+            </p>
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-5 py-3 sm:px-6">
           <span className="mr-1 text-xs font-semibold text-muted">Buka detail:</span>
           {[
