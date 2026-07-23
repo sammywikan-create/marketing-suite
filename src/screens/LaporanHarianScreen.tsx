@@ -2302,19 +2302,45 @@ function CostTab({ s, harian }: { s: Summary; harian: HarianRow[] }) {
             <thead>
               <tr className="border-b-2 border-gray-100">
                 <th className="py-2 px-2 text-left font-bold text-gray-600 sticky left-0 bg-white">Tanggal</th>
-                <th className="py-2 px-2 text-right font-bold text-blue-600">GMV Max</th>
-                <th className="py-2 px-2 text-right font-bold text-purple-600">Non GMV</th>
-                <th className="py-2 px-2 text-right font-bold text-orange-600">Iklan+PPN</th>
-                <th className="py-2 px-2 text-right font-bold text-orange-500">Komisi Plt</th>
-                <th className="py-2 px-2 text-right font-bold text-emerald-600">Shipping</th>
-                <th className="py-2 px-2 text-right font-bold text-red-500">Mall</th>
-                <th className="py-2 px-2 text-right font-bold text-amber-600">K. Dinamis</th>
-                <th className="py-2 px-2 text-right font-bold text-indigo-600">Growth</th>
-                <th className="py-2 px-2 text-right font-bold text-pink-600">Proses</th>
-                <th className="py-2 px-2 text-right font-bold text-teal-600">Affiliate</th>
-                <th className="py-2 px-2 text-right font-bold text-gray-800">Total</th>
-                <th className="py-2 px-2 text-right font-bold text-emerald-700">Omzet</th>
-                <th className="py-2 px-2 text-right font-bold text-gray-600">Net</th>
+                <th className="py-2 px-2 text-right font-bold text-blue-600">
+                  <span className="flex items-center justify-end gap-1">GMV Max <MetricHelpTooltip title="GMV Max" desc="Biaya iklan GMV Max otomatis." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-purple-600">
+                  <span className="flex items-center justify-end gap-1">Non GMV <MetricHelpTooltip title="Non GMV Max" desc="Biaya iklan manual di luar GMV Max." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-orange-600">
+                  <span className="flex items-center justify-end gap-1">Iklan+PPN <MetricHelpTooltip title="Biaya Iklan + PPN" desc="Total pengeluaran iklan termasuk PPN." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-orange-500">
+                  <span className="flex items-center justify-end gap-1">Komisi Plt <MetricHelpTooltip title="Komisi Platform" desc="Biaya komisi administrasi platform marketplace." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-emerald-600">
+                  <span className="flex items-center justify-end gap-1">Shipping <MetricHelpTooltip title="Shipping Cost" desc="Subsidikan/biaya penanganan pengiriman." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-red-500">
+                  <span className="flex items-center justify-end gap-1">Mall <MetricHelpTooltip title="Biaya Mall" desc="Biaya komisi layanan Mall marketplace." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-amber-600">
+                  <span className="flex items-center justify-end gap-1">K. Dinamis <MetricHelpTooltip title="Komisi Dinamis" desc="Biaya komisi ekstra kampanye dinamis." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-indigo-600">
+                  <span className="flex items-center justify-end gap-1">Growth <MetricHelpTooltip title="Growth Extra" desc="Biaya program pertumbuhan ekstra." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-pink-600">
+                  <span className="flex items-center justify-end gap-1">Proses <MetricHelpTooltip title="Biaya Pemrosesan" desc="Biaya administrasi pemrosesan transaksi." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-teal-600">
+                  <span className="flex items-center justify-end gap-1">Affiliate <MetricHelpTooltip title="Komisi Affiliate" desc="Biaya komisi terbayar ke kreator afiliasi." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-gray-800">
+                  <span className="flex items-center justify-end gap-1">Total <MetricHelpTooltip title="Total Biaya Operasional" desc="Akumulasi seluruh biaya iklan & komisi." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-emerald-700">
+                  <span className="flex items-center justify-end gap-1">Omzet <MetricHelpTooltip title="Omset Penjualan" desc="Total perolehan omset kotor terverifikasi." /></span>
+                </th>
+                <th className="py-2 px-2 text-right font-bold text-gray-600">
+                  <span className="flex items-center justify-end gap-1">Net <MetricHelpTooltip title="Pendapatan Bersih (Net Profit)" desc="Omset minus total akumulasi biaya." /></span>
+                </th>
               </tr>
             </thead>
             <tbody>

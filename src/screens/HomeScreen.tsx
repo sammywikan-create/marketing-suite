@@ -1042,22 +1042,28 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             </div>
             <div className="space-y-2.5">
               {[
-                { icon: "💰", label: "Revenue/Hari", value: fRp(dailyAvg.revenuePerDay) },
-                { icon: "📦", label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)) },
-                { icon: "🎬", label: "Konten/Hari", value: dailyAvg.contentPerDay.toFixed(1) },
-                { icon: "📹", label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo) },
-                { icon: "🔴", label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive) },
-                { icon: "👤", label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator) },
+                { icon: "💰", label: "Revenue/Hari", value: fRp(dailyAvg.revenuePerDay), tooltip: { title: "Revenue per Hari", desc: "Rata-rata pendapatan omset yang diperoleh per hari." } },
+                { icon: "📦", label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)), tooltip: { title: "Pesanan per Hari", desc: "Rata-rata transaksi pesanan yang diselesaikan per hari." } },
+                { icon: "🎬", label: "Konten/Hari", value: dailyAvg.contentPerDay.toFixed(1), tooltip: { title: "Konten per Hari", desc: "Rata-rata jumlah postingan video & LIVE yang diunggah per hari." } },
+                { icon: "📹", label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo), tooltip: { title: "GMV per Video", desc: "Rata-rata omset kotor yang dihasilkan per 1 video shoppable." } },
+                { icon: "🔴", label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive), tooltip: { title: "GMV per LIVE", desc: "Rata-rata omset kotor yang dihasilkan per 1 sesi siaran langsung." } },
+                { icon: "👤", label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator), tooltip: { title: "GMV per Kreator", desc: "Rata-rata omset kotor yang disumbangkan per 1 kreator aktif." } },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">{item.icon} {item.label}</span>
+                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                    {item.icon} {item.label}
+                    <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
+                  </span>
                   <span className="text-xs font-bold text-gray-800">{item.value}</span>
                 </div>
               ))}
             </div>
             {heroCards.projectedEOM > 0 && (
               <div className={`mt-3 rounded-lg p-3 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "bg-green-50 border border-green-100" : "bg-amber-50 border border-amber-100"}`}>
-                <div className="text-[10px] text-gray-500 uppercase font-medium">Proyeksi End of Month</div>
+                <div className="flex items-center justify-between text-[10px] text-gray-500 uppercase font-medium">
+                  <span>Proyeksi End of Month</span>
+                  <MetricHelpTooltip title="Proyeksi EOM" desc="Perkiraan total omset akhir bulan." formula="Revenue/Hari × Jumlah Hari" />
+                </div>
                 <div className={`text-lg font-black mt-0.5 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "text-green-600" : "text-amber-600"}`}>
                   {fRp(heroCards.projectedEOM)}
                 </div>
@@ -1075,10 +1081,13 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       {/* ═══ ZONA 3.2: AUTO-GENERATED INSIGHTS ═══ */}
       {autoInsights.length > 0 && (
         <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-2xl border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs">💡</span>
-            Insight Otomatis
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs">💡</span>
+              Insight Otomatis
+            </h2>
+            <MetricHelpTooltip title="Insight Otomatis AI" desc="Rekomendasi taktis dan temuan pola bisnis yang dihasilkan secara otomatis oleh engine analisis data." />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {autoInsights.map((insight, i) => (
               <div key={i} className={`flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 border ${
@@ -1104,7 +1113,10 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           <div className="flex items-center gap-2">
             <span className="text-lg">📋</span>
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Laporan Harian — FreshVision</h2>
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                Laporan Harian — FreshVision
+                <MetricHelpTooltip title="Ringkasan Pembukuan Laporan Harian" desc="Data pembukuan harian terverifikasi yang tersambung dari Google Sheets & Supabase." />
+              </h2>
               <p className="text-xs text-gray-400 mt-0.5">
                 {lhData?.period ? `Periode: ${formatPeriod(lhData.period)}` : `Sinkron dengan periode ${formatPeriod(activePeriod)}`}
               </p>
@@ -1130,11 +1142,6 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
           const s = lhData.summary;
           const ch = lhData.channels || {};
 
-          // ✔ Sumber omzet FreshVision (prioritas dari atas):
-          // 1. summary.total_omzet_fv  = dari sheet Evaluasi Harian FreshVision (selalu ada)
-          // 2. evaluasi_per_brand.freshvision = sama, versi terstruktur
-          // 3. channels.shop_tab = gabungan tab SHOP
-          // 4. summary.total_omzet = fallback terakhir
           const displayOmzet =
             (s.total_omzet_fv || 0) > 0
               ? s.total_omzet_fv
@@ -1154,14 +1161,17 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
               {/* KPI Utama */}
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
                 {[
-                  { label: "Total Omzet FreshVision", value: fRp(displayOmzet), icon: "💰", color: "text-emerald-700", bg: "bg-white" },
-                  { label: "Biaya Iklan", value: fRp(s.total_biaya_iklan || 0), icon: "📣", color: "text-blue-700", bg: "bg-white" },
-                  { label: "ROAS", value: `${displayRoas.toFixed(2)}×`, icon: "🎯", color: roasColor, bg: "bg-white" },
-                  { label: "CAC Ads", value: fRp(s.rata_cac_ads || 0), icon: "💸", color: "text-purple-700", bg: "bg-white" },
-                  { label: "Estimasi Margin", value: fRp(displayMargin), icon: "📈", color: marginColor, bg: "bg-white" },
+                  { label: "Total Omzet FreshVision", value: fRp(displayOmzet), icon: "💰", color: "text-emerald-700", bg: "bg-white", tooltip: { title: "Omzet FreshVision", desc: "Total penjualan produk toko FreshVision." } },
+                  { label: "Biaya Iklan", value: fRp(s.total_biaya_iklan || 0), icon: "📣", color: "text-blue-700", bg: "bg-white", tooltip: { title: "Total Biaya Iklan", desc: "Pengeluaran belanja iklan (Ads) periode ini." } },
+                  { label: "ROAS", value: `${displayRoas.toFixed(2)}×`, icon: "🎯", color: roasColor, bg: "bg-white", tooltip: { title: "ROAS Ads", desc: "Efisiensi omset per Rp1 iklan." } },
+                  { label: "CAC Ads", value: fRp(s.rata_cac_ads || 0), icon: "💸", color: "text-purple-700", bg: "bg-white", tooltip: { title: "Customer Acquisition Cost", desc: "Biaya iklan yang dikeluarkan per 1 transaksi." } },
+                  { label: "Estimasi Margin", value: fRp(displayMargin), icon: "📈", color: marginColor, bg: "bg-white", tooltip: { title: "Estimasi Margin", desc: "Sisa pendapatan setelah dikurangi iklan & komisi." } },
                 ].map((item) => (
-                  <div key={item.label} className={`${item.bg} rounded-xl p-3 border border-emerald-100`}>
-                    <div className="text-base mb-1">{item.icon}</div>
+                  <div key={item.label} className={`${item.bg} rounded-xl p-3 border border-emerald-100 relative group`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-base">{item.icon}</span>
+                      <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
+                    </div>
                     <div className={`text-sm font-bold ${item.color} leading-tight`}>{item.value}</div>
                     <div className="text-xs text-gray-400 mt-0.5">{item.label}</div>
                   </div>
@@ -1171,15 +1181,18 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
               {/* Metrik tambahan */}
               <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
                 {[
-                  { label: "Closing", value: fN(s.total_closing || 0) },
-                  { label: "Botol Terjual", value: fN(s.total_botol || 0) },
-                  { label: "Avg Upsell", value: `${(s.rata_upsell || 0).toFixed(1)}×` },
-                  { label: "Cost/Closing", value: fRp(s.cost_per_closing || 0) },
-                  { label: "Cost/Botol", value: fRp(s.cost_per_botol || 0) },
-                  { label: "Hari Data", value: `${s.hari || 0} hari` },
+                  { label: "Closing", value: fN(s.total_closing || 0), tooltip: { title: "Total Closing", desc: "Jumlah pesanan terbayar." } },
+                  { label: "Botol Terjual", value: fN(s.total_botol || 0), tooltip: { title: "Botol Terjual", desc: "Jumlah unit botol terkirim." } },
+                  { label: "Avg Upsell", value: `${(s.rata_upsell || 0).toFixed(1)}×`, tooltip: { title: "Rata-rata Upsell", desc: "Jumlah botol per 1 pesanan." } },
+                  { label: "Cost/Closing", value: fRp(s.cost_per_closing || 0), tooltip: { title: "Cost per Closing", desc: "Biaya per pesanan." } },
+                  { label: "Cost/Botol", value: fRp(s.cost_per_botol || 0), tooltip: { title: "Cost per Botol", desc: "Biaya promosi per 1 botol." } },
+                  { label: "Hari Data", value: `${s.hari || 0} hari`, tooltip: { title: "Hari Data", desc: "Jumlah hari data tercatat." } },
                 ].map((item) => (
-                  <div key={item.label} className="bg-white/70 rounded-lg p-2 text-center border border-emerald-50">
-                    <div className="text-xs font-bold text-gray-800">{item.value}</div>
+                  <div key={item.label} className="bg-white/70 rounded-lg p-2 text-center border border-emerald-50 relative">
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="text-xs font-bold text-gray-800">{item.value}</span>
+                      <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
+                    </div>
                     <div className="text-[10px] text-gray-400 mt-0.5">{item.label}</div>
                   </div>
                 ))}

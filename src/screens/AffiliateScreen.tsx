@@ -836,10 +836,13 @@ export default function AffiliateScreen() {
               {/* ROW KREATOR ACTIVITY BREAKDOWN */}
               {agg.totalCreators > 0 && (
                 <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200/60 p-5">
-                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-emerald-600" />
-                    Breakdown Kreator
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-600" />
+                      Breakdown Kreator
+                    </h3>
+                    <MetricHelpTooltip title="Breakdown Aktivitas Kreator" desc="Rincian jenis konten promosi yang diproduksi oleh jaringan kreator terdaftar." />
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                     {[
                       {
@@ -848,6 +851,7 @@ export default function AffiliateScreen() {
                         desc: "Terdaftar/join",
                         color: "text-gray-700",
                         bg: "bg-white/80",
+                        tooltip: { title: "Total Kreator", desc: "Total seluruh kreator afiliasi terdaftar." }
                       },
                       {
                         label: "Kreator Aktif Promosi",
@@ -855,6 +859,7 @@ export default function AffiliateScreen() {
                         desc: `${agg.totalCreators > 0 ? ((agg.activePromoters / agg.totalCreators) * 100).toFixed(1) : 0}% dari total`,
                         color: "text-emerald-700",
                         bg: "bg-emerald-100/60",
+                        tooltip: { title: "Kreator Aktif Promosi", desc: "Kreator yang aktif membuat video/LIVE dan menghasilkan omset." }
                       },
                       {
                         label: "Buat Video",
@@ -862,6 +867,7 @@ export default function AffiliateScreen() {
                         desc: "Shoppable videos",
                         color: "text-purple-700",
                         bg: "bg-purple-100/60",
+                        tooltip: { title: "Kreator Video", desc: "Kreator yang mempublikasikan shoppable video." }
                       },
                       {
                         label: "Siaran LIVE",
@@ -869,6 +875,7 @@ export default function AffiliateScreen() {
                         desc: "Live streaming",
                         color: "text-rose-700",
                         bg: "bg-rose-100/60",
+                        tooltip: { title: "Kreator LIVE", desc: "Kreator yang melakukan siaran langsung." }
                       },
                       {
                         label: "Video + LIVE",
@@ -876,10 +883,14 @@ export default function AffiliateScreen() {
                         desc: "Melakukan keduanya",
                         color: "text-blue-700",
                         bg: "bg-blue-100/60",
+                        tooltip: { title: "Video + LIVE", desc: "Kreator yang aktif di kedua bentuk promosi." }
                       },
                     ].map((item) => (
-                      <div key={item.label} className={`${item.bg} rounded-lg p-3 text-center border border-gray-100`}>
-                        <div className={`text-xl font-bold ${item.color}`}>{item.val}</div>
+                      <div key={item.label} className={`${item.bg} rounded-lg p-3 text-center border border-gray-100 relative group`}>
+                        <div className="flex items-center justify-center gap-1">
+                          <div className={`text-xl font-bold ${item.color}`}>{item.val}</div>
+                          <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
+                        </div>
                         <div className="text-xs font-medium text-gray-700 mt-0.5">{item.label}</div>
                         <div className="text-[10px] text-gray-500 mt-0.5">{item.desc}</div>
                       </div>
@@ -903,6 +914,7 @@ export default function AffiliateScreen() {
                     sub={`dari ${fN(agg.totalCreators)} kreator terdaftar`}
                     color="indigo"
                     icon={<Eye className="w-5 h-5" />}
+                    tooltip={{ title: "Total Impresi Produk", desc: "Berapa kali produk Anda tampil di tayangan penonton." }}
                   />
                   <KPICard
                     title="CTR (Impresi → Order)"
@@ -910,6 +922,7 @@ export default function AffiliateScreen() {
                     sub={`${fN(agg.totalOrders)} order dari ${fN(agg.totalImpressions)} impresi`}
                     color={agg.totalCtr >= 1 ? "green" : agg.totalCtr >= 0.3 ? "orange" : "red"}
                     icon={<ArrowUpRight className="w-5 h-5" />}
+                    tooltip={{ title: "CTR Impresi ke Order", desc: "Rasio konversi dari tayangan impresi produk menjadi transaksi order." }}
                   />
                   <KPICard
                     title="GMV per Impresi"
@@ -917,6 +930,7 @@ export default function AffiliateScreen() {
                     sub={`Efisiensi impresi ke revenue`}
                     color="teal"
                     icon={<TrendingUp className="w-5 h-5" />}
+                    tooltip={{ title: "GMV per Impresi", desc: "Rata-rata pendapatan omset yang dihasilkan dari 1 impresi." }}
                   />
                 </div>
               )}
@@ -929,6 +943,7 @@ export default function AffiliateScreen() {
                   sub={`AOV ${fRp(agg.avgAOV)}`}
                   color="teal"
                   icon={<ShoppingBag className="w-5 h-5" />}
+                  tooltip={{ title: "Total Pesanan", desc: "Jumlah pesanan dari promosi afiliasi." }}
                 />
                 <KPICard
                   title="Total Komisi"
@@ -936,6 +951,7 @@ export default function AffiliateScreen() {
                   sub={`Rate ${fP(agg.commissionRate)}`}
                   color="orange"
                   icon={<DollarSign className="w-5 h-5" />}
+                  tooltip={{ title: "Total Komisi", desc: "Estimasi komisi dibayarkan ke kreator." }}
                 />
                 <KPICard
                   title="Sample Terkirim"
@@ -943,6 +959,7 @@ export default function AffiliateScreen() {
                   sub="Total sampel ke kreator"
                   color="gray"
                   icon={<Package className="w-5 h-5" />}
+                  tooltip={{ title: "Sample Terkirim", desc: "Jumlah sampel produk gratis dikirim ke kreator." }}
                 />
                 <KPICard
                   title="GMV Video"
@@ -950,12 +967,12 @@ export default function AffiliateScreen() {
                   sub={`${fP(agg.totalGMV > 0 ? (agg.videoGMV / agg.totalGMV) * 100 : 0)} dari total GMV`}
                   color="indigo"
                   icon={<Video className="w-5 h-5" />}
+                  tooltip={{ title: "GMV Video", desc: "Omset dari postingan video shoppable." }}
                 />
               </div>
 
               {/* AI INSIGHTS CARD — sesudah KPI rows, sebelum detail charts */}
               {(() => {
-                // Ambil data periode aktif terpilih (atau periode terbaru)
                 const currentMonthData = filteredData.length > 0
                   ? filteredData[filteredData.length - 1]
                   : null;
@@ -977,21 +994,27 @@ export default function AffiliateScreen() {
               {/* DAILY AVERAGES (if TikTok core data available) */}
               {agg.coreSummary && (
                 <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl border p-5">
-                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-blue-600" />
-                    Rata-Rata Harian (dari Core Metrics)
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-blue-600" />
+                      Rata-Rata Harian (dari Core Metrics)
+                    </h3>
+                    <MetricHelpTooltip title="Rata-Rata Harian Core Metrics" desc="Rata-rata metrik transaksi dan posting harian terverifikasi dari TikTok Seller Center." />
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                     {[
-                      { label: "Pembeli/Hari", val: fN(agg.coreSummary.avgDailyBuyers) },
-                      { label: "Kreator Jual/Hari", val: fN(agg.coreSummary.avgDailyCreatorsWithSales) },
-                      { label: "Kreator Post/Hari", val: fN(agg.coreSummary.avgDailyCreatorsPosting) },
-                      { label: "Produk Terjual/Hari", val: fN(agg.coreSummary.avgDailyProductsSold) },
-                      { label: "Video Jual/Hari", val: fN(agg.coreSummary.avgDailyVideoWithSales) },
-                      { label: "LIVE Jual/Hari", val: fN(agg.coreSummary.avgDailyLiveWithSales) },
+                      { label: "Pembeli/Hari", val: fN(agg.coreSummary.avgDailyBuyers), tooltip: { title: "Pembeli/Hari", desc: "Rata-rata pembeli unik harian." } },
+                      { label: "Kreator Jual/Hari", val: fN(agg.coreSummary.avgDailyCreatorsWithSales), tooltip: { title: "Kreator Jual/Hari", desc: "Kreator yang pecah telur harian." } },
+                      { label: "Kreator Post/Hari", val: fN(agg.coreSummary.avgDailyCreatorsPosting), tooltip: { title: "Kreator Post/Hari", desc: "Kreator yang upload video/LIVE harian." } },
+                      { label: "Produk Terjual/Hari", val: fN(agg.coreSummary.avgDailyProductsSold), tooltip: { title: "Produk Terjual/Hari", desc: "Unit produk terjual per hari." } },
+                      { label: "Video Jual/Hari", val: fN(agg.coreSummary.avgDailyVideoWithSales), tooltip: { title: "Video Jual/Hari", desc: "Video yang menghasilkan sales per hari." } },
+                      { label: "LIVE Jual/Hari", val: fN(agg.coreSummary.avgDailyLiveWithSales), tooltip: { title: "LIVE Jual/Hari", desc: "Sesi LIVE yang menghasilkan sales per hari." } },
                     ].map((item) => (
-                      <div key={item.label} className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                        <p className="text-lg font-bold text-gray-900">{item.val}</p>
+                      <div key={item.label} className="bg-white rounded-lg p-3 text-center border border-gray-100 relative group">
+                        <div className="flex items-center justify-center gap-1">
+                          <p className="text-lg font-bold text-gray-900">{item.val}</p>
+                          <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
+                        </div>
                         <p className="text-xs text-gray-500 mt-0.5">{item.label}</p>
                       </div>
                     ))}
