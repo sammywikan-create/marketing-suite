@@ -1,5 +1,6 @@
-﻿import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import { useAIStore } from "@/store/useAIStore";
 import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
 import { loadAffiliateCreators } from "@/lib/db";
@@ -203,18 +204,12 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string>("");
   const [aiCacheKey, setAiCacheKey] = useState<string>("");
-  const [aiSettings, setAiSettings] = useState<any>(null);
 
-  // Load AI settings from localStorage
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('ai_settings');
-      if (raw) setAiSettings(JSON.parse(raw));
-    } catch { /* ignore */ }
-  }, []);
+  // Use Zustand store (persisted to localStorage key 'gmv-ai-settings')
+  const aiSettings = useAIStore((s) => s.settings);
 
   const runAiEvaluasi = useCallback(async () => {
-    if (!aiSettings) { setAiError('Konfigurasikan AI terlebih dahulu di menu AI Analyst.'); return; }
+    if (!aiSettings?.provider) { setAiError('Konfigurasikan AI terlebih dahulu di menu AI Analyst.'); return; }
     const cacheKey = `exec_ai_${activePeriod}_${aiSettings.provider}`;
     if (aiCacheKey === cacheKey && aiContent) return; // already cached
     setAiLoading(true);
@@ -1666,7 +1661,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                 <div className="text-3xl mb-3">🧠</div>
                 <p className="text-sm font-medium text-gray-700">Dapatkan Evaluasi &amp; Langkah Aksi dari AI</p>
                 <p className="text-xs text-gray-400 mt-1 mb-4">AI akan menganalisis performa bisnis Anda dan memberikan rekomendasi konkret</p>
-                {!aiSettings && (<p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mx-auto max-w-xs">⚠️ Konfigurasikan AI terlebih dahulu di menu <strong>AI Analyst</strong></p>)}
+                {!aiSettings?.provider && (<p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mx-auto max-w-xs">⚠️ Konfigurasikan AI terlebih dahulu di menu <strong>AI Analyst</strong></p>)}
               </div>
             )}
             {aiLoading && (<div className="space-y-3">{[1,2,3,4].map(i => (<div key={i} className="h-4 bg-violet-100 rounded animate-pulse" style={{ width: `${[90,75,85,60][i-1]}%` }} />))}</div>)}
