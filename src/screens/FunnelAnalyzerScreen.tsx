@@ -1,6 +1,6 @@
-"use client";
 import { useMemo } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import {
   computeFunnelAnalyzer,
   extractRealStoreData,
@@ -112,11 +112,17 @@ export default function FunnelAnalyzerScreen() {
         </div>
       </div>
 
-      {/* 4-Step Funnel Flow Cards */}
+      {/* 4-Step Funnel Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Step 1: Impresi */}
+        {/* Step 1: Impressions */}
         <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
-          <div className="text-xs font-semibold text-muted mb-1">Tahap 1: Jangkauan Real</div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Tahap 1: Awareness</span>
+            <MetricHelpTooltip
+              title="Impresi Konten (Impressions)"
+              desc="Total berapa kali konten/produk Anda dilihat oleh pengguna (tayangan)."
+            />
+          </div>
           <div className="text-lg font-bold text-foreground mb-2">Impresi Konten</div>
           <div className="text-2xl font-black text-primary">{formatNumber(totals.impressions)}</div>
           <div className="text-xs text-muted mt-2">Total tayangan halaman/toko</div>
@@ -124,7 +130,15 @@ export default function FunnelAnalyzerScreen() {
 
         {/* Step 2: Clicks / CTR */}
         <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
-          <div className="text-xs font-semibold text-muted mb-1">Tahap 2: Minat (CTR)</div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Tahap 2: Minat (CTR)</span>
+            <MetricHelpTooltip
+              title="Click-Through Rate (CTR)"
+              desc="Persentase penonton yang tertarik dan mengklik produk/konten dari total impresi."
+              formula="Total Klik / Total Impresi × 100%"
+              benchmark="CTR Ideal > 4.0%"
+            />
+          </div>
           <div className="text-lg font-bold text-foreground mb-2">Klik Halaman</div>
           <div className="text-2xl font-black text-blue-600">{formatNumber(totals.clicks)}</div>
           <div className="flex items-center gap-1.5 text-xs text-muted mt-2">
@@ -137,7 +151,14 @@ export default function FunnelAnalyzerScreen() {
 
         {/* Step 3: ATC */}
         <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
-          <div className="text-xs font-semibold text-muted mb-1">Tahap 3: Niat (ATC)</div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Tahap 3: Niat (ATC)</span>
+            <MetricHelpTooltip
+              title="Add to Cart (ATC) Rate"
+              desc="Jumlah calon pembeli yang menambahkan produk ke keranjang belanja."
+              formula="Total ATC / Total Klik × 100%"
+            />
+          </div>
           <div className="text-lg font-bold text-foreground mb-2">Tambah Keranjang</div>
           <div className="text-2xl font-black text-purple-600">{formatNumber(totals.atc)}</div>
           <div className="flex items-center gap-1.5 text-xs text-muted mt-2">
@@ -148,7 +169,15 @@ export default function FunnelAnalyzerScreen() {
 
         {/* Step 4: Orders / CTOR */}
         <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
-          <div className="text-xs font-semibold text-muted mb-1">Tahap 4: Closing (CTOR)</div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Tahap 4: Closing (CTOR)</span>
+            <MetricHelpTooltip
+              title="Click-to-Order Rate (CTOR)"
+              desc="Persentase pengunjung yang melakukan pembelian resmi setelah mengklik produk."
+              formula="Total Pesanan / Total Klik × 100%"
+              benchmark="CTOR Ideal > 10.0%"
+            />
+          </div>
           <div className="text-lg font-bold text-foreground mb-2">Total Pesanan</div>
           <div className="text-2xl font-black text-green-600">{formatNumber(totals.orders)}</div>
           <div className="flex items-center gap-1.5 text-xs text-muted mt-2">

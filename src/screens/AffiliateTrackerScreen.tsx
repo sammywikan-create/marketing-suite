@@ -1,6 +1,6 @@
-"use client";
 import { useMemo } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import {
   computeAffiliateTracker,
   formatRupiah,
@@ -120,8 +120,16 @@ export default function AffiliateTrackerScreen() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Affiliate Share */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Porsi GMV Afiliasi Real</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Porsi GMV Afiliasi Real</span>
+            <MetricHelpTooltip
+              title="Porsi GMV Afiliasi"
+              desc="Persentase kontribusi omset yang bersumber dari saluran kreator afiliasi dibanding total omset toko."
+              formula="GMV Afiliasi / Total GMV Toko × 100%"
+              benchmark="Porsi ideal > 70%"
+            />
+          </div>
           <div className="text-2xl font-black text-primary mb-1">{affiliateShare.toFixed(1)}%</div>
           <div className="text-xs text-muted mt-2">
             Persentase kontribusi omset dari saluran kreator afiliasi
@@ -129,22 +137,41 @@ export default function AffiliateTrackerScreen() {
         </div>
 
         {/* Active Creators Count */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Kreator Aktif Posting Real</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Kreator Aktif Posting Real</span>
+            <MetricHelpTooltip
+              title="Jumlah Kreator Aktif"
+              desc="Jumlah kreator yang terverifikasi mengunggah konten atau siaran langsung dan menghasilkan omset."
+            />
+          </div>
           <div className="text-2xl font-black text-purple-600 mb-1">{activeCreators} Kreator</div>
           <div className="text-xs text-muted mt-2">Kreator yang terverifikasi menghasilkan penjualan</div>
         </div>
 
         {/* Avg GMV per Creator */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Rata-rata Kontribusi / Kreator</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Rata-rata Kontribusi / Kreator</span>
+            <MetricHelpTooltip
+              title="Rata-rata GMV per Kreator Aktif"
+              desc="Nilai rata-rata perolehan omset yang disumbangkan oleh setiap kreator yang aktif."
+              formula="Total GMV Afiliasi / Jumlah Kreator Aktif"
+            />
+          </div>
           <div className="text-2xl font-black text-foreground mb-1">{formatRupiahShort(avgPerCreator)}</div>
           <div className="text-xs text-muted mt-2">Rata-rata GMV per kreator aktif real</div>
         </div>
 
         {/* Total Affiliate GMV */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Total GMV Afiliasi Real</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Total GMV Afiliasi Real</span>
+            <MetricHelpTooltip
+              title="Total GMV Afiliasi Real"
+              desc="Total omset kotor penjualan dari seluruh jaringan kreator afiliasi."
+            />
+          </div>
           <div className="text-2xl font-black text-green-600 mb-1">{formatRupiahShort(totalGMV)}</div>
           <div className="text-xs text-muted mt-2">Dihitung dari file laporan terunggah</div>
         </div>

@@ -1,6 +1,6 @@
-"use client";
 import { useMemo } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import { runOmsetDoctorDiagnosis } from "@/utils/revenueAnalyzer";
 import {
   Stethoscope,
@@ -110,7 +110,14 @@ export default function OmsetDoctorScreen() {
             </div>
 
             <div>
-              <div className="text-xs text-muted">Skor Kesehatan Real Toko</div>
+              <div className="text-xs text-muted flex items-center gap-1.5">
+                <span>Skor Kesehatan Real Toko</span>
+                <MetricHelpTooltip
+                  title="Skor Kesehatan Omset Doctor (0-100)"
+                  desc="Engine AI otomatis menghitung skor komposit dari 5 saluran utama toko (Pencapaian Target, Refund Rate, Keaktifan Kreator, Konversi Funnel, & GPM Live)."
+                  benchmark=">80 (Sangat Sehat), 60-79 (Perlu Perhatian), <60 (Kritis)"
+                />
+              </div>
               <div className={`text-sm font-extrabold px-2.5 py-0.5 rounded border inline-block mt-0.5 ${getStatusBadge(healthStatus)}`}>
                 {healthStatus}
               </div>

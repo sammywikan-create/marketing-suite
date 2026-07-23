@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import AffiliateAIInsightsCard from "@/components/AffiliateAIInsightsCard";
 import RetentionViewEnhanced from "@/components/affiliate/RetentionView";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 
 // ═══════════════════════════════════════════════════════
 // TYPES
@@ -2344,8 +2345,9 @@ export default function AffiliateScreen() {
 // SUB COMPONENTS
 // ═══════════════════════════════════════════════════════
 
-function KPICard({ title, value, sub, color, icon, alert = false }: {
+function KPICard({ title, value, sub, color, icon, alert = false, tooltip }: {
   title: string; value: string; sub: string; color: string; icon: React.ReactNode; alert?: boolean;
+  tooltip?: { title: string; desc: string; formula?: string; benchmark?: string };
 }) {
   const colorMap: Record<string, string> = {
     blue: "border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50", green: "border-green-200 bg-gradient-to-br from-green-50 to-emerald-50",
@@ -2364,9 +2366,16 @@ function KPICard({ title, value, sub, color, icon, alert = false }: {
     gray: "bg-gray-100 text-gray-600", indigo: "bg-indigo-100 text-indigo-600",
   };
   return (
-    <div className={`rounded-xl border p-4 ${colorMap[color] || colorMap.gray} ${alert ? "ring-2 ring-red-400 animate-pulse" : ""} hover:shadow-md transition-shadow duration-200`}>
+    <div className={`rounded-xl border p-4 ${colorMap[color] || colorMap.gray} ${alert ? "ring-2 ring-red-400 animate-pulse" : ""} hover:shadow-md transition-shadow duration-200 relative`}>
       <div className="flex justify-between items-start">
-        <p className="text-sm text-gray-600 font-medium">{title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm text-gray-600 font-medium">{title}</p>
+          {tooltip ? (
+            <MetricHelpTooltip title={tooltip.title} desc={tooltip.desc} formula={tooltip.formula} benchmark={tooltip.benchmark} />
+          ) : (
+            <MetricHelpTooltip title={title} desc={`Indikator ${title} untuk analisis performa jaringan afiliasi.`} />
+          )}
+        </div>
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBgMap[color] || iconBgMap.gray}`}>{icon}</div>
       </div>
       <p className={`text-2xl font-bold mt-1.5 ${valMap[color] || valMap.gray}`}>{value}</p>

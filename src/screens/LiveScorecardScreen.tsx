@@ -1,6 +1,6 @@
-"use client";
 import { useMemo } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import {
   computeLiveScorecard,
   formatRupiahShort,
@@ -97,8 +97,16 @@ export default function LiveScorecardScreen() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* GPM Indicator */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Overall GPM Real (GMV / 1K View)</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Overall GPM Real (GMV / 1K View)</span>
+            <MetricHelpTooltip
+              title="GPM (Gross Merchandise Value per 1,000 Views)"
+              desc="Indikator pendapatan rata-rata yang diperoleh dari setiap 1.000 penonton siaran LIVE."
+              formula="Total GMV LIVE / Total Penonton × 1.000"
+              benchmark="GPM Ideal > Rp 15.000 per 1.000 penonton"
+            />
+          </div>
           <div className="text-2xl font-black text-foreground mb-1">{formatRupiahShort(overallGPM)}</div>
           <div className="flex items-center gap-1.5 text-xs font-bold mt-2">
             <span className={isGpmGood ? "text-green-600" : "text-amber-500"}>
@@ -108,8 +116,15 @@ export default function LiveScorecardScreen() {
         </div>
 
         {/* Productive Sessions Ratio */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Rasio LIVE Generates Sales</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Rasio LIVE Generates Sales</span>
+            <MetricHelpTooltip
+              title="Rasio Sesi LIVE Produktif"
+              desc="Persentase jumlah sesi siaran LIVE yang berhasil menghasilkan transaksi penjualan (GMV > 0)."
+              formula="Jumlah Sesi Menghasilkan Sales / Total Sesi LIVE × 100%"
+            />
+          </div>
           <div className="text-2xl font-black text-primary mb-1">
             {productiveCount} / {totalSessions} Konten
           </div>
@@ -119,15 +134,28 @@ export default function LiveScorecardScreen() {
         </div>
 
         {/* Avg Watch Duration */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Rata-rata Retensi Penonton</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Rata-rata Retensi Penonton</span>
+            <MetricHelpTooltip
+              title="Watch Rate (Retensi Penonton)"
+              desc="Rata-rata persentase durasi penonton bertahan menyaksikan siaran LIVE."
+              benchmark="Target optimal watch rate > 35%"
+            />
+          </div>
           <div className="text-2xl font-black text-purple-600 mb-1">{avgWatchTime}% Watch Rate</div>
           <div className="text-xs text-muted mt-2">Target optimal: &gt; 35% watch rate</div>
         </div>
 
         {/* Total LIVE GMV */}
-        <div className="bg-card border border-border p-5 rounded-xl shadow-sm">
-          <div className="text-xs font-semibold text-muted mb-1">Total Omset Real LIVE</div>
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm relative">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted">Total Omset Real LIVE</span>
+            <MetricHelpTooltip
+              title="Total GMV LIVE Stream"
+              desc="Akumulasi total omset kotor yang diperoleh dari seluruh sesi siaran langsung (LIVE)."
+            />
+          </div>
           <div className="text-2xl font-black text-green-600 mb-1">{formatRupiahShort(totalGMV)}</div>
           <div className="text-xs text-muted mt-2">Dari {formatNumber(totalImpressions)} tayangan</div>
         </div>

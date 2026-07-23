@@ -1,6 +1,6 @@
-"use client";
 import { useMemo } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import {
   computeRevenueBreakdown,
   extractRealStoreData,
@@ -148,9 +148,16 @@ export default function RevenueBreakdownScreen() {
       {/* Summary KPI Cards per Channel */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {channels.map((ch, i) => (
-          <div key={i} className="bg-card border border-border p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+          <div key={i} className="bg-card border border-border p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow relative">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-muted">{ch.label}</span>
+              <span className="text-xs font-semibold text-muted flex items-center gap-1.5">
+                {ch.label}
+                <MetricHelpTooltip
+                  title={`Channel: ${ch.label}`}
+                  desc={`Total pendapatan omset kotor real dari saluran ${ch.label} beserta rasio kontribusinya ke total omset toko.`}
+                  formula="Total GMV Channel / Total GMV Seluruh Channel × 100%"
+                />
+              </span>
               <span className="size-3 rounded-full" style={{ backgroundColor: ch.color }} />
             </div>
             <div className="text-xl font-bold text-foreground mb-1">

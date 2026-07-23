@@ -1,7 +1,6 @@
-"use client";
-
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import useSWR from "swr";
+import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, LineChart, BarChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -2009,8 +2008,11 @@ function MiniKpi({ label, value, sub, delta, isInverse, sparkData }: { label: st
     );
   }, [sparkData, isInverse]);
   return (
-    <div className="text-center">
-      <div className="text-[10px] text-gray-400 font-medium">{label}</div>
+    <div className="text-center relative group/kpi">
+      <div className="text-[10px] text-gray-400 font-medium flex items-center justify-center gap-1">
+        <span>{label}</span>
+        <MetricHelpTooltip title={`Metrik: ${label}`} desc={`Indikator ${label} harian pada laporan terverifikasi.`} />
+      </div>
       <div className="text-sm font-bold text-gray-900 mt-0.5">{value}</div>
       <div className="text-[10px] text-gray-400">{sub}</div>
       {delta != null && (
