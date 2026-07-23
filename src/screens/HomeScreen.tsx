@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+﻿import { useState, useMemo, useCallback, useEffect } from "react";
 import { useStoreManager } from "@/store/useStoreManager";
 import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
@@ -57,6 +57,8 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const [chartView, setChartView] = useState<"gabungan" | "pertoko">("gabungan");
   const [chartMetric, setChartMetric] = useState<"gmv" | "refund">("gmv");
   const [targetVersion, setTargetVersion] = useState(0);
+  type ExecTab = "ringkasan" | "analisis-tren" | "evaluasi-keuangan" | "kreator-channel" | "ai-evaluasi";
+  const [activeExecTab, setActiveExecTab] = useState<ExecTab>("ringkasan");
 
   // ─── ALL AFFILIATE DATA ─────────────────────────────────
   const allAffiliateData = useMemo(() => {
@@ -670,66 +672,134 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return map;
   }, [prevPeriod, allAffiliateData, activeStores]);
 
+  // ─── TAB DEFINITIONS ─────────────────────────────────
+  const execTabs: { key: ExecTab; icon: string; label: string; badge?: number }[] = [
+    { key: "ringkasan", icon: "📊", label: "Ringkasan" },
+    { key: "analisis-tren", icon: "📈", label: "Analisis Tren" },
+    { key: "evaluasi-keuangan", icon: "💰", label: "Evaluasi Keuangan" },
+    { key: "kreator-channel", icon: "👥", label: "Kreator & Channel", badge: top5Creators.length },
+    { key: "ai-evaluasi", icon: "🤖", label: "AI Evaluasi" },
+  ];
+
+  // ─── P&L CALCULATIONS ──────────────────────────────────
+  const pnl = useMemo(() => {
+    const s = lhData?.summary;
+    const ch = lhData?.channels || {};
+    const omzet = heroCards.displayOmzet;
+    const biayaIklan = s?.total_biaya_iklan || 0;
+    const komisiAff = s?.total_komisi_aff || agg.totalCommission || 0;
+    const komisiPlatform = s?.total_komisi_platform || 0;
+    const shippingCost = s?.total_shipping_cost || 0;
+    const biayaMall = s?.total_biaya_layanan_mall || 0;
+    const biayaDinamis = s?.total_biaya_komisi_dinamis || 0;
+    const biayaGrowth = s?.total_program_growth_extra || 0;
+    const biayaProses = s?.total_biaya_pemrosesan || 0;
+    const totalCost = biayaIklan + komisiAff + komisiPlatform + shippingCost + biayaMall + biayaDinamis + biayaGrowth + biayaProses;
+    const grossProfit = omzet - totalCost;
+    const grossMarginPct = omzet > 0 ? (grossProfit / omzet) * 100 : 0;
+    const roas = biayaIklan > 0 ? omzet / biayaIklan : 0;
+    return {
+      omzet, biayaIklan, komisiAff, komisiPlatform, shippingCost, biayaMall,
+      biayaDinamis, biayaGrowth, biayaProses, totalCost, grossProfit, grossMarginPct, roas,
+      costBreakdown: [
+        { label: "Biaya Iklan + PPN", value: biayaIklan, color: "#f97316" },
+        { label: "Komisi Affiliate", value: komisiAff, color: "#8b5cf6" },
+        { label: "Komisi Platform", value: komisiPlatform, color: "#ef4444" },
+        { label: "Shipping", value: shippingCost, color: "#10b981" },
+        { label: "Mall + Dinamis", value: biayaMall + biayaDinamis, color: "#f59e0b" },
+        { label: "Growth + Proses", value: biayaGrowth + biayaProses, color: "#6366f1" },
+      ].filter(c => c.value > 0),
+    };
+  }, [lhData, heroCards, agg]);
+
+  // ─── UNIT ECONOMICS ────────────────────────────────────
+  const unitEcon = useMemo(() => {
+    const s = lhData?.summary;
+    const closing = s?.total_closing || agg.totalOrders || 1;
+    const botol = s?.total_botol || 1;
+    const costPerClosing = pnl.totalCost > 0 ? pnl.totalCost / closing : 0;
+    const costPerBotol = pnl.totalCost > 0 ? pnl.totalCost / botol : 0;
+    const revenuePerCreator = agg.activePromoters > 0 ? agg.totalGMV / agg.activePromoters : 0;
+    const commissionROI = agg.totalCommission > 0 ? agg.totalGMV / agg.totalCommission : 0;
+    const adROI = pnl.biayaIklan > 0 ? pnl.omzet / pnl.biayaIklan : 0;
+    const revenuePerVideo = agg.totalVideos > 0 ? agg.videoGMV / agg.totalVideos : 0;
+    const revenuePerLive = agg.totalLive > 0 ? agg.liveGMV / agg.totalLive : 0;
+    return { costPerClosing, costPerBotol, revenuePerCreator, commissionROI, adROI, revenuePerVideo, revenuePerLive, closing, botol };
+  }, [lhData, pnl, agg]);
+
   // ═══════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════
   return (
     <div className="dashboard-shell">
 
-      {/* ═══ ZONA 1: EXECUTIVE COMMAND CENTER ═══ */}
+      {/* ═══════════════════════════════════════════════════════
+          LAYER 1: EXECUTIVE COMMAND HEADER
+          ═══════════════════════════════════════════════════════ */}
       <header className="dashboard-panel overflow-hidden stagger-1">
-        <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
+        <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+          {/* Left: Greeting + Badges */}
+          <div className="flex-1 min-w-0">
             <p className="dashboard-eyebrow">Executive command center</p>
             <h1 className="dashboard-title mt-2 text-balance">{greeting}. Berikut kondisi bisnis Anda.</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted">
               Ringkasan keputusan untuk {formatPeriod(activePeriod) || "periode terbaru"} · {activeStores.length} toko aktif · diperbarui {dateStr}.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground">Health score {healthScore.score}/100</span>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${healthScore.score >= 80 ? "bg-green-50 text-green-700 border border-green-200" : healthScore.score >= 60 ? "bg-blue-50 text-blue-700 border border-blue-200" : healthScore.score >= 40 ? "bg-yellow-50 text-yellow-700 border border-yellow-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                🏥 Health {healthScore.score}/100 — {healthScore.label}
+              </span>
               {momGrowth !== null && (
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${momGrowth >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                  GMV {momGrowth >= 0 ? "+" : ""}{momGrowth.toFixed(1)}% vs bulan lalu
+                <span className={`rounded-full px-3 py-1 text-xs font-bold ${momGrowth >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                  {momGrowth >= 0 ? "📈" : "📉"} GMV {momGrowth >= 0 ? "+" : ""}{momGrowth.toFixed(1)}% MoM
                 </span>
               )}
-              <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-muted">{visibleAlerts.length} perhatian aktif</span>
+              {visibleAlerts.length > 0 && (
+                <span className="rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 text-xs font-bold">
+                  ⚠️ {visibleAlerts.length} perhatian
+                </span>
+              )}
+              {targetGMV > 0 && (
+                <span className={`rounded-full px-3 py-1 text-xs font-bold ${targetProgress >= 100 ? "bg-green-50 text-green-700" : targetProgress >= 70 ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
+                  🎯 Target {fP(targetProgress)}
+                </span>
+              )}
             </div>
           </div>
-          {allPeriods.length > 0 && (
-            <label className="flex min-w-56 flex-col gap-2 text-xs font-semibold text-muted">
-              Periode laporan
-              <select
-                value={activePeriod}
-                onChange={(event) => setSelectedPeriod(event.target.value)}
-                className="min-h-11 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/25"
-                aria-label="Pilih periode executive summary"
-              >
-                {allPeriods.map((period) => <option key={period} value={period}>{formatPeriod(period)}</option>)}
-              </select>
-            </label>
-          )}
-        </div>
 
-        {/* Detailed Purpose & Benefit Explanation Card for Executive Summary */}
-        <div className="mx-5 mb-5 sm:mx-6 p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
-          <div className="space-y-1">
-            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
-              🎯 Tujuan Executive Summary:
-            </span>
-            <p className="text-muted">
-              Menyajikan gambaran besar (*bird&apos;s-eye view*) seluruh kondisi bisnis dan pemasaran toko Anda dalam 1 layar komando eksekutif tanpa perlu membaca puluhan tabel terpisah.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <span className="font-bold text-foreground flex items-center gap-1.5 text-xs">
-              💡 Manfaat untuk Direksi & Manajemen:
-            </span>
-            <p className="text-muted">
-              Memungkinkan evaluasi kesehatan bisnis (*Health Score*) dalam 10 detik, memantau perolehan omset vs target bulanan real, serta menerima notifikasi peringatan (*Alert Panel*) untuk potensi kerugian.
-            </p>
+          {/* Right: Health Score Ring + Period Selector */}
+          <div className="flex items-center gap-5 flex-shrink-0">
+            {/* Compact Health Score Ring */}
+            <div className="hidden sm:flex flex-col items-center">
+              <div className="relative w-20 h-20">
+                <svg className="w-20 h-20 -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                  <circle cx="50" cy="50" r="42" fill="none" className={healthScore.ringColor} strokeWidth="8" strokeLinecap="round"
+                    strokeDasharray={`${healthScore.score * 2.64} 264`} />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className={`text-xl font-black ${healthScore.color}`}>{healthScore.score}</span>
+                </div>
+              </div>
+            </div>
+
+            {allPeriods.length > 0 && (
+              <label className="flex min-w-48 flex-col gap-1.5 text-xs font-semibold text-muted">
+                Periode
+                <select
+                  value={activePeriod}
+                  onChange={(event) => setSelectedPeriod(event.target.value)}
+                  className="min-h-10 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/25"
+                  aria-label="Pilih periode executive summary"
+                >
+                  {allPeriods.map((period) => <option key={period} value={period}>{formatPeriod(period)}</option>)}
+                </select>
+              </label>
+            )}
           </div>
         </div>
 
+        {/* Quick-action navigation */}
         <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-5 py-3 sm:px-6">
           <span className="mr-1 text-xs font-semibold text-muted">Buka detail:</span>
           {[
@@ -745,1028 +815,885 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         </div>
       </header>
 
-      {/* ═══ ZONA 2: ALERT BANNERS ═══ */}
-      {visibleAlerts.length > 0 && (
-        <div className="space-y-2">
-          {visibleAlerts.map((alert, i) => {
-            const origIdx = alerts.indexOf(alert);
-            return (
-              <div
-                key={i}
-                className={`flex items-start gap-3 p-4 rounded-xl border ${
-                  alert.type === "error" ? "bg-red-50 border-red-200" :
-                  alert.type === "warning" ? "bg-yellow-50 border-yellow-200" :
-                  alert.type === "success" ? "bg-green-50 border-green-200" :
-                  "bg-blue-50 border-blue-200"
-                }`}
-              >
-                <span className="text-xl flex-shrink-0 mt-0.5">{alert.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className={`text-sm font-semibold ${
-                    alert.type === "error" ? "text-red-800" :
-                    alert.type === "warning" ? "text-yellow-800" :
-                    alert.type === "success" ? "text-green-800" :
-                    "text-blue-800"
-                  }`}>{alert.title}</div>
-                  <div className={`text-xs mt-0.5 ${
-                    alert.type === "error" ? "text-red-600" :
-                    alert.type === "warning" ? "text-yellow-600" :
-                    alert.type === "success" ? "text-green-600" :
-                    "text-blue-600"
-                  }`}>{alert.message}</div>
-                </div>
-                {alert.action && (
-                  <button
-                    onClick={() => onNavigate(alert.action!.tab)}
-                    className={`text-xs font-medium px-3 py-1.5 rounded-lg flex-shrink-0 ${
-                      alert.type === "error" ? "bg-red-100 text-red-700 hover:bg-red-200" :
-                      alert.type === "warning" ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200" :
-                      alert.type === "success" ? "bg-green-100 text-green-700 hover:bg-green-200" :
-                      "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                    }`}
-                  >
-                    {alert.action.label} →
-                  </button>
-                )}
-                <button
-                  onClick={() => dismissAlert(origIdx)}
-                  className="text-gray-400 hover:text-gray-600 flex-shrink-0 text-lg leading-none"
-                >
-                  ✕
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Quick Actions removed — not executive-level data */}
-
-      {/* ═══ ZONA 3: HERO KPI — 4 angka paling penting ═══ */}
-      <div className="stagger-3">
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-          📊 Ringkasan {formatPeriod(activePeriod)} — Gabungan Semua Toko
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: GMV vs Target */}
-          <div className="relative text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-2xl">💰</span>
-              <div className="flex items-center gap-2">
-                {momGrowth !== null && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`}>
-                    {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
-                  </span>
-                )}
-                <MetricHelpTooltip
-                  title="Total GMV Affiliate"
-                  desc="Total nilai omset kotor (Gross Merchandise Value) yang dihasilkan dari seluruh promosi kreator afiliasi sebelum dikurangi refund."
-                  formula="GMV Video + GMV Live + GMV Kartu Produk"
-                  benchmark="Porsi ideal >70% dari total omset toko"
-                  dark
-                />
-              </div>
-            </div>
-            <button onClick={() => document.getElementById("goals-section")?.scrollIntoView({ behavior: "smooth" })} className="w-full text-left">
-              <p className="text-3xl font-extrabold leading-tight">{fRp(agg.totalGMV)}</p>
-              <p className="text-blue-200 text-xs mt-1 font-medium">Total GMV Affiliate</p>
+      {/* ═══════════════════════════════════════════════════════
+          LAYER 2: TAB NAVIGATION BAR (sticky)
+          ═══════════════════════════════════════════════════════ */}
+      <nav className="sticky top-0 z-20 rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur" aria-label="Executive Summary Tabs">
+        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+          {execTabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveExecTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+                activeExecTab === t.key
+                  ? "bg-white dark:bg-gray-800 shadow-md text-gray-900 dark:text-white ring-1 ring-black/5"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+              }`}
+            >
+              <span>{t.icon}</span>
+              <span>{t.label}</span>
+              {t.badge != null && t.badge > 0 && (
+                <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{t.badge}</span>
+              )}
             </button>
-            {targetGMV > 0 && (
-              <div className="mt-3">
-                <div className="flex justify-between text-xs text-blue-200 mb-1">
-                  <span>Target: {fRp(targetGMV)}</span>
-                  <span className="font-bold">{fP(targetProgress)}</span>
-                </div>
-                <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${targetProgress >= 100 ? "bg-green-400" : "bg-white/60"}`}
-                    style={{ width: `${Math.min(100, targetProgress)}%` }} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Card 2: Omzet FreshVision (Laporan Harian) */}
-          <div className="relative text-left bg-gradient-to-br from-emerald-600 to-teal-700 dark:from-emerald-700 dark:to-teal-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-2xl">📋</span>
-              <div className="flex items-center gap-2">
-                {heroCards.daysElapsed > 0 && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{heroCards.daysElapsed} hari</span>}
-                <MetricHelpTooltip
-                  title="Omset Store (FreshVision)"
-                  desc="Total akumulasi omset penjualan toko berdasarkan pembukuan laporan harian terverifikasi."
-                  formula="Sum Omzet Harian (Shop Tab + Ads + Channel)"
-                  benchmark="Bandingkan vs Rata-Rata Omset Harian x 30 Hari"
-                  dark
-                />
-              </div>
-            </div>
-            <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
-              <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
-              <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet FreshVision</p>
-            </button>
-            {heroCards.displayOmzet > 0 && heroCards.daysElapsed > 0 && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-xs text-emerald-200">Rata-rata:</span>
-                <span className="text-xs font-bold text-white">{fRp(heroCards.dailyAvgOmzet)}/hari</span>
-              </div>
-            )}
-          </div>
-
-          {/* Card 3: Kreator Aktif Promosi */}
-          <div className="relative text-left bg-gradient-to-br from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-2xl">🎥</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-                  {agg.totalCreators > 0 ? fP((agg.activePromoters / agg.totalCreators) * 100) : "0%"} aktif
-                </span>
-                <MetricHelpTooltip
-                  title="Kreator Aktif Promosi"
-                  desc="Jumlah kreator afiliasi yang aktif mengunggah video shoppable atau siaran langsung (LIVE) dan menghasilkan penjualan."
-                  benchmark="Tingkat keaktifan ideal >25% dari total database"
-                  dark
-                />
-              </div>
-            </div>
-            <button onClick={() => onNavigate("affiliate")} className="w-full text-left">
-              <p className="text-3xl font-extrabold leading-tight">{fN(agg.activePromoters)}</p>
-              <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif Promosi dari {fN(agg.totalCreators)}</p>
-            </button>
-            <div className="mt-3 flex items-center gap-2 text-xs flex-wrap">
-              <span className="bg-white/15 px-1.5 py-0.5 rounded">📹 {fN(agg.videoCreators)} video</span>
-              <span className="bg-white/15 px-1.5 py-0.5 rounded">🔴 {fN(agg.liveCreators)} LIVE</span>
-              <span className="bg-white/15 px-1.5 py-0.5 rounded">🔄 {fN(agg.bothVideoAndLive)} keduanya</span>
-            </div>
-          </div>
-
-          {/* Card 4: ROAS */}
-          <div className={`relative text-left rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group ${
-              heroCards.displayRoas >= 3 ? "bg-gradient-to-br from-green-600 to-emerald-700 dark:from-green-700 dark:to-emerald-800"
-                : heroCards.displayRoas >= 2 ? "bg-gradient-to-br from-yellow-600 to-amber-700"
-                  : heroCards.displayRoas > 0 ? "bg-gradient-to-br from-red-600 to-rose-700"
-                    : "bg-gradient-to-br from-gray-600 to-gray-700"
-            }`}>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-2xl">🎯</span>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  heroCards.displayRoas >= 3 ? "bg-green-400/20 text-green-200" : heroCards.displayRoas >= 2 ? "bg-yellow-400/20 text-yellow-200" : "bg-red-400/20 text-red-200"
-                }`}>{heroCards.displayRoas >= 3 ? "✅ Sehat" : heroCards.displayRoas >= 2 ? "⚠️ Waspada" : heroCards.displayRoas > 0 ? "🔴 Rendah" : "—"}</span>
-                <MetricHelpTooltip
-                  title="ROAS (Return on Ad Spend)"
-                  desc="Rasio efisiensi perolehan omset dibandingkan total biaya pengeluaran iklan (Ad Spend)."
-                  formula="Total Omzet Penjualan / Total Biaya Iklan"
-                  benchmark=">3.0x (Sehat), 2.0x-2.9x (Waspada), <2.0x (Rendah)"
-                  dark
-                />
-              </div>
-            </div>
-            <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
-              <p className="text-3xl font-extrabold leading-tight">{heroCards.displayRoas > 0 ? `${heroCards.displayRoas.toFixed(2)}×` : "—"}</p>
-              <p className="text-white/70 text-xs mt-1 font-medium">ROAS (Return on Ad Spend)</p>
-            </button>
-            {heroCards.displayRoas > 0 && lhData?.summary && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-xs text-white/60">Ad Spend:</span>
-                <span className="text-xs font-bold text-white">{fRp(lhData.summary.total_biaya_iklan || 0)}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Secondary KPIs row */}
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mt-3">
-          {[
-            { label: "Net GMV", value: fRp(agg.netGMV), ok: true, tooltip: { title: "Net GMV", desc: "Nilai omset bersih setelah dikurangi total refund barang.", formula: "Total GMV - Total Refund" } },
-            { label: "Refund Rate", value: fP(agg.refundRate), ok: agg.refundRate <= 15, tooltip: { title: "Refund Rate", desc: "Persentase nilai refund pengembalian barang dibanding total GMV.", benchmark: "Batas aman ideal <15%" } },
-            { label: "Total Pesanan", value: fN(agg.totalOrders), ok: true, tooltip: { title: "Total Pesanan", desc: "Jumlah transaksi pesanan yang berhasil diselesaikan oleh pembeli." } },
-            { label: "AOV", value: fRp(agg.aov), ok: true, tooltip: { title: "Average Order Value (AOV)", desc: "Rata-rata nilai belanja transaksi per satu pesanan.", formula: "Total GMV / Total Pesanan" } },
-            { label: "Komisi Aff", value: fRp(agg.totalCommission), ok: true, tooltip: { title: "Komisi Affiliate", desc: "Total estimasi komisi yang dibayarkan kepada kreator afiliasi." } },
-            { label: "Net - Komisi", value: fRp(agg.netAfterComm), ok: agg.netAfterComm > 0, tooltip: { title: "Net GMV setelah Komisi", desc: "Perolehan bersih toko setelah dikurangi refund & komisi.", formula: "Net GMV - Total Komisi" } },
-          ].map((item) => (
-            <div key={item.label} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-3 text-center relative group">
-              <div className="absolute top-2 right-2">
-                <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} formula={item.tooltip.formula} benchmark={item.tooltip.benchmark} />
-              </div>
-              <div className={`text-sm font-bold ${item.ok ? "text-gray-900 dark:text-white" : "text-red-600"}`}>{item.value}</div>
-              <div className="text-[11px] text-gray-400 mt-0.5">{item.label}</div>
-            </div>
           ))}
         </div>
-      </div>
+      </nav>
 
-      {/* ═══ ZONA 3.1: HEALTH SCORE + MoM COMPARISON + DAILY AVG ═══ */}
-      {agg.totalGMV > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* ═══════════════════════════════════════════════════════
+          TAB CONTENT: RINGKASAN
+          ═══════════════════════════════════════════════════════ */}
+      {activeExecTab === "ringkasan" && (
+        <div className="animate-fade-slide-up space-y-5" key="ringkasan">
 
-          {/* ── HEALTH SCORE ── */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col items-center justify-center text-center relative">
-            <div className="flex items-center justify-center gap-1.5 mb-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">🏥 Skor Kesehatan Bisnis</h3>
-              <MetricHelpTooltip
-                title="Skor Kesehatan Bisnis (0-100)"
-                desc="Indikator komposit mengukur kesehatan toko berdasarkan 4 pilar: pencapaian target GMV (30pt), refund rate (20pt), keaktifan kreator (25pt), dan ROAS (25pt)."
-              />
+          {/* Purpose & Benefit */}
+          <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
+            <div className="space-y-1">
+              <span className="font-bold text-foreground flex items-center gap-1.5">🎯 Tujuan Executive Summary:</span>
+              <p className="text-muted">Menyajikan gambaran besar (*bird&apos;s-eye view*) seluruh kondisi bisnis dan pemasaran toko Anda dalam 1 layar komando eksekutif tanpa perlu membaca puluhan tabel terpisah.</p>
             </div>
-            <div className="relative w-28 h-28 mb-3">
-              <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="8" />
-                <circle cx="50" cy="50" r="42" fill="none" className={healthScore.ringColor} strokeWidth="8" strokeLinecap="round"
-                  strokeDasharray={`${healthScore.score * 2.64} 264`} />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-3xl font-black ${healthScore.color}`}>{healthScore.score}</span>
-                <span className="text-[10px] text-gray-400 font-medium">/100</span>
-              </div>
-            </div>
-            <span className={`text-sm font-bold ${healthScore.color}`}>{healthScore.label}</span>
-            <div className="grid grid-cols-2 gap-2 mt-3 w-full text-[10px]">
-              <div className="bg-gray-50 rounded-lg p-1.5">
-                <div className="font-bold text-gray-700">{fP(agg.refundRate)}</div>
-                <div className="text-gray-400">Refund</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-1.5">
-                <div className="font-bold text-gray-700">{fP(healthScore.activityRate)}</div>
-                <div className="text-gray-400">Aktivitas</div>
-              </div>
+            <div className="space-y-1">
+              <span className="font-bold text-foreground flex items-center gap-1.5">💡 Manfaat untuk Direksi & Manajemen:</span>
+              <p className="text-muted">Memungkinkan evaluasi kesehatan bisnis (*Health Score*) dalam 10 detik, memantau perolehan omset vs target bulanan real, serta menerima notifikasi peringatan (*Alert Panel*) untuk potensi kerugian.</p>
             </div>
           </div>
 
-          {/* ── MoM COMPARISON STRIP ── */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                📈 Perubahan vs {momAll?.prevPeriodLabel || "Bulan Lalu"}
-              </h3>
-              <MetricHelpTooltip
-                title="Perubahan MoM (Month-over-Month)"
-                desc="Persentase pertumbuhan atau penurunan tiap indikator dibandingkan dengan periode bulan sebelumnya."
-              />
-            </div>
-            {momAll ? (
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: "GMV", val: momAll.gmv, isBetter: momAll.gmv >= 0 },
-                  { label: "Orders", val: momAll.orders, isBetter: momAll.orders >= 0 },
-                  { label: "Kreator", val: momAll.creators, isBetter: momAll.creators >= 0 },
-                  { label: "Video", val: momAll.videos, isBetter: momAll.videos >= 0 },
-                  { label: "LIVE", val: momAll.live, isBetter: momAll.live >= 0 },
-                  { label: "Refund", val: momAll.refundRate, isBetter: momAll.refundRate <= 0, suffix: "pp" },
-                  { label: "Komisi", val: momAll.commission, isBetter: true },
-                ].map((m) => (
-                  <div key={m.label} className={`flex items-center justify-between rounded-lg px-3 py-2 ${m.isBetter ? "bg-green-50" : "bg-red-50"}`}>
-                    <span className="text-xs text-gray-600">{m.label}</span>
-                    <span className={`text-xs font-bold ${m.isBetter ? "text-green-600" : "text-red-600"}`}>
-                      {m.val >= 0 ? "▲" : "▼"} {Math.abs(m.val).toFixed(1)}{m.suffix || "%"}
-                    </span>
+          {/* Hero KPIs — 4 Most Critical */}
+          <div>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              📊 Ringkasan {formatPeriod(activePeriod)} — Gabungan Semua Toko
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: GMV vs Target */}
+              <div className="relative text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-2xl">💰</span>
+                  <div className="flex items-center gap-2">
+                    {momGrowth !== null && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`}>
+                        {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
+                      </span>
+                    )}
+                    <MetricHelpTooltip title="Total GMV Affiliate" desc="Total nilai omset kotor (Gross Merchandise Value) dari seluruh promosi kreator afiliasi sebelum dikurangi refund." formula="GMV Video + GMV Live + GMV Kartu Produk" benchmark="Porsi ideal >70% dari total omset toko" dark />
                   </div>
-                ))}
+                </div>
+                <button onClick={() => document.getElementById("goals-section")?.scrollIntoView({ behavior: "smooth" })} className="w-full text-left">
+                  <p className="text-3xl font-extrabold leading-tight">{fRp(agg.totalGMV)}</p>
+                  <p className="text-blue-200 text-xs mt-1 font-medium">Total GMV Affiliate</p>
+                </button>
+                {targetGMV > 0 && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-blue-200 mb-1">
+                      <span>Target: {fRp(targetGMV)}</span>
+                      <span className="font-bold">{fP(targetProgress)}</span>
+                    </div>
+                    <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${targetProgress >= 100 ? "bg-green-400" : "bg-white/60"}`}
+                        style={{ width: `${Math.min(100, targetProgress)}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="text-center py-6 text-gray-400 text-xs">
-                <p>Data bulan sebelumnya belum tersedia</p>
-                <p className="mt-1 text-gray-300">Upload minimal 2 periode untuk perbandingan</p>
-              </div>
-            )}
-          </div>
 
-          {/* ── DAILY AVERAGES + PROJECTED EOM ── */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">⚡ Rata-rata Harian & Proyeksi</h3>
-              <MetricHelpTooltip
-                title="Rata-rata Harian & Proyeksi"
-                desc="Rata-rata perolehan harian real dan estimasi total omset di akhir bulan (End of Month / EOM)."
-                formula="Rata-rata Omset Harian × Jumlah Hari Bulan Ini"
-              />
+              {/* Card 2: Omzet FreshVision */}
+              <div className="relative text-left bg-gradient-to-br from-emerald-600 to-teal-700 dark:from-emerald-700 dark:to-teal-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-2xl">📋</span>
+                  <div className="flex items-center gap-2">
+                    {heroCards.daysElapsed > 0 && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{heroCards.daysElapsed} hari</span>}
+                    <MetricHelpTooltip title="Omset Store (FreshVision)" desc="Total akumulasi omset penjualan toko berdasarkan pembukuan laporan harian terverifikasi." dark />
+                  </div>
+                </div>
+                <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
+                  <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
+                  <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet FreshVision</p>
+                </button>
+                {heroCards.displayOmzet > 0 && heroCards.daysElapsed > 0 && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-xs text-emerald-200">Rata-rata:</span>
+                    <span className="text-xs font-bold text-white">{fRp(heroCards.dailyAvgOmzet)}/hari</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Card 3: Kreator Aktif Promosi */}
+              <div className="relative text-left bg-gradient-to-br from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-2xl">🎥</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                      {agg.totalCreators > 0 ? fP((agg.activePromoters / agg.totalCreators) * 100) : "0%"} aktif
+                    </span>
+                    <MetricHelpTooltip title="Kreator Aktif Promosi" desc="Jumlah kreator afiliasi yang aktif mengunggah video shoppable atau LIVE dan menghasilkan penjualan." benchmark="Tingkat keaktifan ideal >25% dari total database" dark />
+                  </div>
+                </div>
+                <button onClick={() => onNavigate("affiliate")} className="w-full text-left">
+                  <p className="text-3xl font-extrabold leading-tight">{fN(agg.activePromoters)}</p>
+                  <p className="text-amber-200 text-xs mt-1 font-medium">Kreator Aktif dari {fN(agg.totalCreators)}</p>
+                </button>
+                <div className="mt-3 flex items-center gap-2 text-xs flex-wrap">
+                  <span className="bg-white/15 px-1.5 py-0.5 rounded">📹 {fN(agg.videoCreators)} video</span>
+                  <span className="bg-white/15 px-1.5 py-0.5 rounded">🔴 {fN(agg.liveCreators)} LIVE</span>
+                  <span className="bg-white/15 px-1.5 py-0.5 rounded">🔄 {fN(agg.bothVideoAndLive)} keduanya</span>
+                </div>
+              </div>
+
+              {/* Card 4: ROAS */}
+              <div className={`relative text-left rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group ${
+                  heroCards.displayRoas >= 3 ? "bg-gradient-to-br from-green-600 to-emerald-700"
+                    : heroCards.displayRoas >= 2 ? "bg-gradient-to-br from-yellow-600 to-amber-700"
+                      : heroCards.displayRoas > 0 ? "bg-gradient-to-br from-red-600 to-rose-700"
+                        : "bg-gradient-to-br from-gray-600 to-gray-700"
+                }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-2xl">🎯</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      heroCards.displayRoas >= 3 ? "bg-green-400/20 text-green-200" : heroCards.displayRoas >= 2 ? "bg-yellow-400/20 text-yellow-200" : "bg-red-400/20 text-red-200"
+                    }`}>{heroCards.displayRoas >= 3 ? "✅ Sehat" : heroCards.displayRoas >= 2 ? "⚠️ Waspada" : heroCards.displayRoas > 0 ? "🔴 Rendah" : "—"}</span>
+                    <MetricHelpTooltip title="ROAS (Return on Ad Spend)" desc="Rasio efisiensi perolehan omset dibandingkan total biaya pengeluaran iklan." formula="Total Omzet / Total Biaya Iklan" benchmark=">3.0x (Sehat), 2.0x-2.9x (Waspada), <2.0x (Rendah)" dark />
+                  </div>
+                </div>
+                <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
+                  <p className="text-3xl font-extrabold leading-tight">{heroCards.displayRoas > 0 ? `${heroCards.displayRoas.toFixed(2)}×` : "—"}</p>
+                  <p className="text-white/70 text-xs mt-1 font-medium">ROAS (Return on Ad Spend)</p>
+                </button>
+                {heroCards.displayRoas > 0 && lhData?.summary && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-xs text-white/60">Ad Spend:</span>
+                    <span className="text-xs font-bold text-white">{fRp(lhData.summary.total_biaya_iklan || 0)}</span>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="space-y-2.5">
+
+            {/* Secondary KPIs */}
+            <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mt-3">
               {[
-                { icon: "💰", label: "Revenue/Hari", value: fRp(dailyAvg.revenuePerDay), tooltip: { title: "Revenue per Hari", desc: "Rata-rata pendapatan omset yang diperoleh per hari." } },
-                { icon: "📦", label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)), tooltip: { title: "Pesanan per Hari", desc: "Rata-rata transaksi pesanan yang diselesaikan per hari." } },
-                { icon: "🎬", label: "Konten/Hari", value: dailyAvg.contentPerDay.toFixed(1), tooltip: { title: "Konten per Hari", desc: "Rata-rata jumlah postingan video & LIVE yang diunggah per hari." } },
-                { icon: "📹", label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo), tooltip: { title: "GMV per Video", desc: "Rata-rata omset kotor yang dihasilkan per 1 video shoppable." } },
-                { icon: "🔴", label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive), tooltip: { title: "GMV per LIVE", desc: "Rata-rata omset kotor yang dihasilkan per 1 sesi siaran langsung." } },
-                { icon: "👤", label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator), tooltip: { title: "GMV per Kreator", desc: "Rata-rata omset kotor yang disumbangkan per 1 kreator aktif." } },
+                { label: "Net GMV", value: fRp(agg.netGMV), ok: true, tooltip: { title: "Net GMV", desc: "Omset bersih setelah dikurangi total refund.", formula: "Total GMV - Total Refund" } },
+                { label: "Refund Rate", value: fP(agg.refundRate), ok: agg.refundRate <= 15, tooltip: { title: "Refund Rate", desc: "Persentase refund dibanding total GMV.", benchmark: "Batas aman ideal <15%" } },
+                { label: "Total Pesanan", value: fN(agg.totalOrders), ok: true, tooltip: { title: "Total Pesanan", desc: "Jumlah transaksi pesanan yang berhasil diselesaikan." } },
+                { label: "AOV", value: fRp(agg.aov), ok: true, tooltip: { title: "Average Order Value", desc: "Rata-rata nilai belanja per pesanan.", formula: "Total GMV / Total Pesanan" } },
+                { label: "Komisi Aff", value: fRp(agg.totalCommission), ok: true, tooltip: { title: "Komisi Affiliate", desc: "Total estimasi komisi yang dibayarkan ke kreator." } },
+                { label: "Net - Komisi", value: fRp(agg.netAfterComm), ok: agg.netAfterComm > 0, tooltip: { title: "Net GMV setelah Komisi", desc: "Perolehan bersih setelah refund & komisi.", formula: "Net GMV - Total Komisi" } },
               ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 flex items-center gap-1">
-                    {item.icon} {item.label}
-                    <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
-                  </span>
-                  <span className="text-xs font-bold text-gray-800">{item.value}</span>
+                <div key={item.label} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-3 text-center relative group">
+                  <div className="absolute top-2 right-2">
+                    <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} formula={(item.tooltip as any).formula} benchmark={(item.tooltip as any).benchmark} />
+                  </div>
+                  <div className={`text-sm font-bold ${item.ok ? "text-gray-900 dark:text-white" : "text-red-600"}`}>{item.value}</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">{item.label}</div>
                 </div>
               ))}
             </div>
-            {heroCards.projectedEOM > 0 && (
-              <div className={`mt-3 rounded-lg p-3 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "bg-green-50 border border-green-100" : "bg-amber-50 border border-amber-100"}`}>
-                <div className="flex items-center justify-between text-[10px] text-gray-500 uppercase font-medium">
-                  <span>Proyeksi End of Month</span>
-                  <MetricHelpTooltip title="Proyeksi EOM" desc="Perkiraan total omset akhir bulan." formula="Revenue/Hari × Jumlah Hari" />
+          </div>
+
+          {/* Health Score + MoM + Daily Avg (3 columns) */}
+          {agg.totalGMV > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Health Score Detail */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5 flex flex-col items-center justify-center text-center">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">🏥 Skor Kesehatan</h3>
+                  <MetricHelpTooltip title="Skor Kesehatan Bisnis (0-100)" desc="Indikator komposit: pencapaian target (30pt), refund rate (20pt), kreator aktif (25pt), ROAS (25pt)." />
                 </div>
-                <div className={`text-lg font-black mt-0.5 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "text-green-600" : "text-amber-600"}`}>
-                  {fRp(heroCards.projectedEOM)}
-                </div>
-                {targetGMV > 0 && (
-                  <div className="text-[10px] text-gray-400 mt-0.5">
-                    {heroCards.projectedEOM >= targetGMV ? "✅ On track melampaui target" : `⚠️ Masih kurang ${fRp(targetGMV - heroCards.projectedEOM)}`}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ ZONA 3.2: AUTO-GENERATED INSIGHTS ═══ */}
-      {autoInsights.length > 0 && (
-        <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-2xl border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs">💡</span>
-              Insight Otomatis
-            </h2>
-            <MetricHelpTooltip title="Insight Otomatis AI" desc="Rekomendasi taktis dan temuan pola bisnis yang dihasilkan secara otomatis oleh engine analisis data." />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {autoInsights.map((insight, i) => (
-              <div key={i} className={`flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 border ${
-                insight.type === "positive" ? "bg-green-50 border-green-100" :
-                insight.type === "warning" ? "bg-amber-50 border-amber-100" :
-                "bg-white border-gray-100"
-              }`}>
-                <span className="text-base flex-shrink-0 mt-0.5">{insight.icon}</span>
-                <p className={`text-xs leading-relaxed ${
-                  insight.type === "positive" ? "text-green-700" :
-                  insight.type === "warning" ? "text-amber-700" :
-                  "text-gray-600"
-                }`}>{insight.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ ZONA 3.6: LAPORAN HARIAN SUMMARY ═══ */}
-      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📋</span>
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                Laporan Harian — FreshVision
-                <MetricHelpTooltip title="Ringkasan Pembukuan Laporan Harian" desc="Data pembukuan harian terverifikasi yang tersambung dari Google Sheets & Supabase." />
-              </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {lhData?.period ? `Periode: ${formatPeriod(lhData.period)}` : `Sinkron dengan periode ${formatPeriod(activePeriod)}`}
-              </p>
-            </div>
-          </div>
-          <button onClick={() => onNavigate("laporan-harian")} className="text-xs text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition">
-            Lihat Detail →
-          </button>
-        </div>
-
-        {lhLoading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400 py-4">
-            <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin" />
-            Memuat data laporan harian...
-          </div>
-        ) : !lhData?.summary ? (
-          <div className="text-center py-5 bg-white/60 rounded-xl border border-emerald-100">
-            <span className="text-2xl block mb-2">📂</span>
-            <p className="text-xs text-gray-500">Belum ada data Laporan Harian untuk periode ini.</p>
-            <button onClick={() => onNavigate("laporan-harian")} className="mt-2 text-xs text-emerald-600 hover:underline">Upload Sekarang →</button>
-          </div>
-        ) : (() => {
-          const s = lhData.summary;
-          const ch = lhData.channels || {};
-
-          const displayOmzet =
-            (s.total_omzet_fv || 0) > 0
-              ? s.total_omzet_fv
-              : (lhData.evaluasi_per_brand?.freshvision || 0) > 0
-              ? (lhData.evaluasi_per_brand.freshvision as number)
-              : (ch.shop_tab?.total_omzet || 0) > 0
-              ? ch.shop_tab!.total_omzet
-              : (s.total_omzet || 0);
-          const displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
-          const displayMargin = displayOmzet - (s.total_biaya_iklan || 0) - (s.total_komisi_aff || 0);
-
-          const roasColor = displayRoas >= 3 ? "text-green-600" : displayRoas >= 2 ? "text-yellow-600" : "text-red-500";
-          const marginColor = displayMargin >= 0 ? "text-green-600" : "text-red-500";
-
-          return (
-            <>
-              {/* KPI Utama */}
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-                {[
-                  { label: "Total Omzet FreshVision", value: fRp(displayOmzet), icon: "💰", color: "text-emerald-700", bg: "bg-white", tooltip: { title: "Omzet FreshVision", desc: "Total penjualan produk toko FreshVision." } },
-                  { label: "Biaya Iklan", value: fRp(s.total_biaya_iklan || 0), icon: "📣", color: "text-blue-700", bg: "bg-white", tooltip: { title: "Total Biaya Iklan", desc: "Pengeluaran belanja iklan (Ads) periode ini." } },
-                  { label: "ROAS", value: `${displayRoas.toFixed(2)}×`, icon: "🎯", color: roasColor, bg: "bg-white", tooltip: { title: "ROAS Ads", desc: "Efisiensi omset per Rp1 iklan." } },
-                  { label: "CAC Ads", value: fRp(s.rata_cac_ads || 0), icon: "💸", color: "text-purple-700", bg: "bg-white", tooltip: { title: "Customer Acquisition Cost", desc: "Biaya iklan yang dikeluarkan per 1 transaksi." } },
-                  { label: "Estimasi Margin", value: fRp(displayMargin), icon: "📈", color: marginColor, bg: "bg-white", tooltip: { title: "Estimasi Margin", desc: "Sisa pendapatan setelah dikurangi iklan & komisi." } },
-                ].map((item) => (
-                  <div key={item.label} className={`${item.bg} rounded-xl p-3 border border-emerald-100 relative group`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-base">{item.icon}</span>
-                      <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
-                    </div>
-                    <div className={`text-sm font-bold ${item.color} leading-tight`}>{item.value}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{item.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Metrik tambahan */}
-              <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
-                {[
-                  { label: "Closing", value: fN(s.total_closing || 0), tooltip: { title: "Total Closing", desc: "Jumlah pesanan terbayar." } },
-                  { label: "Botol Terjual", value: fN(s.total_botol || 0), tooltip: { title: "Botol Terjual", desc: "Jumlah unit botol terkirim." } },
-                  { label: "Avg Upsell", value: `${(s.rata_upsell || 0).toFixed(1)}×`, tooltip: { title: "Rata-rata Upsell", desc: "Jumlah botol per 1 pesanan." } },
-                  { label: "Cost/Closing", value: fRp(s.cost_per_closing || 0), tooltip: { title: "Cost per Closing", desc: "Biaya per pesanan." } },
-                  { label: "Cost/Botol", value: fRp(s.cost_per_botol || 0), tooltip: { title: "Cost per Botol", desc: "Biaya promosi per 1 botol." } },
-                  { label: "Hari Data", value: `${s.hari || 0} hari`, tooltip: { title: "Hari Data", desc: "Jumlah hari data tercatat." } },
-                ].map((item) => (
-                  <div key={item.label} className="bg-white/70 rounded-lg p-2 text-center border border-emerald-50 relative">
-                    <div className="flex items-center justify-center gap-1">
-                      <span className="text-xs font-bold text-gray-800">{item.value}</span>
-                      <MetricHelpTooltip title={item.tooltip.title} desc={item.tooltip.desc} />
-                    </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">{item.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Channel Breakdown */}
-              {Object.keys(ch).length > 0 && (
-                <div>
-                  <p className="text-xs text-gray-500 font-medium mb-2">Breakdown per Channel</p>
-                  <div className="space-y-1.5">
-                    {([
-                      { key: "shop", label: "📦 SHOP", color: "#059669" },
-                      { key: "video", label: "📹 Video", color: "#1a237e" },
-                      { key: "live", label: "🔴 Live", color: "#ef4444" },
-                    ] as const).filter(c => ch[c.key]?.total_omzet > 0).map(({ key, label, color }) => {
-                      const cData = ch[key];
-                      const pct = displayOmzet > 0 ? (cData.total_omzet / displayOmzet) * 100 : 0;
-                      return (
-                        <div key={key} className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-24 flex-shrink-0">{label}</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                            <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
-                          </div>
-                          <span className="text-xs font-medium text-gray-700 w-28 text-right">{fRp(cData.total_omzet)}</span>
-                          <span className="text-[10px] text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
-                        </div>
-                      );
-                    })}
+                <div className="relative w-24 h-24 mb-2">
+                  <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                    <circle cx="50" cy="50" r="42" fill="none" className={healthScore.ringColor} strokeWidth="8" strokeLinecap="round"
+                      strokeDasharray={`${healthScore.score * 2.64} 264`} />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`text-2xl font-black ${healthScore.color}`}>{healthScore.score}</span>
+                    <span className="text-[9px] text-gray-400">/100</span>
                   </div>
                 </div>
-              )}
-            </>
-          );
-        })()}
-      </div>
-
-      {/* ═══ ZONA 3.5: GOALS & TARGET DASHBOARD ═══ */}
-      {agg.totalGMV > 0 && (() => {
-        const goalsDef = [
-          { key: "gmv", icon: "💰", label: "Target GMV", actual: agg.totalGMV, fmt: fRp, unit: "", desc: "Total pendapatan dari affiliate", inputPlaceholder: "cth: 200000000" },
-          { key: "videos", icon: "📹", label: "Target Video", actual: agg.totalVideos, fmt: fN, unit: " video", desc: "Jumlah shoppable video kreator", inputPlaceholder: "cth: 500" },
-          { key: "live", icon: "🔴", label: "Target LIVE", actual: agg.totalLive, fmt: fN, unit: " sesi", desc: "Jumlah siaran LIVE kreator", inputPlaceholder: "cth: 50" },
-          { key: "active-creators", icon: "👥", label: "Target Kreator Aktif", actual: agg.activePromoters, fmt: fN, unit: " kreator", desc: "Kreator yang buat video/live", inputPlaceholder: "cth: 1000" },
-          { key: "max-refund", icon: "📉", label: "Batas Refund Rate", actual: agg.refundRate, fmt: fP, unit: "", desc: "Maksimal refund rate yang diterima", inputPlaceholder: "cth: 15", isInverse: true },
-        ];
-        const hasAnyGoal = goalsDef.some((g) => (goals[g.key] || 0) > 0);
-        const achievedCount = goalsDef.filter((g) => {
-          const target = goals[g.key] || 0;
-          if (target <= 0) return false;
-          if ((g as any).isInverse) return g.actual <= target;
-          return g.actual >= target;
-        }).length;
-        const totalGoals = goalsDef.filter((g) => (goals[g.key] || 0) > 0).length;
-
-        return (
-          <div id="goals-section" className="bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-base">🎯</span>
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">Goals & Target — {formatPeriod(activePeriod)}</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {hasAnyGoal ? `${achievedCount}/${totalGoals} target tercapai` : "Belum ada target yang di-set"}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => { setGoalsEditing(!goalsEditing); if (!goalsEditing) setGoalsForm({ ...goals }); }}
-                className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
-              >
-                {goalsEditing ? "✕ Batal" : hasAnyGoal ? "✏️ Edit Target" : "＋ Set Target"}
-              </button>
-            </div>
-
-            {/* Edit Form */}
-            {goalsEditing && (
-              <div className="bg-white rounded-xl border border-indigo-100 p-4 mb-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {goalsDef.map((g) => (
-                    <div key={g.key}>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">{g.icon} {g.label}</label>
-                      <input
-                        type="number"
-                        placeholder={g.inputPlaceholder}
-                        value={goalsForm[g.key] || ""}
-                        onChange={(e) => setGoalsForm((prev) => ({ ...prev, [g.key]: Number(e.target.value) || 0 }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-end gap-2 mt-3">
-                  <button
-                    onClick={async () => {
-                      // Save all goals
-                      await Promise.all(
-                        goalsDef.map((g) =>
-                          goalsForm[g.key] ? fetch('/api/target', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ period: activePeriod, target_value: goalsForm[g.key], type: g.key }),
-                          }) : Promise.resolve()
-                        )
-                      );
-                      setGoalsEditing(false);
-                      setTargetVersion((v) => v + 1);
-                    }}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
-                  >
-                    💾 Simpan Semua Target
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Goals Progress */}
-            {hasAnyGoal && (
-              <div className="space-y-3">
-                {goalsDef.filter((g) => (goals[g.key] || 0) > 0).map((g) => {
-                  const target = goals[g.key] || 0;
-                  const isInverse = (g as any).isInverse;
-                  const progress = isInverse
-                    ? (target > 0 ? Math.max(0, ((target - g.actual) / target) * 100 + 100) : 0)
-                    : (target > 0 ? (g.actual / target) * 100 : 0);
-                  const achieved = isInverse ? g.actual <= target : g.actual >= target;
-                  const nearTarget = !achieved && progress >= 70;
-                  const statusColor = achieved ? "text-green-600" : nearTarget ? "text-yellow-600" : "text-red-500";
-                  const barColor = achieved ? "bg-green-500" : nearTarget ? "bg-yellow-500" : "bg-red-400";
-                  const statusLabel = achieved ? "✅ Tercapai" : nearTarget ? "⚡ Hampir" : "🔴 Behind";
-
-                  return (
-                    <div key={g.key} className="bg-white rounded-xl p-3 border border-indigo-50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">{g.icon}</span>
-                          <span className="text-xs font-medium text-gray-700">{g.label}</span>
-                        </div>
-                        <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 bg-gray-100 rounded-full h-2.5">
-                          <div
-                            className={`h-2.5 rounded-full transition-all duration-500 ${barColor}`}
-                            style={{ width: `${Math.min(100, isInverse ? (achieved ? 100 : Math.max(0, 100 - (g.actual - target) * 3)) : progress)}%` }}
-                          />
-                        </div>
-                        <div className="text-right flex-shrink-0 w-36">
-                          <span className="text-xs font-bold text-gray-900">{g.fmt(g.actual)}</span>
-                          <span className="text-xs text-gray-400"> / {g.fmt(target)}{g.unit}</span>
-                        </div>
-                      </div>
-                      {!achieved && !isInverse && (
-                        <p className="text-[10px] text-gray-400 mt-1">
-                          Butuh {g.fmt(target - g.actual)} lagi{g.key === "gmv" ? ` (~${fN(Math.ceil((target - g.actual) / (agg.aov || 1)))} pesanan)` : ""}
-                        </p>
-                      )}
-                      {!achieved && isInverse && (
-                        <p className="text-[10px] text-red-400 mt-1">
-                          ⚠ Saat ini {g.fmt(g.actual)}, melebihi batas {g.fmt(target)}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {!hasAnyGoal && !goalsEditing && (
-              <div className="text-center py-6 bg-white/50 rounded-xl border border-indigo-100">
-                <div className="text-3xl mb-2">🎯</div>
-                <p className="text-sm font-medium text-gray-700">Belum ada target untuk {formatPeriod(activePeriod)}</p>
-                <p className="text-xs text-gray-400 mt-1">Set target GMV, Video, LIVE, Kreator Aktif, dan Refund Rate untuk memantau progress bulanan.</p>
-                <button
-                  onClick={() => { setGoalsEditing(true); setGoalsForm({}); }}
-                  className="mt-3 text-xs bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition"
-                >
-                  ＋ Set Target Sekarang
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* ═══ ZONA 4: TREND CHART ═══ */}
-      {trendData.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-900">
-                Tren {chartMetric === "gmv" ? "GMV" : "Refund Rate"} Bulanan
-              </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {chartMetric === "gmv" ? "dalam juta rupiah" : "dalam persen"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                {(["gabungan", "pertoko"] as const).map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setChartView(v)}
-                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${
-                      chartView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {v === "gabungan" ? "🔀 Gabungan" : "🏪 Per Toko"}
-                  </button>
-                ))}
-              </div>
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                {(["gmv", "refund"] as const).map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setChartMetric(v)}
-                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${
-                      chartMetric === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {v === "gmv" ? "💰 GMV" : "↩️ Refund"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
-              <XAxis dataKey="period" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-              <YAxis
-                tick={{ fontSize: 11, fill: "#9ca3af" }}
-                axisLine={false} tickLine={false}
-                tickFormatter={(v) => chartMetric === "gmv" ? `${v}Jt` : `${v}%`}
-              />
-              <Tooltip
-                contentStyle={{ borderRadius: "12px", border: "1px solid #e5e7eb", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
-                formatter={(val: any, name: any) => [
-                  chartMetric === "gmv" ? `Rp ${Number(val).toFixed(1)}Jt` : `${Number(val).toFixed(1)}%`,
-                  String(name).replace("_refund", ""),
-                ]}
-              />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }}
-                formatter={(name) => String(name).replace("_refund", "")} />
-              {chartMetric === "gmv" && targetGMV > 0 && (
-                <ReferenceLine
-                  y={parseFloat((targetGMV / 1e6).toFixed(1))}
-                  stroke="#ef4444" strokeDasharray="4 4"
-                  label={{ value: `Target ${fRp(targetGMV)}`, fill: "#ef4444", fontSize: 10 }}
-                />
-              )}
-              {chartView === "gabungan" ? (
-                <Line type="monotone"
-                  dataKey={chartMetric === "gmv" ? "Gabungan" : "Gabungan_refund"}
-                  stroke="#1a237e" strokeWidth={3}
-                  dot={{ r: 5, fill: "#1a237e" }}
-                  activeDot={{ r: 7, stroke: "white", strokeWidth: 2 }}
-                  name="Gabungan"
-                  connectNulls
-                />
-              ) : (
-                activeStores.map((store, i) => (
-                  <Line
-                    key={store.id}
-                    type="monotone"
-                    dataKey={chartMetric === "gmv" ? store.name : store.name + "_refund"}
-                    stroke={STORE_COLORS[i % STORE_COLORS.length]}
-                    strokeWidth={2.5}
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6, stroke: "white", strokeWidth: 2 }}
-                    name={store.name}
-                    connectNulls
-                  />
-                ))
-              )}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* ═══ ZONA 5: KONTRIBUSI PER TOKO ═══ */}
-      {storeBreakdown.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            � Kontribusi Per Toko — {formatPeriod(activePeriod)}
-          </h2>
-          <div className={`grid grid-cols-1 ${storeBreakdown.length >= 2 ? "lg:grid-cols-2" : ""} gap-4`}>
-            {storeBreakdown.map((sd, i) => (
-              <div key={sd.store.id} className="bg-white rounded-2xl border border-gray-100 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                      style={{ backgroundColor: STORE_COLORS[i % STORE_COLORS.length] + "20" }}>
-                      {sd.store.avatar || "🏪"}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 flex items-center gap-2">
-                        {sd.store.name}
-                        {storeMoM?.[sd.store.id] && (() => {
-                          const prev = storeMoM[sd.store.id];
-                          const growth = prev.prevGMV > 0 ? ((sd.gmv - prev.prevGMV) / prev.prevGMV) * 100 : 0;
-                          return growth !== 0 ? (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${growth >= 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
-                              {growth >= 0 ? "▲" : "▼"}{Math.abs(growth).toFixed(0)}%
-                            </span>
-                          ) : null;
-                        })()}
-                      </div>
-                      <div className="text-xs text-gray-400">{formatPeriod(activePeriod)}</div>
-                    </div>
+                <span className={`text-sm font-bold ${healthScore.color}`}>{healthScore.label}</span>
+                <div className="grid grid-cols-2 gap-2 mt-3 w-full text-[10px]">
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-1.5">
+                    <div className="font-bold text-gray-700 dark:text-gray-200">{fP(agg.refundRate)}</div>
+                    <div className="text-gray-400">Refund</div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold" style={{ color: STORE_COLORS[i % STORE_COLORS.length] }}>
-                      {fP(sd.share)}
-                    </div>
-                    <div className="text-xs text-gray-400">kontribusi GMV</div>
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-1.5">
+                    <div className="font-bold text-gray-700 dark:text-gray-200">{fP(healthScore.activityRate)}</div>
+                    <div className="text-gray-400">Aktivitas</div>
                   </div>
                 </div>
+              </div>
 
-                <div className="w-full bg-gray-100 rounded-full h-2 mb-4">
-                  <div className="h-2 rounded-full transition-all"
-                    style={{ width: `${sd.share}%`, backgroundColor: STORE_COLORS[i % STORE_COLORS.length] }} />
+              {/* MoM Comparison */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">📈 Perubahan vs {momAll?.prevPeriodLabel || "Bulan Lalu"}</h3>
+                  <MetricHelpTooltip title="Perubahan MoM" desc="Persentase pertumbuhan/penurunan tiap indikator vs bulan sebelumnya." />
                 </div>
-
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  {[
-                    { label: "GMV", value: fRp(sd.gmv) },
-                    { label: "Net GMV", value: fRp(sd.netGMV) },
-                    { label: "Orders", value: fN(sd.orders) },
-                    { label: "Kreator Promosi", value: fN(sd.creators) },
-                    { label: "Video", value: fN(sd.videos) },
-                    { label: "LIVE", value: fN(sd.live) },
-                  ].map((item) => (
-                    <div key={item.label} className="text-center p-2 bg-gray-50 rounded-lg">
-                      <div className="text-xs text-gray-400 mb-0.5">{item.label}</div>
-                      <div className="text-sm font-bold text-gray-800">{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="border-t border-gray-100 pt-3">
-                  <div className="text-xs text-gray-400 mb-2">Kontribusi Channel</div>
-                  <div className="space-y-1.5">
+                {momAll ? (
+                  <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: "Video", gmv: sd.videoGMV, color: "#1a237e" },
-                      { label: "Product Card", gmv: sd.productCardGMV, color: "#00bcd4" },
-                      { label: "LIVE", gmv: sd.liveGMV, color: "#ff6b35" },
-                    ].filter((ch) => ch.gmv > 0).map((ch) => (
-                      <div key={ch.label} className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 w-20 flex-shrink-0">{ch.label}</span>
-                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                          <div className="h-1.5 rounded-full"
-                            style={{ width: `${sd.gmv > 0 ? (ch.gmv / sd.gmv) * 100 : 0}%`, backgroundColor: ch.color }} />
-                        </div>
-                        <span className="text-xs font-medium text-gray-700 w-16 text-right">{fRp(ch.gmv)}</span>
-                        <span className="text-xs text-gray-400 w-10 text-right">
-                          {fP(sd.gmv > 0 ? (ch.gmv / sd.gmv) * 100 : 0)}
+                      { label: "GMV", val: momAll.gmv, isBetter: momAll.gmv >= 0 },
+                      { label: "Orders", val: momAll.orders, isBetter: momAll.orders >= 0 },
+                      { label: "Kreator", val: momAll.creators, isBetter: momAll.creators >= 0 },
+                      { label: "Video", val: momAll.videos, isBetter: momAll.videos >= 0 },
+                      { label: "LIVE", val: momAll.live, isBetter: momAll.live >= 0 },
+                      { label: "Refund", val: momAll.refundRate, isBetter: momAll.refundRate <= 0, suffix: "pp" },
+                      { label: "Komisi", val: momAll.commission, isBetter: true },
+                    ].map((m) => (
+                      <div key={m.label} className={`flex items-center justify-between rounded-lg px-3 py-2 ${m.isBetter ? "bg-green-50 dark:bg-green-900/20" : "bg-red-50 dark:bg-red-900/20"}`}>
+                        <span className="text-xs text-gray-600 dark:text-gray-300">{m.label}</span>
+                        <span className={`text-xs font-bold ${m.isBetter ? "text-green-600" : "text-red-600"}`}>
+                          {m.val >= 0 ? "▲" : "▼"} {Math.abs(m.val).toFixed(1)}{m.suffix || "%"}
                         </span>
                       </div>
                     ))}
                   </div>
-                </div>
-
-                {sd.refundRate > 15 && (
-                  <div className="mt-3 flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2">
-                    <span>⚠️</span>
-                    <span className="text-xs text-red-600 font-medium">
-                      Refund rate {fP(sd.refundRate)} — di atas batas aman
-                    </span>
+                ) : (
+                  <div className="text-center py-6 text-gray-400 text-xs">
+                    <p>Data bulan sebelumnya belum tersedia</p>
+                    <p className="mt-1 text-gray-300">Upload minimal 2 periode untuk perbandingan</p>
                   </div>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* ═══ ZONA 6: 3-COLUMN SECTION ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Top 5 Kreator */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">🏆 Top 5 Kreator</h3>
-            <button onClick={() => onNavigate("affiliate")} className="text-xs text-blue-600 hover:underline">
-              Lihat semua →
-            </button>
-          </div>
-          {top5Creators.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-8">Belum ada data kreator periode ini</p>
-          ) : (
-            <div className="space-y-3">
-              {top5Creators.map((c, i) => {
-                const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
-                return (
-                  <div key={c.creatorUsername + i} className="flex items-center gap-3">
-                    <span className="text-lg w-7 text-center flex-shrink-0">{medals[i]}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">@{c.creatorUsername}</div>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                          <div
-                            className="bg-blue-500 h-1.5 rounded-full"
-                            style={{ width: `${Math.min(100, (c.affiliateGMV / top5Creators[0].affiliateGMV) * 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-400 flex-shrink-0">{fRp(c.affiliateGMV)}</span>
-                      </div>
+              {/* Daily Averages + Projected EOM */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">⚡ Rata-rata Harian & Proyeksi</h3>
+                  <MetricHelpTooltip title="Rata-rata Harian & Proyeksi" desc="Rata-rata perolehan harian real dan estimasi total omset di akhir bulan (EOM)." formula="Rata-rata Omset Harian × Jumlah Hari" />
+                </div>
+                <div className="space-y-2.5">
+                  {[
+                    { icon: "💰", label: "Revenue/Hari", value: fRp(dailyAvg.revenuePerDay) },
+                    { icon: "📦", label: "Pesanan/Hari", value: fN(Math.round(dailyAvg.ordersPerDay)) },
+                    { icon: "🎬", label: "Konten/Hari", value: dailyAvg.contentPerDay.toFixed(1) },
+                    { icon: "📹", label: "GMV/Video", value: fRp(dailyAvg.gmvPerVideo) },
+                    { icon: "🔴", label: "GMV/LIVE", value: fRp(dailyAvg.gmvPerLive) },
+                    { icon: "👤", label: "GMV/Kreator", value: fRp(dailyAvg.gmvPerCreator) },
+                  ].map((item) => (
+                    <div key={item.label} className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">{item.icon} {item.label}</span>
+                      <span className="text-xs font-bold text-gray-800 dark:text-gray-200">{item.value}</span>
                     </div>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                      c.refundRate > 30 ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"
-                    }`}>
-                      {c.refundRate > 30 ? "⚠️" : "✅"} {fP(c.refundRate)}
-                    </span>
+                  ))}
+                </div>
+                {heroCards.projectedEOM > 0 && (
+                  <div className={`mt-3 rounded-lg p-3 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "bg-green-50 border border-green-100" : "bg-amber-50 border border-amber-100"}`}>
+                    <div className="text-[10px] text-gray-500 uppercase font-medium">Proyeksi End of Month</div>
+                    <div className={`text-lg font-black mt-0.5 ${heroCards.projectedEOM >= targetGMV && targetGMV > 0 ? "text-green-600" : "text-amber-600"}`}>
+                      {fRp(heroCards.projectedEOM)}
+                    </div>
+                    {targetGMV > 0 && (
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        {heroCards.projectedEOM >= targetGMV ? "✅ On track melampaui target" : `⚠️ Masih kurang ${fRp(targetGMV - heroCards.projectedEOM)}`}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Alerts */}
+          {visibleAlerts.length > 0 && (
+            <div className="space-y-2">
+              {visibleAlerts.map((alert, i) => {
+                const origIdx = alerts.indexOf(alert);
+                return (
+                  <div key={i} className={`flex items-start gap-3 p-4 rounded-xl border ${
+                    alert.type === "error" ? "bg-red-50 border-red-200" :
+                    alert.type === "warning" ? "bg-yellow-50 border-yellow-200" :
+                    alert.type === "success" ? "bg-green-50 border-green-200" :
+                    "bg-blue-50 border-blue-200"
+                  }`}>
+                    <span className="text-xl flex-shrink-0 mt-0.5">{alert.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-semibold ${
+                        alert.type === "error" ? "text-red-800" : alert.type === "warning" ? "text-yellow-800" :
+                        alert.type === "success" ? "text-green-800" : "text-blue-800"
+                      }`}>{alert.title}</div>
+                      <div className={`text-xs mt-0.5 ${
+                        alert.type === "error" ? "text-red-600" : alert.type === "warning" ? "text-yellow-600" :
+                        alert.type === "success" ? "text-green-600" : "text-blue-600"
+                      }`}>{alert.message}</div>
+                    </div>
+                    {alert.action && (
+                      <button onClick={() => onNavigate(alert.action!.tab)} className={`text-xs font-medium px-3 py-1.5 rounded-lg flex-shrink-0 ${
+                        alert.type === "error" ? "bg-red-100 text-red-700" : alert.type === "warning" ? "bg-yellow-100 text-yellow-700" :
+                        alert.type === "success" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                      }`}>{alert.action.label} →</button>
+                    )}
+                    <button onClick={() => dismissAlert(origIdx)} className="text-gray-400 hover:text-gray-600 flex-shrink-0 text-lg leading-none">✕</button>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
 
-        {/* Channel Mix Donut */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">📊 Kontribusi Channel</h3>
-            <span className="text-xs text-gray-400">{formatPeriod(activePeriod)}</span>
-          </div>
-          {channelData.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-8">Belum ada data channel</p>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie
-                    data={channelData}
-                    cx="50%" cy="50%"
-                    innerRadius={40} outerRadius={60}
-                    paddingAngle={3} dataKey="value"
-                  >
-                    {channelData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(val: any) => [fRp(Number(val)), ""]}
-                    contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-2 mt-1">
-                {channelData.map((ch) => (
-                  <div key={ch.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ch.color }} />
-                      <span className="text-gray-600">{ch.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-semibold text-gray-900">{fRp(ch.value)}</span>
-                      <span className="text-gray-400 ml-1">
-                        {fP(agg.totalGMV > 0 ? (ch.value / agg.totalGMV) * 100 : 0)}
-                      </span>
-                    </div>
+          {/* Auto Insights */}
+          {autoInsights.length > 0 && (
+            <div className="bg-gradient-to-br from-slate-50 to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-5">
+              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs">💡</span>
+                Insight Otomatis
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {autoInsights.map((insight, i) => (
+                  <div key={i} className={`flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 border ${
+                    insight.type === "positive" ? "bg-green-50 border-green-100" :
+                    insight.type === "warning" ? "bg-amber-50 border-amber-100" :
+                    "bg-white border-gray-100"
+                  }`}>
+                    <span className="text-base flex-shrink-0 mt-0.5">{insight.icon}</span>
+                    <p className={`text-xs leading-relaxed ${
+                      insight.type === "positive" ? "text-green-700" :
+                      insight.type === "warning" ? "text-amber-700" : "text-gray-600"
+                    }`}>{insight.text}</p>
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           )}
         </div>
+      )}
 
-        {/* Segmentasi Ringkas */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">🗂️ Segmentasi Kreator</h3>
-            <button onClick={() => onNavigate("affiliate")} className="text-xs text-blue-600 hover:underline">
-              Detail →
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { emoji: "⭐", label: "Bintang", desc: "GMV tinggi + konten aktif", data: segmentasi.bintang, bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
-              { emoji: "💎", label: "Efisien", desc: "GMV tinggi, no konten", data: segmentasi.efisien, bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-              { emoji: "🚀", label: "Potensi", desc: "Ada konten, GMV rendah", data: segmentasi.potensi, bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700" },
-              { emoji: "🌱", label: "Perlu Dorong", desc: "Dormant / tidak aktif", data: segmentasi.perluDorong, bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-600" },
-            ].map((seg) => (
-              <div key={seg.label} className={`${seg.bg} border ${seg.border} rounded-xl p-3`}>
-                <div className="text-xl mb-1">{seg.emoji}</div>
-                <div className={`text-lg font-bold ${seg.text}`}>{seg.data.length}</div>
-                <div className="text-xs font-medium text-gray-700">{seg.label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {fRp(seg.data.reduce((a, c) => a + c.affiliateGMV, 0))}
+      {/* ═══════════════════════════════════════════════════════
+          TAB CONTENT: ANALISIS TREN
+          ═══════════════════════════════════════════════════════ */}
+      {activeExecTab === "analisis-tren" && (
+        <div className="animate-fade-slide-up space-y-5" key="analisis-tren">
+
+          {/* Goals & Target Dashboard */}
+          {agg.totalGMV > 0 && (() => {
+            const goalsDef = [
+              { key: "gmv", icon: "💰", label: "Target GMV", actual: agg.totalGMV, fmt: fRp, unit: "", desc: "Total pendapatan dari affiliate", inputPlaceholder: "cth: 200000000" },
+              { key: "videos", icon: "📹", label: "Target Video", actual: agg.totalVideos, fmt: fN, unit: " video", desc: "Jumlah shoppable video kreator", inputPlaceholder: "cth: 500" },
+              { key: "live", icon: "🔴", label: "Target LIVE", actual: agg.totalLive, fmt: fN, unit: " sesi", desc: "Jumlah siaran LIVE kreator", inputPlaceholder: "cth: 50" },
+              { key: "active-creators", icon: "👥", label: "Target Kreator Aktif", actual: agg.activePromoters, fmt: fN, unit: " kreator", desc: "Kreator yang buat video/live", inputPlaceholder: "cth: 1000" },
+              { key: "max-refund", icon: "📉", label: "Batas Refund Rate", actual: agg.refundRate, fmt: fP, unit: "", desc: "Maksimal refund rate", inputPlaceholder: "cth: 15", isInverse: true },
+            ];
+            const hasAnyGoal = goalsDef.some((g) => (goals[g.key] || 0) > 0);
+            const achievedCount = goalsDef.filter((g) => { const t = goals[g.key] || 0; if (t <= 0) return false; if ((g as any).isInverse) return g.actual <= t; return g.actual >= t; }).length;
+            const totalGoals = goalsDef.filter((g) => (goals[g.key] || 0) > 0).length;
+
+            return (
+              <div id="goals-section" className="bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-base">🎯</span>
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-semibold text-gray-900">Goals & Target — {formatPeriod(activePeriod)}</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">{hasAnyGoal ? `${achievedCount}/${totalGoals} target tercapai` : "Belum ada target yang di-set"}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => { setGoalsEditing(!goalsEditing); if (!goalsEditing) setGoalsForm({ ...goals }); }}
+                    className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg font-medium transition">
+                    {goalsEditing ? "✕ Batal" : hasAnyGoal ? "✏️ Edit Target" : "＋ Set Target"}
+                  </button>
+                </div>
+                {goalsEditing && (
+                  <div className="bg-white rounded-xl border border-indigo-100 p-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {goalsDef.map((g) => (
+                        <div key={g.key}>
+                          <label className="text-xs font-medium text-gray-600 mb-1 block">{g.icon} {g.label}</label>
+                          <input type="number" placeholder={g.inputPlaceholder} value={goalsForm[g.key] || ""}
+                            onChange={(e) => setGoalsForm((prev) => ({ ...prev, [g.key]: Number(e.target.value) || 0 }))}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button onClick={async () => {
+                        await Promise.all(goalsDef.map((g) => goalsForm[g.key] ? fetch('/api/target', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ period: activePeriod, target_value: goalsForm[g.key], type: g.key }) }) : Promise.resolve()));
+                        setGoalsEditing(false); setTargetVersion((v) => v + 1);
+                      }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                        💾 Simpan Semua Target
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {hasAnyGoal && (
+                  <div className="space-y-3">
+                    {goalsDef.filter((g) => (goals[g.key] || 0) > 0).map((g) => {
+                      const target = goals[g.key] || 0;
+                      const isInverse = (g as any).isInverse;
+                      const progress = isInverse ? (target > 0 ? Math.max(0, ((target - g.actual) / target) * 100 + 100) : 0) : (target > 0 ? (g.actual / target) * 100 : 0);
+                      const achieved = isInverse ? g.actual <= target : g.actual >= target;
+                      const nearTarget = !achieved && progress >= 70;
+                      const statusColor = achieved ? "text-green-600" : nearTarget ? "text-yellow-600" : "text-red-500";
+                      const barColor = achieved ? "bg-green-500" : nearTarget ? "bg-yellow-500" : "bg-red-400";
+                      const statusLabel = achieved ? "✅ Tercapai" : nearTarget ? "⚡ Hampir" : "🔴 Behind";
+                      return (
+                        <div key={g.key} className="bg-white rounded-xl p-3 border border-indigo-50">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2"><span className="text-base">{g.icon}</span><span className="text-xs font-medium text-gray-700">{g.label}</span></div>
+                            <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 bg-gray-100 rounded-full h-2.5"><div className={`h-2.5 rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${Math.min(100, isInverse ? (achieved ? 100 : Math.max(0, 100 - (g.actual - target) * 3)) : progress)}%` }} /></div>
+                            <div className="text-right flex-shrink-0 w-36">
+                              <span className="text-xs font-bold text-gray-900">{g.fmt(g.actual)}</span>
+                              <span className="text-xs text-gray-400"> / {g.fmt(target)}{g.unit}</span>
+                            </div>
+                          </div>
+                          {!achieved && !isInverse && (<p className="text-[10px] text-gray-400 mt-1">Butuh {g.fmt(target - g.actual)} lagi{g.key === "gmv" ? ` (~${fN(Math.ceil((target - g.actual) / (agg.aov || 1)))} pesanan)` : ""}</p>)}
+                          {!achieved && isInverse && (<p className="text-[10px] text-red-400 mt-1">⚠ Saat ini {g.fmt(g.actual)}, melebihi batas {g.fmt(target)}</p>)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {!hasAnyGoal && !goalsEditing && (
+                  <div className="text-center py-6 bg-white/50 rounded-xl border border-indigo-100">
+                    <div className="text-3xl mb-2">🎯</div>
+                    <p className="text-sm font-medium text-gray-700">Belum ada target untuk {formatPeriod(activePeriod)}</p>
+                    <p className="text-xs text-gray-400 mt-1">Set target GMV, Video, LIVE, Kreator Aktif, dan Refund Rate.</p>
+                    <button onClick={() => { setGoalsEditing(true); setGoalsForm({}); }} className="mt-3 text-xs bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition">＋ Set Target Sekarang</button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Trend Chart */}
+          {trendData.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">Tren {chartMetric === "gmv" ? "GMV" : "Refund Rate"} Bulanan</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{chartMetric === "gmv" ? "dalam juta rupiah" : "dalam persen"}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                    {(["gabungan", "pertoko"] as const).map((v) => (
+                      <button key={v} onClick={() => setChartView(v)} className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${chartView === v ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                        {v === "gabungan" ? "🔀 Gabungan" : "🏪 Per Toko"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                    {(["gmv", "refund"] as const).map((v) => (
+                      <button key={v} onClick={() => setChartMetric(v)} className={`text-xs px-3 py-1.5 rounded-md font-medium transition ${chartMetric === v ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                        {v === "gmv" ? "💰 GMV" : "↩️ Refund"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            ))}
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={(v) => chartMetric === "gmv" ? `${v}Jt` : `${v}%`} />
+                  <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid #e5e7eb", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }} formatter={(val: any, name: any) => [chartMetric === "gmv" ? `Rp ${Number(val).toFixed(1)}Jt` : `${Number(val).toFixed(1)}%`, String(name).replace("_refund", "")]} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} formatter={(name) => String(name).replace("_refund", "")} />
+                  {chartMetric === "gmv" && targetGMV > 0 && (
+                    <ReferenceLine y={parseFloat((targetGMV / 1e6).toFixed(1))} stroke="#ef4444" strokeDasharray="4 4" label={{ value: `Target ${fRp(targetGMV)}`, fill: "#ef4444", fontSize: 10 }} />
+                  )}
+                  {chartView === "gabungan" ? (
+                    <Line type="monotone" dataKey={chartMetric === "gmv" ? "Gabungan" : "Gabungan_refund"} stroke="#1a237e" strokeWidth={3} dot={{ r: 5, fill: "#1a237e" }} activeDot={{ r: 7, stroke: "white", strokeWidth: 2 }} name="Gabungan" connectNulls />
+                  ) : (
+                    activeStores.map((store, i) => (
+                      <Line key={store.id} type="monotone" dataKey={chartMetric === "gmv" ? store.name : store.name + "_refund"} stroke={STORE_COLORS[i % STORE_COLORS.length]} strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6, stroke: "white", strokeWidth: 2 }} name={store.name} connectNulls />
+                    ))
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* MoM Detailed Comparison Table */}
+          {momAll && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                📋 Perbandingan Detail Bulan ke Bulan
+                <MetricHelpTooltip title="Tabel MoM" desc="Perbandingan mendetail seluruh metrik antara bulan ini dan bulan sebelumnya." />
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b-2 border-gray-100">
+                      <th className="py-2 px-3 text-left font-bold text-gray-600">Metrik</th>
+                      <th className="py-2 px-3 text-right font-bold text-gray-400">{momAll.prevPeriodLabel}</th>
+                      <th className="py-2 px-3 text-right font-bold text-blue-600">{formatPeriod(activePeriod)}</th>
+                      <th className="py-2 px-3 text-right font-bold text-gray-600">Perubahan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const prev = allAffiliateData.filter((d) => d.period === prevPeriod);
+                      const pGMV = prev.reduce((a, d) => a + (d.summary.totalGMV || 0), 0);
+                      const pOrders = prev.reduce((a, d) => a + (d.summary.totalOrders || 0), 0);
+                      const pRefund = prev.reduce((a, d) => a + (d.summary.totalRefundedGMV || 0), 0);
+                      const pRefRate = pGMV > 0 ? (pRefund / pGMV) * 100 : 0;
+                      const pCreators = prev.reduce((a, d) => a + (d.summary.activePromoters || d.summary.activeCreators || 0), 0);
+                      const pVideos = prev.reduce((a, d) => a + (d.summary.totalVideos || 0), 0);
+                      const pLive = prev.reduce((a, d) => a + (d.summary.totalLive || 0), 0);
+                      const pComm = prev.reduce((a, d) => a + (d.summary.totalCommission || 0), 0);
+                      const pAOV = pOrders > 0 ? pGMV / pOrders : 0;
+                      const rows = [
+                        { metric: "Total GMV", prev: fRp(pGMV), curr: fRp(agg.totalGMV), delta: momAll.gmv, up: momAll.gmv >= 0 },
+                        { metric: "Net GMV", prev: fRp(pGMV - pRefund), curr: fRp(agg.netGMV), delta: pGMV - pRefund > 0 ? ((agg.netGMV - (pGMV - pRefund)) / (pGMV - pRefund)) * 100 : 0, up: agg.netGMV >= pGMV - pRefund },
+                        { metric: "Total Pesanan", prev: fN(pOrders), curr: fN(agg.totalOrders), delta: momAll.orders, up: momAll.orders >= 0 },
+                        { metric: "AOV", prev: fRp(pAOV), curr: fRp(agg.aov), delta: pAOV > 0 ? ((agg.aov - pAOV) / pAOV) * 100 : 0, up: agg.aov >= pAOV },
+                        { metric: "Kreator Aktif", prev: fN(pCreators), curr: fN(agg.activePromoters), delta: momAll.creators, up: momAll.creators >= 0 },
+                        { metric: "Total Video", prev: fN(pVideos), curr: fN(agg.totalVideos), delta: momAll.videos, up: momAll.videos >= 0 },
+                        { metric: "Total LIVE", prev: fN(pLive), curr: fN(agg.totalLive), delta: momAll.live, up: momAll.live >= 0 },
+                        { metric: "Refund Rate", prev: fP(pRefRate), curr: fP(agg.refundRate), delta: momAll.refundRate, up: momAll.refundRate <= 0, suffix: "pp" },
+                        { metric: "Total Komisi", prev: fRp(pComm), curr: fRp(agg.totalCommission), delta: momAll.commission, up: true },
+                      ];
+                      return rows.map((r) => (
+                        <tr key={r.metric} className="border-b border-gray-50 hover:bg-gray-50/50">
+                          <td className="py-2 px-3 font-medium text-gray-700 dark:text-gray-300">{r.metric}</td>
+                          <td className="py-2 px-3 text-right text-gray-400">{r.prev}</td>
+                          <td className="py-2 px-3 text-right font-bold text-gray-900 dark:text-white">{r.curr}</td>
+                          <td className={`py-2 px-3 text-right font-bold ${r.up ? "text-green-600" : "text-red-600"}`}>
+                            {r.delta >= 0 ? "▲" : "▼"} {Math.abs(r.delta).toFixed(1)}{(r as any).suffix || "%"}
+                          </td>
+                        </tr>
+                      ));
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          TAB CONTENT: EVALUASI KEUANGAN
+          ═══════════════════════════════════════════════════════ */}
+      {activeExecTab === "evaluasi-keuangan" && (
+        <div className="animate-fade-slide-up space-y-5" key="evaluasi-keuangan">
+
+          {/* P&L Summary */}
+          <div className="bg-gradient-to-br from-slate-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl border border-blue-100 dark:border-gray-700 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                💼 Profit & Loss Summary — {formatPeriod(activePeriod)}
+                <MetricHelpTooltip title="P&L Summary" desc="Ikhtisar laba rugi bisnis dari data pembukuan laporan harian & affiliate." />
+              </h2>
+              <button onClick={() => onNavigate("laporan-harian")} className="text-xs text-blue-600 hover:underline">Lihat Detail →</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+              {[
+                { label: "Revenue", value: fRp(pnl.omzet), icon: "💰", color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-100" },
+                { label: "Total Cost", value: fRp(pnl.totalCost), icon: "📊", color: "text-red-600", bg: "bg-red-50 border-red-100" },
+                { label: "Gross Profit", value: fRp(pnl.grossProfit), icon: pnl.grossProfit >= 0 ? "📈" : "📉", color: pnl.grossProfit >= 0 ? "text-green-600" : "text-red-600", bg: pnl.grossProfit >= 0 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100" },
+                { label: "Gross Margin", value: fP(pnl.grossMarginPct), icon: "🎯", color: pnl.grossMarginPct >= 30 ? "text-green-600" : pnl.grossMarginPct >= 15 ? "text-yellow-600" : "text-red-600", bg: "bg-blue-50 border-blue-100" },
+              ].map((item) => (
+                <div key={item.label} className={`rounded-xl p-4 border ${item.bg}`}>
+                  <div className="text-lg mb-1">{item.icon}</div>
+                  <div className={`text-xl font-black ${item.color}`}>{item.value}</div>
+                  <div className="text-xs text-gray-500 mt-1 font-medium">{item.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Cost Breakdown */}
+            {pnl.costBreakdown.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-xl border p-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Rincian Biaya Operasional</h3>
+                <div className="space-y-2">
+                  {pnl.costBreakdown.map((c) => {
+                    const pct = pnl.totalCost > 0 ? (c.value / pnl.totalCost) * 100 : 0;
+                    return (
+                      <div key={c.label} className="flex items-center gap-3">
+                        <span className="text-xs text-gray-600 w-36 flex-shrink-0">{c.label}</span>
+                        <div className="flex-1 bg-gray-100 rounded-full h-2">
+                          <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: c.color }} />
+                        </div>
+                        <span className="text-xs font-bold text-gray-700 w-28 text-right">{fRp(c.value)}</span>
+                        <span className="text-[10px] text-gray-400 w-10 text-right">{pct.toFixed(0)}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Unit Economics */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              ⚙️ Unit Economics
+              <MetricHelpTooltip title="Unit Economics" desc="Efisiensi biaya per unit transaksi dan produktivitas per kreator/konten." />
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Cost per Closing", value: fRp(unitEcon.costPerClosing), sub: `${fN(unitEcon.closing)} closing`, icon: "💸", benchmark: "<Rp50k ideal" },
+                { label: "Cost per Botol", value: fRp(unitEcon.costPerBotol), sub: `${fN(unitEcon.botol)} botol`, icon: "🧴", benchmark: "Semakin rendah semakin baik" },
+                { label: "Revenue per Kreator", value: fRp(unitEcon.revenuePerCreator), sub: `${fN(agg.activePromoters)} aktif`, icon: "👤", benchmark: "Target >Rp5jt/kreator" },
+                { label: "Commission ROI", value: `${unitEcon.commissionROI.toFixed(1)}×`, sub: fRp(agg.totalCommission) + " komisi", icon: "🔄", benchmark: ">5× ideal" },
+                { label: "Ad ROI (ROAS)", value: `${unitEcon.adROI.toFixed(2)}×`, sub: fRp(pnl.biayaIklan) + " iklan", icon: "📣", benchmark: ">3× sehat" },
+                { label: "Revenue per Video", value: fRp(unitEcon.revenuePerVideo), sub: `${fN(agg.totalVideos)} video`, icon: "📹", benchmark: "Bandingkan antar periode" },
+                { label: "Revenue per LIVE", value: fRp(unitEcon.revenuePerLive), sub: `${fN(agg.totalLive)} sesi`, icon: "🔴", benchmark: "Bandingkan antar periode" },
+                { label: "Gross Margin %", value: fP(pnl.grossMarginPct), sub: fRp(pnl.grossProfit) + " profit", icon: "📈", benchmark: ">30% sehat" },
+              ].map((item) => (
+                <div key={item.label} className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 border border-gray-100 dark:border-gray-600 relative group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xl">{item.icon}</span>
+                    <MetricHelpTooltip title={item.label} desc={item.benchmark} />
+                  </div>
+                  <div className="text-lg font-black text-gray-900 dark:text-white">{item.value}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{item.sub}</div>
+                  <div className="text-xs text-gray-500 mt-1 font-medium">{item.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Laporan Harian Summary */}
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                📋 Laporan Harian — FreshVision
+                <MetricHelpTooltip title="Ringkasan Pembukuan" desc="Data pembukuan harian terverifikasi dari Google Sheets & Supabase." />
+              </h2>
+              <button onClick={() => onNavigate("laporan-harian")} className="text-xs text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition">Lihat Detail →</button>
+            </div>
+            {lhLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-400 py-4"><div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin" /> Memuat...</div>
+            ) : !lhData?.summary ? (
+              <div className="text-center py-5 bg-white/60 rounded-xl border border-emerald-100">
+                <span className="text-2xl block mb-2">📂</span>
+                <p className="text-xs text-gray-500">Belum ada data Laporan Harian untuk periode ini.</p>
+                <button onClick={() => onNavigate("laporan-harian")} className="mt-2 text-xs text-emerald-600 hover:underline">Upload Sekarang →</button>
+              </div>
+            ) : (() => {
+              const s = lhData.summary;
+              return (
+                <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+                  {[
+                    { label: "Closing", value: fN(s.total_closing || 0) },
+                    { label: "Botol", value: fN(s.total_botol || 0) },
+                    { label: "Upsell", value: `${(s.rata_upsell || 0).toFixed(1)}×` },
+                    { label: "Cost/Closing", value: fRp(s.cost_per_closing || 0) },
+                    { label: "Cost/Botol", value: fRp(s.cost_per_botol || 0) },
+                    { label: "Hari Data", value: `${s.hari || 0} hari` },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-white/70 rounded-lg p-2 text-center border border-emerald-50">
+                      <div className="text-xs font-bold text-gray-800">{item.value}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Old Target GMV section removed — replaced by Goals Dashboard above */}
+      {/* ═══════════════════════════════════════════════════════
+          TAB CONTENT: KREATOR & CHANNEL
+          ═══════════════════════════════════════════════════════ */}
+      {activeExecTab === "kreator-channel" && (
+        <div className="animate-fade-slide-up space-y-5" key="kreator-channel">
 
-      {/* ═══ ZONA 7.5: AI EVALUASI ═══ */}
-      <div className="bg-gradient-to-br from-violet-50 via-purple-50 to-indigo-50 rounded-2xl border border-violet-100 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-base">🤖</span>
+          {/* 3-column: Top5 + Channel Donut + Segmentasi */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Top 5 Kreator */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">🏆 Top 5 Kreator</h3>
+                <button onClick={() => onNavigate("affiliate")} className="text-xs text-blue-600 hover:underline">Lihat semua →</button>
+              </div>
+              {top5Creators.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-8">Belum ada data kreator periode ini</p>
+              ) : (
+                <div className="space-y-3">
+                  {top5Creators.map((c, i) => {
+                    const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+                    return (
+                      <div key={c.creatorUsername + i} className="flex items-center gap-3">
+                        <span className="text-lg w-7 text-center flex-shrink-0">{medals[i]}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">@{c.creatorUsername}</div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <div className="flex-1 bg-gray-100 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (c.affiliateGMV / top5Creators[0].affiliateGMV) * 100)}%` }} /></div>
+                            <span className="text-xs text-gray-400 flex-shrink-0">{fRp(c.affiliateGMV)}</span>
+                          </div>
+                        </div>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${c.refundRate > 30 ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>
+                          {c.refundRate > 30 ? "⚠️" : "✅"} {fP(c.refundRate)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">AI Evaluasi &amp; Rekomendasi</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Analisis gabungan Affiliate + Laporan Harian &mdash; {formatPeriod(activePeriod)}</p>
+
+            {/* Channel Mix Donut */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">📊 Kontribusi Channel</h3>
+                <span className="text-xs text-gray-400">{formatPeriod(activePeriod)}</span>
+              </div>
+              {channelData.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-8">Belum ada data channel</p>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={140}>
+                    <PieChart><Pie data={channelData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={3} dataKey="value">{channelData.map((entry, i) => (<Cell key={i} fill={entry.color} />))}</Pie><Tooltip formatter={(val: any) => [fRp(Number(val)), ""]} contentStyle={{ borderRadius: "8px", fontSize: "12px" }} /></PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2 mt-1">
+                    {channelData.map((ch) => (
+                      <div key={ch.name} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ch.color }} /><span className="text-gray-600 dark:text-gray-300">{ch.name}</span></div>
+                        <div className="text-right"><span className="font-semibold text-gray-900 dark:text-white">{fRp(ch.value)}</span><span className="text-gray-400 ml-1">{fP(agg.totalGMV > 0 ? (ch.value / agg.totalGMV) * 100 : 0)}</span></div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Segmentasi Kreator */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">🗂️ Segmentasi Kreator</h3>
+                <button onClick={() => onNavigate("affiliate")} className="text-xs text-blue-600 hover:underline">Detail →</button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { emoji: "⭐", label: "Bintang", desc: "GMV tinggi + konten aktif", data: segmentasi.bintang, bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
+                  { emoji: "💎", label: "Efisien", desc: "GMV tinggi, no konten", data: segmentasi.efisien, bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
+                  { emoji: "🚀", label: "Potensi", desc: "Ada konten, GMV rendah", data: segmentasi.potensi, bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700" },
+                  { emoji: "🌱", label: "Perlu Dorong", desc: "Dormant / tidak aktif", data: segmentasi.perluDorong, bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-600" },
+                ].map((seg) => (
+                  <div key={seg.label} className={`${seg.bg} border ${seg.border} rounded-xl p-3`}>
+                    <div className="text-xl mb-1">{seg.emoji}</div>
+                    <div className={`text-lg font-bold ${seg.text}`}>{seg.data.length}</div>
+                    <div className="text-xs font-medium text-gray-700 dark:text-gray-300">{seg.label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{fRp(seg.data.reduce((a, c) => a + c.affiliateGMV, 0))}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          <button
-            onClick={() => { setAiContent(""); setAiCacheKey(""); runAiEvaluasi(); }}
-            disabled={aiLoading}
-            className="flex items-center gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 disabled:bg-violet-400 text-white px-3 py-1.5 rounded-lg font-medium transition"
-          >
-            {aiLoading ? (
-              <><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Menganalisis...</>
-            ) : (
-              <>{aiContent ? '🔄 Refresh' : '✨ Analisis Sekarang'}</>
-            )}
-          </button>
+
+          {/* Kontribusi Per Toko */}
+          {storeBreakdown.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">🏪 Kontribusi Per Toko — {formatPeriod(activePeriod)}</h2>
+              <div className={`grid grid-cols-1 ${storeBreakdown.length >= 2 ? "lg:grid-cols-2" : ""} gap-4`}>
+                {storeBreakdown.map((sd, i) => (
+                  <div key={sd.store.id} className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ backgroundColor: STORE_COLORS[i % STORE_COLORS.length] + "20" }}>{sd.store.avatar || "🏪"}</div>
+                        <div>
+                          <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                            {sd.store.name}
+                            {storeMoM?.[sd.store.id] && (() => { const prev = storeMoM[sd.store.id]; const growth = prev.prevGMV > 0 ? ((sd.gmv - prev.prevGMV) / prev.prevGMV) * 100 : 0; return growth !== 0 ? (<span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${growth >= 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>{growth >= 0 ? "▲" : "▼"}{Math.abs(growth).toFixed(0)}%</span>) : null; })()}
+                          </div>
+                          <div className="text-xs text-gray-400">{formatPeriod(activePeriod)}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold" style={{ color: STORE_COLORS[i % STORE_COLORS.length] }}>{fP(sd.share)}</div>
+                        <div className="text-xs text-gray-400">kontribusi GMV</div>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 mb-4"><div className="h-2 rounded-full transition-all" style={{ width: `${sd.share}%`, backgroundColor: STORE_COLORS[i % STORE_COLORS.length] }} /></div>
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      {[
+                        { label: "GMV", value: fRp(sd.gmv) }, { label: "Net GMV", value: fRp(sd.netGMV) }, { label: "Orders", value: fN(sd.orders) },
+                        { label: "Kreator", value: fN(sd.creators) }, { label: "Video", value: fN(sd.videos) }, { label: "LIVE", value: fN(sd.live) },
+                      ].map((item) => (
+                        <div key={item.label} className="text-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                          <div className="text-xs text-gray-400 mb-0.5">{item.label}</div>
+                          <div className="text-sm font-bold text-gray-800 dark:text-gray-200">{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-gray-100 pt-3">
+                      <div className="text-xs text-gray-400 mb-2">Kontribusi Channel</div>
+                      <div className="space-y-1.5">
+                        {[
+                          { label: "Video", gmv: sd.videoGMV, color: "#1a237e" },
+                          { label: "Product Card", gmv: sd.productCardGMV, color: "#00bcd4" },
+                          { label: "LIVE", gmv: sd.liveGMV, color: "#ff6b35" },
+                        ].filter((ch) => ch.gmv > 0).map((ch) => (
+                          <div key={ch.label} className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500 w-20 flex-shrink-0">{ch.label}</span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-1.5"><div className="h-1.5 rounded-full" style={{ width: `${sd.gmv > 0 ? (ch.gmv / sd.gmv) * 100 : 0}%`, backgroundColor: ch.color }} /></div>
+                            <span className="text-xs font-medium text-gray-700 w-16 text-right">{fRp(ch.gmv)}</span>
+                            <span className="text-xs text-gray-400 w-10 text-right">{fP(sd.gmv > 0 ? (ch.gmv / sd.gmv) * 100 : 0)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {sd.refundRate > 15 && (
+                      <div className="mt-3 flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2">
+                        <span>⚠️</span>
+                        <span className="text-xs text-red-600 font-medium">Refund rate {fP(sd.refundRate)} — di atas batas aman</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      )}
 
-        {!aiContent && !aiLoading && !aiError && (
-          <div className="text-center py-8 bg-white/50 rounded-xl border border-violet-100">
-            <div className="text-3xl mb-3">🧠</div>
-            <p className="text-sm font-medium text-gray-700">Dapatkan Evaluasi &amp; Langkah Aksi dari AI</p>
-            <p className="text-xs text-gray-400 mt-1 mb-4">AI akan menganalisis performa bisnis Anda dan memberikan rekomendasi konkret</p>
-            {!aiSettings && (
-              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mx-auto max-w-xs">
-                ⚠️ Konfigurasikan AI terlebih dahulu di menu <strong>AI Analyst</strong>
-              </p>
+      {/* ═══════════════════════════════════════════════════════
+          TAB CONTENT: AI EVALUASI
+          ═══════════════════════════════════════════════════════ */}
+      {activeExecTab === "ai-evaluasi" && (
+        <div className="animate-fade-slide-up space-y-5" key="ai-evaluasi">
+          <div className="bg-gradient-to-br from-violet-50 via-purple-50 to-indigo-50 rounded-2xl border border-violet-100 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center flex-shrink-0"><span className="text-white text-base">🤖</span></div>
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">AI Evaluasi &amp; Rekomendasi</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Analisis gabungan Affiliate + Laporan Harian &mdash; {formatPeriod(activePeriod)}</p>
+                </div>
+              </div>
+              <button onClick={() => { setAiContent(""); setAiCacheKey(""); runAiEvaluasi(); }} disabled={aiLoading}
+                className="flex items-center gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 disabled:bg-violet-400 text-white px-3 py-1.5 rounded-lg font-medium transition">
+                {aiLoading ? (<><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Menganalisis...</>) : (<>{aiContent ? '🔄 Refresh' : '✨ Analisis Sekarang'}</>)}
+              </button>
+            </div>
+            {!aiContent && !aiLoading && !aiError && (
+              <div className="text-center py-8 bg-white/50 rounded-xl border border-violet-100">
+                <div className="text-3xl mb-3">🧠</div>
+                <p className="text-sm font-medium text-gray-700">Dapatkan Evaluasi &amp; Langkah Aksi dari AI</p>
+                <p className="text-xs text-gray-400 mt-1 mb-4">AI akan menganalisis performa bisnis Anda dan memberikan rekomendasi konkret</p>
+                {!aiSettings && (<p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mx-auto max-w-xs">⚠️ Konfigurasikan AI terlebih dahulu di menu <strong>AI Analyst</strong></p>)}
+              </div>
+            )}
+            {aiLoading && (<div className="space-y-3">{[1,2,3,4].map(i => (<div key={i} className="h-4 bg-violet-100 rounded animate-pulse" style={{ width: `${[90,75,85,60][i-1]}%` }} />))}</div>)}
+            {aiError && (
+              <div className="flex items-start gap-2 bg-red-50 rounded-xl p-4 border border-red-100">
+                <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+                <div><p className="text-sm font-medium text-red-700">Gagal menganalisis</p><p className="text-xs text-red-500 mt-0.5">{aiError}</p><button onClick={runAiEvaluasi} className="mt-2 text-xs text-red-600 hover:underline">Coba lagi →</button></div>
+              </div>
+            )}
+            {aiContent && !aiLoading && (
+              <div className="prose prose-sm max-w-none bg-white/70 rounded-xl p-4 border border-violet-100">
+                {aiContent.split('\n').map((line, i) => {
+                  if (line.startsWith('## ')) return <h3 key={i} className="text-sm font-bold text-gray-900 mt-4 mb-2 first:mt-0 flex items-center gap-1">{line.slice(3)}</h3>;
+                  if (line.startsWith('### ')) return <h4 key={i} className="text-xs font-bold text-gray-800 mt-3 mb-1">{line.slice(4)}</h4>;
+                  if (line.match(/^\d+\. /)) return <p key={i} className="text-xs text-gray-700 ml-4 mb-1">{line}</p>;
+                  if (line.startsWith('- ')) return <p key={i} className="text-xs text-gray-700 ml-4 mb-1 flex gap-1"><span className="text-violet-400 flex-shrink-0">•</span><span>{line.slice(2)}</span></p>;
+                  if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="text-xs font-semibold text-gray-800 mb-1">{line.slice(2, -2)}</p>;
+                  if (!line.trim()) return <div key={i} className="h-2" />;
+                  return <p key={i} className="text-xs text-gray-700 mb-1 leading-relaxed">{line}</p>;
+                })}
+              </div>
             )}
           </div>
-        )}
-
-        {aiLoading && (
-          <div className="space-y-3">
-            {[1,2,3,4].map(i => (
-              <div key={i} className="h-4 bg-violet-100 rounded animate-pulse" style={{ width: `${[90,75,85,60][i-1]}%` }} />
-            ))}
-          </div>
-        )}
-
-        {aiError && (
-          <div className="flex items-start gap-2 bg-red-50 rounded-xl p-4 border border-red-100">
-            <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
-            <div>
-              <p className="text-sm font-medium text-red-700">Gagal menganalisis</p>
-              <p className="text-xs text-red-500 mt-0.5">{aiError}</p>
-              <button onClick={runAiEvaluasi} className="mt-2 text-xs text-red-600 hover:underline">Coba lagi →</button>
-            </div>
-          </div>
-        )}
-
-        {aiContent && !aiLoading && (
-          <div className="prose prose-sm max-w-none bg-white/70 rounded-xl p-4 border border-violet-100">
-            {aiContent.split('\n').map((line, i) => {
-              if (line.startsWith('## ')) return <h3 key={i} className="text-sm font-bold text-gray-900 mt-4 mb-2 first:mt-0 flex items-center gap-1">{line.slice(3)}</h3>;
-              if (line.startsWith('### ')) return <h4 key={i} className="text-xs font-bold text-gray-800 mt-3 mb-1">{line.slice(4)}</h4>;
-              if (line.match(/^\d+\. /)) return <p key={i} className="text-xs text-gray-700 ml-4 mb-1">{line}</p>;
-              if (line.startsWith('- ')) return <p key={i} className="text-xs text-gray-700 ml-4 mb-1 flex gap-1"><span className="text-violet-400 flex-shrink-0">•</span><span>{line.slice(2)}</span></p>;
-              if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="text-xs font-semibold text-gray-800 mb-1">{line.slice(2, -2)}</p>;
-              if (!line.trim()) return <div key={i} className="h-2" />;
-              return <p key={i} className="text-xs text-gray-700 mb-1 leading-relaxed">{line}</p>;
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Quick Actions removed from here — moved to top (Zona 2.5) */}
+        </div>
+      )}
 
     </div>
   );
 }
+

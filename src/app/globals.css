@@ -116,6 +116,16 @@ body {
 .dashboard-table-wrap th { white-space: nowrap; }
 .dashboard-table-wrap td { font-variant-numeric: tabular-nums; }
 
+/* ─── Executive Tab Animation ─── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-slide-up {
+  animation: fadeSlideUp 0.3s ease-out;
+}
+
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;
