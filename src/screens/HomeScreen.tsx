@@ -236,15 +236,15 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     try {
       const ch = lhData?.channels || {};
       const s2 = lhData?.summary;
-      // Prioritas: summary.total_omzet_fv > evaluasi_per_brand.freshvision > shop_tab > total_omzet
+      // Prioritas: summary.total_omzet (Laporan Harian Utama) > shop_tab > total_omzet_fv > evaluasi_per_brand
       const displayOmzet =
-        (s2?.total_omzet_fv || 0) > 0
-          ? (s2!.total_omzet_fv)
-          : (lhData?.evaluasi_per_brand?.freshvision || 0) > 0
-          ? (lhData.evaluasi_per_brand.freshvision as number)
+        (s2?.total_omzet || 0) > 0
+          ? s2!.total_omzet
           : (ch.shop_tab?.total_omzet || 0) > 0
           ? ch.shop_tab!.total_omzet
-          : (s2?.total_omzet || 0);
+          : (s2?.total_omzet_fv || 0) > 0
+          ? s2!.total_omzet_fv
+          : (lhData?.evaluasi_per_brand?.freshvision as number || 0);
       const res = await fetch('/api/executive-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -518,12 +518,12 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
     if (lhData && s) {
       displayOmzet =
-        (s.total_omzet_fv || 0) > 0 ? s.total_omzet_fv
-          : (lhData?.evaluasi_per_brand?.freshvision || 0) > 0 ? (lhData.evaluasi_per_brand.freshvision as number)
-            : (ch.shop_tab?.total_omzet || 0) > 0 ? ch.shop_tab.total_omzet
-              : (s.total_omzet || 0);
+        (s.total_omzet || 0) > 0 ? s.total_omzet
+          : (ch.shop_tab?.total_omzet || 0) > 0 ? ch.shop_tab.total_omzet
+            : (s.total_omzet_fv || 0) > 0 ? s.total_omzet_fv
+              : (lhData?.evaluasi_per_brand?.freshvision as number || 0);
       daysElapsed = s.hari || 0;
-      displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
+      displayRoas = s.roas || (s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0);
     } else {
       displayOmzet = agg.totalGMV;
       if (activePeriod && /^\d{4}-\d{2}$/.test(activePeriod)) {
@@ -1024,12 +1024,12 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                   <span className="text-2xl">📋</span>
                   <div className="flex items-center gap-2">
                     {heroCards.daysElapsed > 0 && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{heroCards.daysElapsed} hari</span>}
-                    <MetricHelpTooltip title="Omset Store (FreshVision)" desc="Total akumulasi omset penjualan toko berdasarkan pembukuan laporan harian terverifikasi." dark />
+                    <MetricHelpTooltip title="Omset Pembukuan Store" desc="Total akumulasi omset penjualan toko berdasarkan pembukuan laporan harian terverifikasi." dark />
                   </div>
                 </div>
                 <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
                   <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
-                  <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet FreshVision</p>
+                  <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet Pembukuan Store</p>
                 </button>
                 {heroCards.displayOmzet > 0 && heroCards.daysElapsed > 0 && (
                   <div className="mt-3 flex items-center gap-2">
