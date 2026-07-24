@@ -22,6 +22,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Chat ID tidak tersedia. Set TELEGRAM_DEFAULT_CHAT_ID di environment variables.' }, { status: 400 });
     }
 
+    // Custom pre-composed message (mis. ringkasan Executive Summary dari dashboard).
+    // Ditangani sebelum fetch Google Sheets karena pesan sudah lengkap dari client.
+    if (type === 'custom') {
+      const customMessage = typeof body.message === 'string' ? body.message.trim() : '';
+      if (!customMessage) {
+        return NextResponse.json({ error: 'Missing required field: message (untuk type custom)' }, { status: 400 });
+      }
+      // Batas aman Telegram sendMessage = 4096 karakter
+      const customResult = await sendTelegramMessage({ chatId, enabled: true }, customMessage.slice(0, 4000), 'HTML');
+      if (!customResult.success) {
+        return NextResponse.json({ error: customResult.error }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, type });
+    }
+
     // Fetch current data from Google Sheets (use relative URL for server-side fetch)
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
     const sheetsRes = await fetch(`${baseUrl}/api/laporan-harian`);
@@ -86,7 +101,7 @@ export async function POST(req: NextRequest) {
         });
         break;
       default:
-        return NextResponse.json({ error: 'Invalid type. Use: today, month, alert, target, channel' }, { status: 400 });
+        return NextResponse.json({ error: 'Invalid type. Use: today, month, alert, target, channel, custom' }, { status: 400 });
     }
 
     // Send to Telegram
