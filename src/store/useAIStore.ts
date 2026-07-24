@@ -44,7 +44,7 @@ export const useAIStore = create<AIStore>()(
     (set) => ({
       settings: {
         provider: 'gemini',
-        geminiModel: 'gemini-2.0-flash',
+        geminiModel: 'gemini-2.5-flash',
         geminiApiKey: '',
         openaiModel: 'gpt-4o-mini',
         openaiBaseUrl: 'https://api.openai.com/v1',

@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 export async function callGemini(
   systemPrompt: string,
   messages: { role: string; content: string }[],
-  model: string = 'gemini-1.5-flash',
+  model: string = 'gemini-2.5-flash',
   temperature: number = 0.7,
   maxTokens: number = 600,
   customApiKey?: string
@@ -15,16 +15,19 @@ export async function callGemini(
 
   const genAI = new GoogleGenerativeAI(apiKey)
 
+  const cleanModelName = (name: string) => (name || '').replace(/^models\//i, '').trim()
+  const requestedModel = cleanModelName(model) || 'gemini-2.5-flash'
+
   // Candidate models to try automatically if requested model returns 404 / 429 Quota Exceeded
   const modelsToTry = Array.from(
     new Set([
-      model,
-      'gemini-1.5-flash-8b',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash-lite',
+      requestedModel,
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
       'gemini-2.0-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-pro',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-8b',
+      'gemini-2.0-flash-lite',
     ])
   )
 
@@ -63,7 +66,6 @@ export async function callGemini(
         err?.status === 429
 
       if (!isRetryable) {
-        // If error is invalid API key or permission error, throw immediately
         throw err
       }
       console.warn(`[Gemini Provider] Model '${m}' returned retryable error (${err?.status || 'quota/404'}), trying fallback model...`)
@@ -73,7 +75,7 @@ export async function callGemini(
   const errMsg = String(lastError?.message || '').toLowerCase()
   if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('limit')) {
     throw new Error(
-      '⚠️ Quota Gemini API Key Anda telah habis / terkena Rate Limit (429).\n\n💡 SOLUSI API KEY GRATIS TANPA LIMIT:\n1. Gunakan Provider "OpenRouter" di Pengaturan AI ➔ Dapatkan API Key Gratis di openrouter.ai (Bebas limit 429 Google).\n2. Atau buat API Key Gemini baru di aistudio.google.com dengan Project Baru.'
+      '⚠️ Quota Gemini API Key Anda telah habis / terkena Rate Limit (429).\n\n💡 SOLUSI API KEY GRATIS TANPA LIMIT:\n1. Gunakan Provider "OpenRouter" di Pengaturan AI ➔ Dapatkan API Key Gratis di openrouter.ai (Bebas limit 429 Google).\n2. Atau pilih model gemini-2.5-flash di Pengaturan AI.'
     )
   }
 
@@ -81,9 +83,9 @@ export async function callGemini(
 }
 
 export const GEMINI_MODELS = [
-  { value: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash 8B (Ringan, Hemat Quota & Cepat)' },
-  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Gratis & Stabil)' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Terbaru)' },
-  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
-  { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Lebih Pintar)' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Rekomendasi Utama - Cepat & Efisien)' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Analisis Kompleks & Laporan Mendalam)' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Stabil)' },
+  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  { value: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash 8B (Ringan)' },
 ]
