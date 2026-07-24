@@ -2397,7 +2397,11 @@ export default function AffiliateScreen() {
           {/* COMPARISON VIEW                             */}
           {/* ═══════════════════════════════════════════ */}
           {view === "comparison" && (
-            <ComparisonView data={mergedMonths} />
+            <ComparisonView
+              data={mergedMonths}
+              supabaseCreators={supabaseCreators}
+              storeId={activeStore?.id}
+            />
           )}
 
           {/* RETENTION VIEW (ENHANCED) */}
@@ -2591,7 +2595,15 @@ function EmptyAffiliate({ onUpload }: {
   );
 }
 
-function ComparisonView({ data }: { data: AffiliateMonthDataWithStore[] }) {
+function ComparisonView({
+  data,
+  supabaseCreators = [],
+  storeId,
+}: {
+  data: AffiliateMonthDataWithStore[];
+  supabaseCreators?: AffiliateCreatorItem[];
+  storeId?: string;
+}) {
   const sorted = [...data].sort((a, b) => a.periodRaw.localeCompare(b.periodRaw));
 
   // Build unique period+platform options
@@ -2610,6 +2622,53 @@ function ComparisonView({ data }: { data: AffiliateMonthDataWithStore[] }) {
 
   const prev = sorted.find((d) => `${d.platform || 'all'}-${d.periodRaw}` === prevKey) || sorted[sorted.length - 2];
   const latest = sorted.find((d) => `${d.platform || 'all'}-${d.periodRaw}` === latestKey) || sorted[sorted.length - 1];
+
+  const [prevCreators, setPrevCreators] = useState<AffiliateCreatorItem[]>([]);
+  const [latestCreators, setLatestCreators] = useState<AffiliateCreatorItem[]>([]);
+  const [isLoadingCreators, setIsLoadingCreators] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCreators() {
+      if (!prev || !latest) return;
+      setIsLoadingCreators(true);
+
+      const extractCreators = async (month: AffiliateMonthDataWithStore) => {
+        if (month.creators && month.creators.length > 0) {
+          return month.creators;
+        }
+        const pRaw = month.periodRaw.split(" ~ ")[0]?.slice(0, 7) || month.periodRaw;
+        const matched = supabaseCreators.filter(
+          (c) => ((c as any).periodRaw || (c as any).period || "").includes(pRaw)
+        );
+        if (matched.length > 0) {
+          return matched;
+        }
+        if (storeId) {
+          try {
+            return await loadAffiliateCreators(storeId, pRaw, month.platform);
+          } catch {
+            return [];
+          }
+        }
+        return [];
+      };
+
+      const [pRes, lRes] = await Promise.all([
+        extractCreators(prev),
+        extractCreators(latest),
+      ]);
+
+      if (!cancelled) {
+        setPrevCreators(pRes);
+        setLatestCreators(lRes);
+        setIsLoadingCreators(false);
+      }
+    }
+
+    loadCreators();
+    return () => { cancelled = true; };
+  }, [prev, latest, supabaseCreators, storeId]);
 
   if (data.length < 2) {
     return (
@@ -2644,6 +2703,32 @@ function ComparisonView({ data }: { data: AffiliateMonthDataWithStore[] }) {
     { label: "GMV Product Card", curr: latest.summary.productCardGMV, prev: prev.summary.productCardGMV, fmt: fRp },
     { label: "Top Kreator GMV", curr: latest.summary.topCreatorGMV, prev: prev.summary.topCreatorGMV, fmt: fRp },
   ];
+
+  const newCreators = (() => {
+    const prevNames = new Set(prevCreators.map((c) => c.creatorUsername));
+    const list = latestCreators
+      .filter((c) => !prevNames.has(c.creatorUsername) && c.affiliateGMV > 0)
+      .sort((a, b) => b.affiliateGMV - a.affiliateGMV);
+    const seen = new Set<string>();
+    return list.filter((c) => {
+      if (seen.has(c.creatorUsername)) return false;
+      seen.add(c.creatorUsername);
+      return true;
+    });
+  })();
+
+  const lostCreators = (() => {
+    const latestNames = new Set(latestCreators.map((c) => c.creatorUsername));
+    const list = prevCreators
+      .filter((c) => !latestNames.has(c.creatorUsername) && c.affiliateGMV > 0)
+      .sort((a, b) => b.affiliateGMV - a.affiliateGMV);
+    const seen = new Set<string>();
+    return list.filter((c) => {
+      if (seen.has(c.creatorUsername)) return false;
+      seen.add(c.creatorUsername);
+      return true;
+    });
+  })();
 
   return (
     <div className="space-y-6">
@@ -2721,45 +2806,54 @@ function ComparisonView({ data }: { data: AffiliateMonthDataWithStore[] }) {
       {/* New / Lost Creators */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border p-5">
-          <h3 className="font-semibold text-green-700 mb-3 flex items-center gap-2">
-            <ArrowUpRight className="w-4 h-4" />
-            Kreator Baru (ada di {latest.period}, tidak di {prev.period})
+          <h3 className="font-semibold text-green-700 mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <ArrowUpRight className="w-4 h-4" />
+              Kreator Baru (ada di {latest.period}, tidak di {prev.period})
+            </span>
+            <span className="text-xs font-bold bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full">
+              {newCreators.length} Kreator
+            </span>
           </h3>
           <div className="space-y-1 max-h-64 overflow-y-auto">
-            {(() => {
-              const prevNames = new Set(prev.creators.map((c) => c.creatorUsername));
-              const newCreators = latest.creators
-                .filter((c) => !prevNames.has(c.creatorUsername) && c.affiliateGMV > 0)
-                .sort((a, b) => b.affiliateGMV - a.affiliateGMV);
-              if (!newCreators.length) return <p className="text-sm text-gray-400">Tidak ada kreator baru</p>;
-              return newCreators.slice(0, 20).map((c) => (
+            {isLoadingCreators ? (
+              <div className="text-xs text-gray-400 py-6 text-center animate-pulse">Memuat data perbandingan kreator...</div>
+            ) : newCreators.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">Tidak ada kreator baru</p>
+            ) : (
+              newCreators.slice(0, 50).map((c) => (
                 <div key={c.creatorUsername} className="flex justify-between text-sm py-1 border-b border-gray-50">
-                  <span className="text-gray-700">@{c.creatorUsername}</span>
-                  <span className="font-medium text-green-600">{fRp(c.affiliateGMV)}</span>
+                  <span className="text-gray-700 font-medium">@{c.creatorUsername}</span>
+                  <span className="font-bold text-green-600">{fRp(c.affiliateGMV)}</span>
                 </div>
-              ));
-            })()}
+              ))
+            )}
           </div>
         </div>
+
         <div className="bg-white rounded-xl border p-5">
-          <h3 className="font-semibold text-red-700 mb-3 flex items-center gap-2">
-            <ArrowDownRight className="w-4 h-4" />
-            Kreator Hilang (ada di {prev.period}, tidak di {latest.period})
+          <h3 className="font-semibold text-red-700 mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <ArrowDownRight className="w-4 h-4" />
+              Kreator Hilang (ada di {prev.period}, tidak di {latest.period})
+            </span>
+            <span className="text-xs font-bold bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full">
+              {lostCreators.length} Kreator
+            </span>
           </h3>
           <div className="space-y-1 max-h-64 overflow-y-auto">
-            {(() => {
-              const latestNames = new Set(latest.creators.map((c) => c.creatorUsername));
-              const lostCreators = prev.creators
-                .filter((c) => !latestNames.has(c.creatorUsername) && c.affiliateGMV > 0)
-                .sort((a, b) => b.affiliateGMV - a.affiliateGMV);
-              if (!lostCreators.length) return <p className="text-sm text-gray-400">Tidak ada kreator yang hilang</p>;
-              return lostCreators.slice(0, 20).map((c) => (
+            {isLoadingCreators ? (
+              <div className="text-xs text-gray-400 py-6 text-center animate-pulse">Memuat data perbandingan kreator...</div>
+            ) : lostCreators.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">Tidak ada kreator yang hilang</p>
+            ) : (
+              lostCreators.slice(0, 50).map((c) => (
                 <div key={c.creatorUsername} className="flex justify-between text-sm py-1 border-b border-gray-50">
-                  <span className="text-gray-700">@{c.creatorUsername}</span>
-                  <span className="font-medium text-red-600">{fRp(c.affiliateGMV)}</span>
+                  <span className="text-gray-700 font-medium">@{c.creatorUsername}</span>
+                  <span className="font-bold text-red-600">{fRp(c.affiliateGMV)}</span>
                 </div>
-              ));
-            })()}
+              ))
+            )}
           </div>
         </div>
       </div>
