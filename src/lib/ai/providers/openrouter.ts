@@ -5,10 +5,11 @@ export async function callOpenRouter(
   messages: { role: string; content: string }[],
   model: string = 'google/gemini-flash-1.5',
   temperature: number = 0.7,
-  maxTokens: number = 600
+  maxTokens: number = 600,
+  customApiKey?: string
 ): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY tidak ditemukan di .env.local')
+  const apiKey = customApiKey || process.env.OPENROUTER_API_KEY
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY tidak ditemukan. Harap masukan API Key OpenRouter di Pengaturan AI.')
 
   const client = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',

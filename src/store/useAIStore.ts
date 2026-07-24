@@ -1,16 +1,20 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type AIProvider = 'gemini' | 'ollama' | 'openrouter'
-
+export type AIProvider = 'gemini' | 'openai' | 'ollama' | 'openrouter'
 
 export interface AISettings {
   provider: AIProvider
   geminiModel: string
+  geminiApiKey: string
+  openaiModel: string
+  openaiBaseUrl: string
+  openaiApiKey: string
   ollamaModel: string
   ollamaBaseUrl: string
   ollamaApiKey: string
   openrouterModel: string
+  openrouterApiKey: string
   temperature: number
   maxTokens: number
 }
@@ -41,10 +45,15 @@ export const useAIStore = create<AIStore>()(
       settings: {
         provider: 'gemini',
         geminiModel: 'gemini-1.5-flash',
+        geminiApiKey: '',
+        openaiModel: 'gpt-4o-mini',
+        openaiBaseUrl: 'https://api.openai.com/v1',
+        openaiApiKey: '',
         ollamaModel: 'llama3.2',
         ollamaBaseUrl: 'http://localhost:11434',
         ollamaApiKey: '',
         openrouterModel: 'google/gemini-flash-1.5',
+        openrouterApiKey: '',
         temperature: 0.7,
         maxTokens: 600,
       },

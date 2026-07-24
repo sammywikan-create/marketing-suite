@@ -5,10 +5,11 @@ export async function callGemini(
   messages: { role: string; content: string }[],
   model: string = 'gemini-1.5-flash',
   temperature: number = 0.7,
-  maxTokens: number = 600
+  maxTokens: number = 600,
+  customApiKey?: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('GEMINI_API_KEY tidak ditemukan di .env.local')
+  const apiKey = customApiKey || process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('API Key Gemini tidak ditemukan. Harap masukan API Key Gemini di Pengaturan AI (aistudio.google.com) atau .env.local')
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const genModel = genAI.getGenerativeModel({

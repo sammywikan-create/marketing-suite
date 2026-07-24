@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callGemini } from '@/lib/ai/providers/gemini';
+import { callOpenAI } from '@/lib/ai/providers/openai';
 import { callOllama } from '@/lib/ai/providers/ollama';
 import { callOpenRouter } from '@/lib/ai/providers/openrouter';
 
@@ -150,6 +151,18 @@ export async function POST(req: NextRequest) {
           SYSTEM_PROMPT, messages,
           settings?.geminiModel || 'gemini-1.5-flash',
           settings?.temperature ?? 0.5,
+          Math.max(settings?.maxTokens || 2000, 2000),
+          settings?.geminiApiKey
+        );
+        break;
+
+      case 'openai':
+        content = await callOpenAI(
+          SYSTEM_PROMPT, messages,
+          settings?.openaiModel || 'gpt-4o-mini',
+          settings?.openaiBaseUrl || 'https://api.openai.com/v1',
+          settings?.openaiApiKey,
+          settings?.temperature ?? 0.5,
           Math.max(settings?.maxTokens || 2000, 2000)
         );
         break;
@@ -178,14 +191,15 @@ export async function POST(req: NextRequest) {
           SYSTEM_PROMPT, messages,
           settings?.openrouterModel || 'google/gemini-flash-1.5',
           settings?.temperature ?? 0.5,
-          Math.max(settings?.maxTokens || 2000, 2000)
+          Math.max(settings?.maxTokens || 2000, 2000),
+          settings?.openrouterApiKey
         );
         break;
 
       default:
         // Last resort: gunakan Gemini jika GEMINI_API_KEY ada
         if (process.env.GEMINI_API_KEY) {
-          content = await callGemini(SYSTEM_PROMPT, messages, 'gemini-1.5-flash', 0.5, 2000);
+          content = await callGemini(SYSTEM_PROMPT, messages, 'gemini-1.5-flash', 0.5, 2000, settings?.geminiApiKey);
         } else {
           return NextResponse.json({ error: `Provider '${provider}' tidak dikenal. Konfigurasikan AI di menu AI Analyst.` }, { status: 400 });
         }

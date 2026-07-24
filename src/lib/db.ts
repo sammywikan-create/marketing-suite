@@ -1029,3 +1029,46 @@ export async function saveRetentionTarget(
   if (error) throw error
   return data as RetentionTarget
 }
+
+// ─── AI SETTINGS SYNC (Supabase) ──────────────────────
+export async function saveAISettingsDb(settings: Record<string, any>) {
+  if (!isSupabaseConfigured) return
+  try {
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert(
+        { key: 'ai_settings', value: settings, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      )
+    if (error) {
+      await supabase
+        .from('ai_settings')
+        .upsert(
+          { id: 'default', settings, updated_at: new Date().toISOString() },
+          { onConflict: 'id' }
+        )
+    }
+  } catch (err) {
+    console.warn('[Supabase AI Settings] Save skipped:', err)
+  }
+}
+
+export async function loadAISettingsDb(): Promise<Record<string, any> | null> {
+  if (!isSupabaseConfigured) return null
+  try {
+    const { data: d1 } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'ai_settings')
+      .maybeSingle()
+    if (d1?.value) return d1.value
+
+    const { data: d2 } = await supabase
+      .from('ai_settings')
+      .select('settings')
+      .eq('id', 'default')
+      .maybeSingle()
+    if (d2?.settings) return d2.settings
+  } catch {}
+  return null
+}

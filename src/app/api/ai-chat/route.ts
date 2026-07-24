@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { callGemini } from '@/lib/ai/providers/gemini'
+import { callOpenAI } from '@/lib/ai/providers/openai'
 import { callOllama } from '@/lib/ai/providers/ollama'
 import { callOpenRouter } from '@/lib/ai/providers/openrouter'
 
@@ -19,6 +20,17 @@ export async function POST(req: NextRequest) {
         content = await callGemini(
           systemPrompt, messages,
           settings.geminiModel || 'gemini-1.5-flash',
+          settings.temperature ?? 0.7,
+          settings.maxTokens ?? 600,
+          settings.geminiApiKey
+        )
+        break
+      case 'openai':
+        content = await callOpenAI(
+          systemPrompt, messages,
+          settings.openaiModel || 'gpt-4o-mini',
+          settings.openaiBaseUrl || 'https://api.openai.com/v1',
+          settings.openaiApiKey,
           settings.temperature ?? 0.7,
           settings.maxTokens ?? 600
         )
@@ -44,7 +56,8 @@ export async function POST(req: NextRequest) {
           systemPrompt, messages,
           settings.openrouterModel || 'google/gemini-flash-1.5',
           settings.temperature ?? 0.7,
-          settings.maxTokens ?? 600
+          settings.maxTokens ?? 600,
+          settings.openrouterApiKey
         )
         break
       default:
