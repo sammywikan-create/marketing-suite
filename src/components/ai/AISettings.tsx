@@ -194,12 +194,14 @@ export function AISettings({ onClose }: { onClose: () => void }) {
                 className="w-full border border-blue-300 dark:border-blue-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="Masukkan Gemini API Key Anda (AIzaSy...)"
               />
-              <div className="mt-2 bg-blue-100/70 dark:bg-blue-900/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
-                💡 <strong>Dapatkan API key gratis di:</strong>{' '}
-                <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="underline font-bold text-blue-600 dark:text-blue-400">
-                  aistudio.google.com
-                </a>.
-                <br />Key tersimpan secara aman di database Supabase sehingga Anda tidak perlu mengisinya lagi saat membuka website di komputer baru.
+              <div className="mt-2 bg-blue-100/70 dark:bg-blue-900/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200 leading-relaxed space-y-1">
+                <p>💡 <strong>Dapatkan API key gratis di:</strong> <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="underline font-bold text-blue-600 dark:text-blue-400">aistudio.google.com</a>.</p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-2 rounded border border-amber-200 dark:border-amber-800 mt-1">
+                  ⚠️ <strong>Jika terkena Error 429 (Quota Exceeded):</strong>
+                  <br />• Pilih model <strong>Gemini 1.5 Flash 8B</strong> (kuota gratis lebih besar).
+                  <br />• Atau alihkan ke <strong>Provider OpenRouter</strong> (gratis 100% tanpa terkena limit kuota Google).
+                </p>
+                <p className="text-[11px] text-gray-500">Key tersimpan di Supabase & LocalStorage sehingga otomatis aktif di semua komputer Anda.</p>
               </div>
             </div>
           </div>

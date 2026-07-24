@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 export async function callGemini(
   systemPrompt: string,
   messages: { role: string; content: string }[],
-  model: string = 'gemini-2.0-flash',
+  model: string = 'gemini-1.5-flash',
   temperature: number = 0.7,
   maxTokens: number = 600,
   customApiKey?: string
@@ -15,14 +15,15 @@ export async function callGemini(
 
   const genAI = new GoogleGenerativeAI(apiKey)
 
-  // Candidate models to try automatically if requested model returns 404 / not found
+  // Candidate models to try automatically if requested model returns 404 / 429 Quota Exceeded
   const modelsToTry = Array.from(
     new Set([
       model,
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash-8b',
       'gemini-1.5-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash-latest',
       'gemini-1.5-pro',
     ])
   )
@@ -52,22 +53,37 @@ export async function callGemini(
     } catch (err: any) {
       lastError = err
       const msg = String(err?.message || '').toLowerCase()
-      const is404 = msg.includes('404') || msg.includes('not found') || err?.status === 404
-      if (!is404) {
-        // If error is invalid API key or quota limits, don't try other models
+      const isRetryable =
+        msg.includes('404') ||
+        msg.includes('not found') ||
+        msg.includes('429') ||
+        msg.includes('quota') ||
+        msg.includes('limit') ||
+        err?.status === 404 ||
+        err?.status === 429
+
+      if (!isRetryable) {
+        // If error is invalid API key or permission error, throw immediately
         throw err
       }
-      console.warn(`[Gemini Provider] Model '${m}' returned 404, trying fallback model...`)
+      console.warn(`[Gemini Provider] Model '${m}' returned retryable error (${err?.status || 'quota/404'}), trying fallback model...`)
     }
+  }
+
+  const errMsg = String(lastError?.message || '').toLowerCase()
+  if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('limit')) {
+    throw new Error(
+      '⚠️ Quota Gemini API Key Anda telah habis / terkena Rate Limit (429).\n\n💡 SOLUSI API KEY GRATIS TANPA LIMIT:\n1. Gunakan Provider "OpenRouter" di Pengaturan AI ➔ Dapatkan API Key Gratis di openrouter.ai (Bebas limit 429 Google).\n2. Atau buat API Key Gemini baru di aistudio.google.com dengan Project Baru.'
+    )
   }
 
   throw lastError || new Error('Gagal menghubungi model Gemini. Pastikan API key Anda aktif di aistudio.google.com.')
 }
 
 export const GEMINI_MODELS = [
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Rekomendasi & Cepat)' },
-  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite (Sangat Cepat)' },
-  { value: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash Latest' },
-  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  { value: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash 8B (Ringan, Hemat Quota & Cepat)' },
+  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Gratis & Stabil)' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Terbaru)' },
+  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
   { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Lebih Pintar)' },
 ]
