@@ -21,7 +21,7 @@ interface CachedInsight {
   periodKey: string;
 }
 
-const CACHE_KEY_PREFIX = "ai-insight:";
+const CACHE_KEY_PREFIX = "ai-insight-v4:";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function loadCached(periodKey: string): CachedInsight | null {
@@ -30,6 +30,7 @@ function loadCached(periodKey: string): CachedInsight | null {
     if (!raw) return null;
     const parsed: CachedInsight = JSON.parse(raw);
     if (Date.now() - parsed.generatedAt > CACHE_TTL_MS) return null;
+    if (!parsed.content || parsed.content.length < 1500) return null;
     return parsed;
   } catch {
     return null;

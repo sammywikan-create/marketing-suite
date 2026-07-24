@@ -11,7 +11,7 @@ export async function callOpenRouter(
   const apiKey = customApiKey || process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY tidak ditemukan. Harap masukan API Key OpenRouter di Pengaturan AI.')
 
-  const effectiveMaxTokens = Math.max(maxTokens || 4000, 4000)
+  const effectiveMaxTokens = Math.max(maxTokens || 8192, 8192)
 
   const client = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',

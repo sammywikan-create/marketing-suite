@@ -31,7 +31,7 @@ export async function callGemini(
     ])
   )
 
-  const effectiveMaxTokens = Math.max(maxTokens || 4000, 4000)
+  const effectiveMaxTokens = Math.max(maxTokens || 8192, 8192)
   let lastError: any = null
 
   for (const m of modelsToTry) {

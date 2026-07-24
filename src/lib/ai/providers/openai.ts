@@ -18,7 +18,7 @@ export async function callOpenAI(
 
   const rawModel = (model || '').trim()
   const selectedModel = rawModel === '*' || !rawModel ? 'gpt-4o-mini' : rawModel
-  const effectiveMaxTokens = Math.max(maxTokens || 4000, 4000)
+  const effectiveMaxTokens = Math.max(maxTokens || 8192, 8192)
 
   const endpoint = `${cleanBaseUrl}/chat/completions`
 
