@@ -13,15 +13,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    const effectiveMaxTokens = Math.max(settings.maxTokens || 4000, 4000)
     let content: string
 
     switch (settings.provider) {
       case 'gemini':
         content = await callGemini(
           systemPrompt, messages,
-          settings.geminiModel || 'gemini-1.5-flash',
+          settings.geminiModel || 'gemini-2.5-flash',
           settings.temperature ?? 0.7,
-          settings.maxTokens ?? 600,
+          effectiveMaxTokens,
           settings.geminiApiKey
         )
         break
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
           settings.openaiBaseUrl || 'https://api.openai.com/v1',
           settings.openaiApiKey,
           settings.temperature ?? 0.7,
-          settings.maxTokens ?? 600
+          effectiveMaxTokens
         )
         break
       case 'ollama': {
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
           settings.ollamaModel || 'llama3.2',
           baseUrl,
           settings.temperature ?? 0.7,
-          settings.maxTokens ?? 600,
+          effectiveMaxTokens,
           settings.ollamaApiKey
         )
         break
@@ -56,17 +57,17 @@ export async function POST(req: NextRequest) {
           systemPrompt, messages,
           settings.openrouterModel || 'google/gemini-flash-1.5',
           settings.temperature ?? 0.7,
-          settings.maxTokens ?? 600,
+          effectiveMaxTokens,
           settings.openrouterApiKey
         )
         break
       default:
-        return NextResponse.json({ error: 'Provider tidak dikenal' }, { status: 400 })
+        return NextResponse.json({ error: 'Provider AI tidak dikenal' }, { status: 400 })
     }
 
     return NextResponse.json({ content })
   } catch (err: any) {
-    const message = err?.message || 'Terjadi kesalahan pada server AI'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('AI Chat Route Error:', err)
+    return NextResponse.json({ error: err.message || 'Error processing request' }, { status: 500 })
   }
 }

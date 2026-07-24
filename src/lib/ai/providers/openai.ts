@@ -5,7 +5,7 @@ export async function callOpenAI(
   baseUrl: string = 'https://api.openai.com/v1',
   apiKey?: string,
   temperature: number = 0.7,
-  maxTokens: number = 600
+  maxTokens: number = 4000
 ): Promise<string> {
   const finalKey = (apiKey || process.env.OPENAI_API_KEY || '').trim()
   if (!finalKey) {
@@ -18,6 +18,7 @@ export async function callOpenAI(
 
   const rawModel = (model || '').trim()
   const selectedModel = rawModel === '*' || !rawModel ? 'gpt-4o-mini' : rawModel
+  const effectiveMaxTokens = Math.max(maxTokens || 4000, 4000)
 
   const endpoint = `${cleanBaseUrl}/chat/completions`
 
@@ -31,7 +32,7 @@ export async function callOpenAI(
       })),
     ],
     temperature,
-    max_tokens: maxTokens,
+    max_tokens: effectiveMaxTokens,
   }
 
   const res = await fetch(endpoint, {

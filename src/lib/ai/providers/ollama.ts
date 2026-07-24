@@ -35,7 +35,7 @@ export async function callOllama(
       think: false,
       options: {
         temperature,
-        num_predict: maxTokens,
+        num_predict: Math.max(maxTokens || 4000, 4000),
       },
     }),
   })

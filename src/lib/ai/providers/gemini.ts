@@ -5,7 +5,7 @@ export async function callGemini(
   messages: { role: string; content: string }[],
   model: string = 'gemini-2.5-flash',
   temperature: number = 0.7,
-  maxTokens: number = 600,
+  maxTokens: number = 4000,
   customApiKey?: string
 ): Promise<string> {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY
@@ -31,6 +31,7 @@ export async function callGemini(
     ])
   )
 
+  const effectiveMaxTokens = Math.max(maxTokens || 4000, 4000)
   let lastError: any = null
 
   for (const m of modelsToTry) {
@@ -40,7 +41,7 @@ export async function callGemini(
         systemInstruction: systemPrompt,
         generationConfig: {
           temperature,
-          maxOutputTokens: maxTokens,
+          maxOutputTokens: effectiveMaxTokens,
         },
       })
 

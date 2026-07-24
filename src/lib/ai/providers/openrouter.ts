@@ -5,11 +5,13 @@ export async function callOpenRouter(
   messages: { role: string; content: string }[],
   model: string = 'google/gemini-flash-1.5',
   temperature: number = 0.7,
-  maxTokens: number = 600,
+  maxTokens: number = 4000,
   customApiKey?: string
 ): Promise<string> {
   const apiKey = customApiKey || process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY tidak ditemukan. Harap masukan API Key OpenRouter di Pengaturan AI.')
+
+  const effectiveMaxTokens = Math.max(maxTokens || 4000, 4000)
 
   const client = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
@@ -30,7 +32,7 @@ export async function callOpenRouter(
       })),
     ],
     temperature,
-    max_tokens: maxTokens,
+    max_tokens: effectiveMaxTokens,
   })
 
   return response.choices[0]?.message?.content || 'Tidak ada respons.'
@@ -38,11 +40,7 @@ export async function callOpenRouter(
 
 export const OPENROUTER_MODELS = [
   { value: 'google/gemini-flash-1.5', label: 'Gemini 1.5 Flash (Google) - Gratis' },
-  { value: 'google/gemini-pro-1.5', label: 'Gemini 1.5 Pro (Google)' },
   { value: 'meta-llama/llama-3.2-11b-vision-instruct:free', label: 'Llama 3.2 11B (Meta) - Gratis' },
-  { value: 'mistralai/mistral-7b-instruct:free', label: 'Mistral 7B - Gratis' },
   { value: 'deepseek/deepseek-r1:free', label: 'DeepSeek R1 - Gratis' },
-  { value: 'anthropic/claude-3-haiku', label: 'Claude 3 Haiku (Anthropic)' },
-  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (OpenAI)' },
-  { value: 'openai/gpt-4o', label: 'GPT-4o (OpenAI)' },
+  { value: 'mistralai/mistral-7b-instruct:free', label: 'Mistral 7B - Gratis' },
 ]
