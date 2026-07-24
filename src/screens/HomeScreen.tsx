@@ -79,16 +79,35 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   }, [stores, allAffiliateData]);
 
   // ─── PERIOD SELECTOR (chronological sort) ─────────────
-  const allPeriods = useMemo(
-    () => [...new Set(allAffiliateData.map((d) => d.period))].sort((a, b) => {
+  const [lhPeriods, setLhPeriods] = useState<string[]>([]);
+  useEffect(() => {
+    listLaporanHarianPeriods().then((list) => {
+      if (list && list.length > 0) {
+        setLhPeriods(list.map((p) => p.period));
+      }
+    }).catch(() => {});
+  }, []);
+
+  const allPeriods = useMemo(() => {
+    const periodsSet = new Set<string>();
+    allAffiliateData.forEach((d) => { if (d.period) periodsSet.add(d.period); });
+    lhPeriods.forEach((p) => { if (p) periodsSet.add(p); });
+    stores.forEach((s) => {
+      if (Array.isArray(s.videoData)) {
+        s.videoData.forEach((v) => { if (v.periodRaw) periodsSet.add(v.periodRaw); });
+      }
+      if (Array.isArray(s.overviewData)) {
+        s.overviewData.forEach((o) => { if (o.period?.month) periodsSet.add(o.period.month); });
+      }
+    });
+    return [...periodsSet].sort((a, b) => {
       const pa = a.match(/(\d{4})-(\d{2})/);
       const pb = b.match(/(\d{4})-(\d{2})/);
       if (pa && pb) return a.localeCompare(b);
-      // fallback: parse as date
       return new Date(a + "-01").getTime() - new Date(b + "-01").getTime();
-    }),
-    [allAffiliateData]
-  );
+    });
+  }, [allAffiliateData, lhPeriods, stores]);
+
   const latestPeriod = allPeriods[allPeriods.length - 1] || "";
   const [selectedPeriod, setSelectedPeriod] = useState("");
 
@@ -676,6 +695,96 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     { key: "ai-evaluasi", icon: "🤖", label: "AI Evaluasi" },
   ];
 
+
+
+  // ─── TOP VIDEO SHOPPABLE PERFORMERS ─────────────────────
+  const topVideos = useMemo(() => {
+    const list: Array<{
+      storeName: string;
+      creatorName: string;
+      videoId: string;
+      videoInfo: string;
+      vv: number;
+      gmv: number;
+      orders: number;
+      gpm: number;
+      ctr: number;
+    }> = [];
+    stores.forEach((s) => {
+      if (Array.isArray(s.videoData)) {
+        s.videoData.forEach((vd) => {
+          if (Array.isArray(vd.videos)) {
+            vd.videos.forEach((v: any) => {
+              const gmvVal = v.grossRevenue || v.gmv || 0;
+              if (gmvVal > 0) {
+                list.push({
+                  storeName: s.name,
+                  creatorName: v.creatorName || v.creatorId || "Unknown Creator",
+                  videoId: v.videoId || "",
+                  videoInfo: v.videoInfo || "Video Shoppable",
+                  vv: v.vv || 0,
+                  gmv: gmvVal,
+                  orders: v.videoOrders || 0,
+                  gpm: v.gpm || (v.vv > 0 ? (gmvVal / v.vv) * 1000 : 0),
+                  ctr: v.ctr || 0,
+                });
+              }
+            });
+          }
+        });
+      }
+    });
+    return list.sort((a, b) => b.gmv - a.gmv).slice(0, 5);
+  }, [stores]);
+
+  // ─── TARGET PACE & RUN-RATE forecast ─────────────────────
+  const targetPace = useMemo(() => {
+    if (targetGMV <= 0) return null;
+    const daysElapsed = Math.max(1, lhData?.summary?.hari || new Date().getDate());
+    let totalDaysInMonth = 30;
+    if (activePeriod && /^\d{4}-\d{2}$/.test(activePeriod)) {
+      const [yr, mo] = activePeriod.split("-").map(Number);
+      totalDaysInMonth = new Date(yr, mo, 0).getDate();
+    }
+    const daysRemaining = Math.max(1, totalDaysInMonth - daysElapsed);
+    const actualDailyGMV = agg.totalGMV / daysElapsed;
+    const targetRemainingGMV = Math.max(0, targetGMV - agg.totalGMV);
+    const requiredDailyGMV = targetRemainingGMV / daysRemaining;
+    const paceRatio = requiredDailyGMV > 0 ? actualDailyGMV / requiredDailyGMV : 1;
+    const status = targetProgress >= 100 ? "ACHIEVED" : paceRatio >= 1.0 ? "AHEAD" : paceRatio >= 0.8 ? "ON_TRACK" : "BEHIND";
+
+    return {
+      daysElapsed,
+      totalDaysInMonth,
+      daysRemaining,
+      actualDailyGMV,
+      requiredDailyGMV,
+      targetRemainingGMV,
+      paceRatio,
+      status,
+    };
+  }, [targetGMV, targetProgress, agg.totalGMV, lhData, activePeriod]);
+
+  // ─── MARKETING EFFICIENCY RATIO (MER) ────────────────────
+  const merData = useMemo(() => {
+    const omzet = heroCards.displayOmzet > 0 ? heroCards.displayOmzet : agg.totalGMV;
+    const adSpend = lhData?.summary?.total_biaya_iklan || 0;
+    const commSpend = agg.totalCommission || 0;
+    const combinedSpend = adSpend + commSpend;
+    const mer = combinedSpend > 0 ? omzet / combinedSpend : 0;
+    const marketingCostPct = omzet > 0 ? (combinedSpend / omzet) * 100 : 0;
+    const netContribution = omzet - combinedSpend;
+    return {
+      omzet,
+      adSpend,
+      commSpend,
+      combinedSpend,
+      mer,
+      marketingCostPct,
+      netContribution,
+    };
+  }, [heroCards.displayOmzet, agg, lhData]);
+
   // ─── P&L CALCULATIONS ──────────────────────────────────
   const pnl = useMemo(() => {
     const s = lhData?.summary;
@@ -1247,6 +1356,54 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                     <button onClick={() => { setGoalsEditing(true); setGoalsForm({}); }} className="mt-3 text-xs bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition">＋ Set Target Sekarang</button>
                   </div>
                 )}
+
+                {/* Target Pace & Run-Rate Calculator */}
+                {targetPace && (
+                  <div className="mt-4 pt-4 border-t border-indigo-100/80">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-800">⚡ Target Pace &amp; Proyeksi Harian</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          targetPace.status === "ACHIEVED" ? "bg-green-100 text-green-700" :
+                          targetPace.status === "AHEAD" ? "bg-emerald-100 text-emerald-700" :
+                          targetPace.status === "ON_TRACK" ? "bg-blue-100 text-blue-700" :
+                          "bg-red-100 text-red-700"
+                        }`}>
+                          {targetPace.status === "ACHIEVED" ? "🎉 Target Tercapai!" :
+                           targetPace.status === "AHEAD" ? "🚀 Ahead of Pace" :
+                           targetPace.status === "ON_TRACK" ? "✅ On Track" : "⚠️ Behind Pace"}
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-400">
+                        Hari ke-{targetPace.daysElapsed} dari {targetPace.totalDaysInMonth} (Sisa {targetPace.daysRemaining} hari)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="bg-white/80 rounded-xl p-3 border border-indigo-50">
+                        <div className="text-gray-400 text-[11px]">Rata-rata GMV Saat Ini</div>
+                        <div className="text-sm font-black text-gray-900 mt-0.5">{fRp(targetPace.actualDailyGMV)}<span className="text-[10px] font-normal text-gray-400">/hari</span></div>
+                        <div className="text-[10px] text-gray-400 mt-1">Berdasarkan {targetPace.daysElapsed} hari berjalan</div>
+                      </div>
+
+                      <div className="bg-white/80 rounded-xl p-3 border border-indigo-50">
+                        <div className="text-gray-400 text-[11px]">Target GMV Harian Wajib</div>
+                        <div className="text-sm font-black text-indigo-600 mt-0.5">{fRp(targetPace.requiredDailyGMV)}<span className="text-[10px] font-normal text-gray-400">/hari</span></div>
+                        <div className="text-[10px] text-gray-400 mt-1">Untuk capai sisa {fRp(targetPace.targetRemainingGMV)}</div>
+                      </div>
+
+                      <div className="bg-white/80 rounded-xl p-3 border border-indigo-50">
+                        <div className="text-gray-400 text-[11px]">Rasio Kecepatan (Pace)</div>
+                        <div className={`text-sm font-black mt-0.5 ${targetPace.paceRatio >= 1 ? "text-green-600" : "text-amber-600"}`}>
+                          {(targetPace.paceRatio * 100).toFixed(0)}% dari laju ideal
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-1">
+                          {targetPace.paceRatio >= 1 ? "Laju penjualan melampaui target" : `Perlu tingkatkan +${fRp(Math.max(0, targetPace.requiredDailyGMV - targetPace.actualDailyGMV))}/hari`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -1411,6 +1568,49 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             )}
           </div>
 
+          {/* Marketing Efficiency Ratio (MER) Card */}
+          <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <span className="text-[10px] text-indigo-300 font-bold tracking-wider uppercase">Analisis Efisiensi Pemasaran</span>
+                <h3 className="text-base font-extrabold mt-0.5 flex items-center gap-2">
+                  ⚡ Blended Marketing Efficiency Ratio (MER)
+                  <MetricHelpTooltip title="MER (Marketing Efficiency Ratio)" desc="Total Omzet dibagi Total Pengeluaran Pemasaran Gabungan (Biaya Iklan + Komisi Affiliate)." formula="Total Omzet / (Biaya Iklan + Komisi Affiliate)" benchmark=">4.0x (Sangat Efisien), 3.0x-3.9x (Sehat), <2.5x (Perlu Evaluasi)" dark />
+                </h3>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-black text-emerald-400">{merData.mer > 0 ? `${merData.mer.toFixed(2)}×` : "—"}</div>
+                <div className="text-[10px] text-indigo-200">Blended MER</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mt-3">
+              <div className="bg-white/10 rounded-xl p-3 backdrop-blur border border-white/10">
+                <div className="text-indigo-200 text-[10px]">Total Combined Spend</div>
+                <div className="text-sm font-bold text-white mt-0.5">{fRp(merData.combinedSpend)}</div>
+                <div className="text-[9px] text-indigo-300 mt-0.5">Iklan + Komisi Affiliate</div>
+              </div>
+
+              <div className="bg-white/10 rounded-xl p-3 backdrop-blur border border-white/10">
+                <div className="text-indigo-200 text-[10px]">Marketing Cost %</div>
+                <div className="text-sm font-bold text-white mt-0.5">{fP(merData.marketingCostPct)}</div>
+                <div className="text-[9px] text-indigo-300 mt-0.5">Dari total omzet</div>
+              </div>
+
+              <div className="bg-white/10 rounded-xl p-3 backdrop-blur border border-white/10">
+                <div className="text-indigo-200 text-[10px]">Porsi Biaya Iklan</div>
+                <div className="text-sm font-bold text-amber-300 mt-0.5">{fRp(merData.adSpend)}</div>
+                <div className="text-[9px] text-indigo-300 mt-0.5">{fP(merData.combinedSpend > 0 ? (merData.adSpend / merData.combinedSpend) * 100 : 0)} dari total spend</div>
+              </div>
+
+              <div className="bg-white/10 rounded-xl p-3 backdrop-blur border border-white/10">
+                <div className="text-indigo-200 text-[10px]">Porsi Komisi Affiliate</div>
+                <div className="text-sm font-bold text-purple-300 mt-0.5">{fRp(merData.commSpend)}</div>
+                <div className="text-[9px] text-indigo-300 mt-0.5">{fP(merData.combinedSpend > 0 ? (merData.commSpend / merData.combinedSpend) * 100 : 0)} dari total spend</div>
+              </div>
+            </div>
+          </div>
+
           {/* Unit Economics */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -1488,7 +1688,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       {activeExecTab === "kreator-channel" && (
         <div className="animate-fade-slide-up space-y-5" key="kreator-channel">
 
-          {/* 3-column: Top5 + Channel Donut + Segmentasi */}
+          {/* 3-column: Top5 Kreator + Channel Donut + Segmentasi */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* Top 5 Kreator */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
@@ -1571,11 +1771,65 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             </div>
           </div>
 
+          {/* Top 5 Video Shoppable Terlaris */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  🎬 Top 5 Video Shoppable Terlaris
+                  <MetricHelpTooltip title="Top Video Shoppable" desc="Daftar video shoppable yang paling banyak menghasilkan GMV penjualan." />
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">Berdasarkan data performa video yang diunggah ke toko</p>
+              </div>
+              <button onClick={() => onNavigate("video-performance")} className="text-xs text-blue-600 hover:underline font-medium">Buka Video Performance →</button>
+            </div>
+            {topVideos.length === 0 ? (
+              <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-dashed border-gray-200 dark:border-gray-600">
+                <span className="text-2xl block mb-2">📹</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Belum ada data Video Performance yang di-upload untuk periode ini.</p>
+                <button onClick={() => onNavigate("video-performance")} className="mt-2 text-xs text-blue-600 hover:underline">Upload Data Video →</button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 dark:border-gray-700 text-gray-500 font-semibold text-left">
+                      <th className="py-2 px-3">Rank &amp; Kreator</th>
+                      <th className="py-2 px-3">Toko</th>
+                      <th className="py-2 px-3 text-right">Views (VV)</th>
+                      <th className="py-2 px-3 text-right">GMV Video</th>
+                      <th className="py-2 px-3 text-right">Orders</th>
+                      <th className="py-2 px-3 text-right">GPM (GMV/1k VV)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topVideos.map((v, i) => (
+                      <tr key={v.videoId + i} className="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
+                        <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                          <div>
+                            <div>@{v.creatorName}</div>
+                            <div className="text-[10px] text-gray-400 font-normal truncate max-w-xs">{v.videoInfo}</div>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-gray-500">{v.storeName}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-700 dark:text-gray-300 font-semibold">{fN(v.vv)}</td>
+                        <td className="py-2.5 px-3 text-right text-emerald-600 font-bold">{fRp(v.gmv)}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-700 dark:text-gray-300 font-semibold">{fN(v.orders)}</td>
+                        <td className="py-2.5 px-3 text-right text-indigo-600 font-semibold">{fRp(v.gpm)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Kontribusi Per Toko */}
           {storeBreakdown.length > 0 && (
             <div>
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">🏪 Kontribusi Per Toko — {formatPeriod(activePeriod)}</h2>
-              <div className={`grid grid-cols-1 ${storeBreakdown.length >= 2 ? "lg:grid-cols-2" : ""} gap-4`}>
+              <div className={`grid grid-cols-1 ${storeBreakdown.length >= 2 ? "lg:grid-cols-2" : ""} gap-4 mb-5`}>
                 {storeBreakdown.map((sd, i) => (
                   <div key={sd.store.id} className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
                     <div className="flex items-center justify-between mb-4">
@@ -1631,6 +1885,61 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                     )}
                   </div>
                 ))}
+              </div>
+
+              {/* Tabel Matriks Perbandingan Toko Komprehensif */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    📋 Matriks Evaluasi &amp; Peringkat Toko
+                    <MetricHelpTooltip title="Matriks Perbandingan Toko" desc="Perbandingan komprehensif performa seluruh toko aktif dalam satu tabel." />
+                  </h3>
+                  <span className="text-xs text-gray-400">{storeBreakdown.length} Toko Aktif</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-gray-100 dark:border-gray-700 text-gray-600 font-bold text-left">
+                        <th className="py-2.5 px-3">Toko</th>
+                        <th className="py-2.5 px-3 text-right">Total GMV</th>
+                        <th className="py-2.5 px-3 text-right">Share %</th>
+                        <th className="py-2.5 px-3 text-right">Net GMV</th>
+                        <th className="py-2.5 px-3 text-right">Refund %</th>
+                        <th className="py-2.5 px-3 text-right">Orders</th>
+                        <th className="py-2.5 px-3 text-right">Kreator</th>
+                        <th className="py-2.5 px-3 text-right">Komisi</th>
+                        <th className="py-2.5 px-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {storeBreakdown.map((sd, i) => {
+                        const statusBadge =
+                          i === 0 ? { label: "⭐ Top Store", color: "bg-yellow-100 text-yellow-800" } :
+                          sd.refundRate > 15 ? { label: "⚠️ High Refund", color: "bg-red-100 text-red-700" } :
+                          sd.share >= 20 ? { label: "🟢 Dominan", color: "bg-green-100 text-green-700" } :
+                          { label: "🔵 Stabil", color: "bg-blue-100 text-blue-700" };
+                        return (
+                          <tr key={sd.store.id} className="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
+                            <td className="py-3 px-3 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                              <span>{sd.store.avatar || "🏪"}</span>
+                              <span>{sd.store.name}</span>
+                            </td>
+                            <td className="py-3 px-3 text-right font-black text-gray-900 dark:text-white">{fRp(sd.gmv)}</td>
+                            <td className="py-3 px-3 text-right font-bold text-blue-600">{fP(sd.share)}</td>
+                            <td className="py-3 px-3 text-right font-semibold text-gray-700 dark:text-gray-300">{fRp(sd.netGMV)}</td>
+                            <td className={`py-3 px-3 text-right font-semibold ${sd.refundRate > 15 ? "text-red-600" : "text-gray-600"}`}>{fP(sd.refundRate)}</td>
+                            <td className="py-3 px-3 text-right text-gray-700 dark:text-gray-300">{fN(sd.orders)}</td>
+                            <td className="py-3 px-3 text-right text-gray-700 dark:text-gray-300">{fN(sd.creators)}</td>
+                            <td className="py-3 px-3 text-right text-indigo-600 font-semibold">{fRp(sd.commission)}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadge.color}`}>{statusBadge.label}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
