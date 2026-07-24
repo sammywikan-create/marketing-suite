@@ -207,44 +207,101 @@ export function AISettings({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* OpenAI Settings */}
+        {/* OpenAI / Compatible Gateway Settings */}
         {settings.provider === 'openai' && (
           <div className="space-y-4 mb-4 p-4 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
-            <div>
-              <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 block mb-1">Model OpenAI</label>
-              <select
-                value={settings.openaiModel || 'gpt-4o-mini'}
-                onChange={e => updateSettings({ openaiModel: e.target.value })}
-                className="w-full border border-gray-300 dark:border-gray-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
-              >
-                {OPENAI_MODELS.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
+            {/* Quick Setup Presets */}
+            <div className="bg-emerald-100/70 dark:bg-emerald-900/40 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800">
+              <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 block mb-2">⚡ Preset Konfigurasi Cepat:</span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSettings({
+                      openaiBaseUrl: 'https://weizerouter.web.id/v1',
+                      openaiApiKey: 'sk-wr-abca6d8bbaec614466eb4cd420be39ea',
+                      openaiModel: 'gpt-4o-mini',
+                    })
+                  }
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1"
+                >
+                  🌐 WeizeRouter Gateway (Otomatis Isi)
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSettings({
+                      openaiBaseUrl: 'https://api.openai.com/v1',
+                      openaiModel: 'gpt-4o-mini',
+                    })
+                  }
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 rounded-lg text-xs font-medium transition-all border border-gray-300 dark:border-gray-700"
+                >
+                  Official OpenAI API
+                </button>
+              </div>
             </div>
 
             <div>
-              <label className="text-sm font-bold text-gray-800 dark:text-white block mb-1">🔑 OpenAI API Key</label>
-              <input
-                type="password"
-                value={settings.openaiApiKey || ''}
-                onChange={e => updateSettings({ openaiApiKey: e.target.value })}
-                className="w-full border border-emerald-300 dark:border-emerald-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="Masukkan OpenAI API Key (sk-...)"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 block mb-1">🌐 OpenAI Base URL</label>
+              <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 block mb-1">🌐 OpenAI / Gateway Base URL</label>
               <input
                 type="text"
                 value={settings.openaiBaseUrl || 'https://api.openai.com/v1'}
                 onChange={e => updateSettings({ openaiBaseUrl: e.target.value })}
-                className="w-full border border-gray-300 dark:border-gray-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="https://api.openai.com/v1"
+                className="w-full border border-gray-300 dark:border-gray-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-xs"
+                placeholder="https://weizerouter.web.id/v1"
               />
               <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                Dapat disesuaikan jika memakai endpoint kustom (misal: vLLM, LMStudio, DeepSeek, Grok).
+                Base URL untuk WeizeRouter: <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono">https://weizerouter.web.id/v1</code>
+              </p>
+            </div>
+
+            <div>
+              <label className="text-sm font-bold text-gray-800 dark:text-white block mb-1">🔑 OpenAI / Gateway API Key</label>
+              <input
+                type="password"
+                value={settings.openaiApiKey || ''}
+                onChange={e => updateSettings({ openaiApiKey: e.target.value })}
+                className="w-full border border-emerald-300 dark:border-emerald-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-xs"
+                placeholder="sk-wr-abca6d8bbaec614466eb4cd420be39ea"
+              />
+              {settings.openaiApiKey ? (
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium mt-1">
+                  ✅ API Key tersimpan otomatis di Supabase & LocalStorage.
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                  ⚠️ API Key belum diisi. Masukkan API Key WeizeRouter / OpenAI Anda.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 block mb-1">
+                🤖 Model ID / List <span className="text-xs text-gray-400 font-normal">(Ketik bebas atau pilih)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={settings.openaiModel || 'gpt-4o-mini'}
+                  onChange={e => updateSettings({ openaiModel: e.target.value })}
+                  list="openai-models-list"
+                  className="flex-1 border border-gray-300 dark:border-gray-700 rounded-lg p-2.5 text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                  placeholder="Isi gpt-4o-mini, *, atau Model ID pilihan Anda"
+                />
+                <datalist id="openai-models-list">
+                  {OPENAI_MODELS.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                  <option value="*" label="* (Semua Model / Gateway Default)" />
+                  <option value="gpt-4o-mini" label="GPT-4o Mini" />
+                  <option value="gpt-4o" label="GPT-4o" />
+                  <option value="deepseek-chat" label="DeepSeek V3" />
+                  <option value="claude-3-5-sonnet" label="Claude 3.5 Sonnet" />
+                </datalist>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                Bisa diisi <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono">*</code> untuk mengaktifkan semua model WeizeRouter, atau nama model ID spesifik.
               </p>
             </div>
           </div>

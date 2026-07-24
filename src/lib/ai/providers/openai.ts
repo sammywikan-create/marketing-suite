@@ -10,9 +10,14 @@ export async function callOpenAI(
   maxTokens: number = 600
 ): Promise<string> {
   const finalKey = apiKey || process.env.OPENAI_API_KEY
-  if (!finalKey) throw new Error('API Key OpenAI tidak ditemukan. Harap masukan API Key OpenAI Anda di Pengaturan AI.')
+  if (!finalKey) throw new Error('API Key OpenAI / WeizeRouter Gateway tidak ditemukan. Harap masukan API Key Anda di Pengaturan AI.')
 
-  const cleanBaseUrl = (baseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+  // Clean base URL: strip trailing slashes & accidental /chat/completions suffix
+  let cleanBaseUrl = (baseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+  cleanBaseUrl = cleanBaseUrl.replace(/\/chat\/completions\/?$/i, '').replace(/\/+$/, '')
+
+  const rawModel = (model || '').trim()
+  const selectedModel = rawModel === '*' || !rawModel ? 'gpt-4o-mini' : rawModel
 
   const client = new OpenAI({
     baseURL: cleanBaseUrl,
@@ -20,7 +25,7 @@ export async function callOpenAI(
   })
 
   const response = await client.chat.completions.create({
-    model,
+    model: selectedModel,
     messages: [
       { role: 'system', content: systemPrompt },
       ...messages.map((m) => ({
@@ -36,8 +41,9 @@ export async function callOpenAI(
 }
 
 export const OPENAI_MODELS = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Cepat, Hemat & Pintar)' },
-  { value: 'gpt-4o', label: 'GPT-4o (Model Unggulan OpenAI)' },
-  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (Standar)' },
-  { value: 'o3-mini', label: 'o3-Mini (Reasoning Agent)' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Default)' },
+  { value: 'gpt-4o', label: 'GPT-4o (Unggulan)' },
+  { value: 'deepseek-chat', label: 'DeepSeek V3 / R1' },
+  { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
+  { value: '*', label: '* (Semua Model / Gateway Default)' },
 ]
