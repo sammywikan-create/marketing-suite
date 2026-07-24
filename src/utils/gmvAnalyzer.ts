@@ -424,7 +424,195 @@ function formatMonthLabel(dateStr: string): string {
   return BULAN_ID[d.getMonth()] + " " + d.getFullYear();
 }
 
+// ─── DETEKSI & PARSER FORMAT BARU "Shop Analytics_Key metrics" ──────
+// Format baru TikTok Shop (2026): row "Ringkasan data" → header ("", GMV, Pesanan,
+// Pembeli, Produk terjual, Produk yang dikembalikan..., Pesanan SKU, Pendapatan bruto,
+// Tayangan halaman, Pengunjung, Persentase konversi, ...) → "Total nilai" →
+// blok "Data harian" dengan header "Tanggal" dan tanggal format DD/MM/YYYY.
+function isNewShopAnalyticsFormat(rawData: unknown[][]): boolean {
+  for (let i = 0; i < Math.min(rawData.length, 6); i++) {
+    const c0 = String(rawData[i]?.[0] ?? '').trim().toLowerCase();
+    if (c0 === 'ringkasan data') return true;
+    const joined = (rawData[i] || []).map((c: unknown) => String(c ?? '')).join('§').toLowerCase();
+    if (joined.includes('tayangan halaman') && joined.includes('pendapatan bruto')) return true;
+  }
+  return false;
+}
+
+function parseShopAnalyticsFormat(rawData: unknown[][]): BusinessOverviewData {
+  const toNum = (v: unknown): number => {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    const s = String(v ?? '').trim();
+    if (!s || s === '-') return 0;
+    const n = parseFloat(s.replace(/[^\d.\-]/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+  const toIso = (v: unknown): string => {
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      const y = v.getFullYear();
+      const mo = String(v.getMonth() + 1).padStart(2, '0');
+      const d = String(v.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${d}`;
+    }
+    const s = String(v ?? '').trim();
+    const dmy = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+    const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+    return '';
+  };
+  const pctVal = (v: unknown): number => {
+    const n = toNum(v);
+    // Nilai rasio (mis. 0.0401) → persen
+    return Math.abs(n) <= 1 ? n * 100 : n;
+  };
+
+  const buildColMap = (headerRow: unknown[]) => {
+    const lower = (headerRow || []).map((h: unknown) => String(h ?? '').trim().toLowerCase());
+    const exact = (name: string) => lower.findIndex((h) => h === name);
+    const contains = (name: string) => lower.findIndex((h) => h.includes(name));
+    return {
+      gmv: exact('gmv'),
+      orders: exact('pesanan'),
+      buyers: exact('pembeli'),
+      productsSold: contains('produk terjual'),
+      refund: contains('dikembalikan'),
+      skuOrders: contains('pesanan sku'),
+      grossRevenue: contains('pendapatan bruto'),
+      pageViews: contains('tayangan halaman'),
+      shopVisits: exact('pengunjung'),
+      conversion: contains('persentase konversi'),
+    };
+  };
+  const pick = (row: unknown[], idx: number): number => (idx >= 0 ? toNum(row[idx]) : 0);
+
+  // Header ringkasan: kolom 0 kosong, kolom 1 === "GMV"
+  const summaryHeaderIdx = rawData.findIndex((r) => {
+    return String(r?.[0] ?? '').trim() === '' && String(r?.[1] ?? '').trim() === 'GMV';
+  });
+  // Header harian: kolom 0 === "Tanggal"
+  const dailyHeaderIdx = rawData.findIndex((r) => String(r?.[0] ?? '').trim() === 'Tanggal');
+
+  let summary: BusinessOverviewSummary = {
+    gmv: 0, refund: 0, grossRevenueWithSubsidy: 0, productsSold: 0, uniqueBuyers: 0,
+    pageViews: 0, shopVisits: 0, skuOrders: 0, orders: 0, conversionRate: 0,
+  };
+  if (summaryHeaderIdx >= 0) {
+    const cols = buildColMap(rawData[summaryHeaderIdx]);
+    // Baris nilai: baris pertama setelah header yang kolom 0-nya "Total nilai"
+    const valueRow = rawData
+      .slice(summaryHeaderIdx + 1, summaryHeaderIdx + 4)
+      .find((r) => String(r?.[0] ?? '').trim().toLowerCase().startsWith('total nilai'));
+    if (valueRow) {
+      summary = {
+        gmv: pick(valueRow, cols.gmv),
+        refund: pick(valueRow, cols.refund),
+        grossRevenueWithSubsidy: pick(valueRow, cols.grossRevenue),
+        productsSold: pick(valueRow, cols.productsSold),
+        uniqueBuyers: pick(valueRow, cols.buyers),
+        pageViews: pick(valueRow, cols.pageViews),
+        shopVisits: pick(valueRow, cols.shopVisits),
+        skuOrders: pick(valueRow, cols.skuOrders),
+        orders: pick(valueRow, cols.orders),
+        conversionRate: cols.conversion >= 0 ? pctVal(valueRow[cols.conversion]) : 0,
+      };
+    }
+  }
+
+  const daily: DailyBusinessData[] = [];
+  if (dailyHeaderIdx >= 0) {
+    const cols = buildColMap(rawData[dailyHeaderIdx]);
+    for (let i = dailyHeaderIdx + 1; i < rawData.length; i++) {
+      const row = rawData[i] || [];
+      const date = toIso(row[0]);
+      if (!date) continue;
+      daily.push({
+        date,
+        gmv: pick(row, cols.gmv),
+        refund: pick(row, cols.refund),
+        grossRevenueWithSubsidy: pick(row, cols.grossRevenue),
+        productsSold: pick(row, cols.productsSold),
+        uniqueBuyers: pick(row, cols.buyers),
+        pageViews: pick(row, cols.pageViews),
+        shopVisits: pick(row, cols.shopVisits),
+        skuOrders: pick(row, cols.skuOrders),
+        orders: pick(row, cols.orders),
+        conversionRate: cols.conversion >= 0 ? pctVal(row[cols.conversion]) : 0,
+      });
+    }
+    daily.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // Jika ringkasan kosong tapi ada data harian, hitung dari harian
+  if (summary.gmv === 0 && daily.length > 0) {
+    const sum = (k: keyof DailyBusinessData) => daily.reduce((a, d) => a + (Number(d[k]) || 0), 0);
+    summary = {
+      gmv: sum('gmv'), refund: sum('refund'), grossRevenueWithSubsidy: sum('grossRevenueWithSubsidy'),
+      productsSold: sum('productsSold'), uniqueBuyers: sum('uniqueBuyers'), pageViews: sum('pageViews'),
+      shopVisits: sum('shopVisits'), skuOrders: sum('skuOrders'), orders: sum('orders'),
+      conversionRate: daily.reduce((a, d) => a + d.conversionRate, 0) / daily.length,
+    };
+  }
+
+  return {
+    summary,
+    daily,
+    period: {
+      start: daily[0]?.date ?? '',
+      end: daily[daily.length - 1]?.date ?? '',
+      month: formatMonthLabel(daily[0]?.date ?? ''),
+    },
+  };
+}
+
+// Pecah hasil parse multi-bulan menjadi satu BusinessOverviewData per bulan.
+// Berguna untuk export Shop Analytics yang rentangnya melebihi 1 bulan.
+export function splitOverviewByMonth(parsed: BusinessOverviewData): BusinessOverviewData[] {
+  const groups = new Map<string, DailyBusinessData[]>();
+  for (const d of parsed.daily) {
+    const key = d.date.substring(0, 7); // YYYY-MM
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(d);
+  }
+  if (groups.size <= 1) return [parsed];
+
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, days]) => {
+      const sum = (k: keyof DailyBusinessData) => days.reduce((a, d) => a + (Number(d[k]) || 0), 0);
+      const nonZeroConv = days.filter((d) => d.conversionRate > 0);
+      const summary: BusinessOverviewSummary = {
+        gmv: sum('gmv'),
+        refund: sum('refund'),
+        grossRevenueWithSubsidy: sum('grossRevenueWithSubsidy'),
+        productsSold: sum('productsSold'),
+        uniqueBuyers: sum('uniqueBuyers'),
+        pageViews: sum('pageViews'),
+        shopVisits: sum('shopVisits'),
+        skuOrders: sum('skuOrders'),
+        orders: sum('orders'),
+        conversionRate: nonZeroConv.length > 0
+          ? nonZeroConv.reduce((a, d) => a + d.conversionRate, 0) / nonZeroConv.length
+          : 0,
+      };
+      return {
+        summary,
+        daily: days,
+        period: {
+          start: days[0].date,
+          end: days[days.length - 1].date,
+          month: formatMonthLabel(days[0].date),
+        },
+      };
+    });
+}
+
 export function parseBusinessOverview(rawData: any[][]): BusinessOverviewData {
+  // Format baru "Shop Analytics_Key metrics" terdeteksi otomatis
+  if (isNewShopAnalyticsFormat(rawData)) {
+    return parseShopAnalyticsFormat(rawData);
+  }
+
   const parsePercent = (val: any): number => {
     if (typeof val === 'string') return parseFloat(val.replace('%', '').trim());
     if (typeof val === 'number') return val;

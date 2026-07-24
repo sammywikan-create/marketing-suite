@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BusinessOverviewData, BusinessOverviewSummary, DailyBusinessData } from "@/lib/types";
 import {
-  parseBusinessOverview, getWeeklyBreakdown, getBusinessInsights,
+  parseBusinessOverview, splitOverviewByMonth, getWeeklyBreakdown, getBusinessInsights,
   formatRupiah, formatRupiahShort, fmtDec, formatNum,
   compareMonths, groupByQuarter, avgByDayOfWeek, detectAnomalies,
   forecastNextMonth, buildFunnel,
@@ -149,12 +149,20 @@ export default function GMVOverviewScreen() {
       const parsed = parseBusinessOverview(raw);
       if (parsed.daily.length === 0) { setError("Tidak ditemukan data harian di file ini."); setLoading(false); return; }
 
-      const existingIdx = allMonths.findIndex(m => m.period.month === parsed.period.month);
-      if (existingIdx >= 0) {
-        setConfirmReplace({ parsed, idx: existingIdx });
-      } else {
-        saveOverviewData(activeStore.id, parsed);
+      // File Shop Analytics bisa mencakup >1 bulan → pecah dan simpan per bulan
+      const months = splitOverviewByMonth(parsed);
+      if (months.length > 1) {
+        months.forEach((m) => saveOverviewData(activeStore.id, m));
         setActiveTab("bulanan");
+      } else {
+        const single = months[0];
+        const existingIdx = allMonths.findIndex(m => m.period.month === single.period.month);
+        if (existingIdx >= 0) {
+          setConfirmReplace({ parsed: single, idx: existingIdx });
+        } else {
+          saveOverviewData(activeStore.id, single);
+          setActiveTab("bulanan");
+        }
       }
     } catch { setError("Gagal membaca file. Pastikan file Excel valid."); }
     setLoading(false);

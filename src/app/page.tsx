@@ -60,6 +60,7 @@ const FunnelAnalyzerScreen = dynamic(() => import("@/screens/FunnelAnalyzerScree
 const LiveScorecardScreen = dynamic(() => import("@/screens/LiveScorecardScreen"), { ssr: false });
 const AffiliateTrackerScreen = dynamic(() => import("@/screens/AffiliateTrackerScreen"), { ssr: false });
 const OmsetDoctorScreen = dynamic(() => import("@/screens/OmsetDoctorScreen"), { ssr: false });
+const ProductTrafficScreen = dynamic(() => import("@/screens/ProductTrafficScreen"), { ssr: false });
 
 // ─── Valid tab keys for hash routing ───
 const VALID_TABS = new Set<string>([
@@ -71,6 +72,7 @@ const VALID_TABS = new Set<string>([
   "okr","affiliate","report-builder","live-analytics","gmax-overview","product-cards",
   "laporan-harian","sku-tracking","gmax-evaluasi","staff-tracker",
   "revenue-breakdown","funnel-analyzer","live-scorecard","affiliate-tracker","omset-doctor",
+  "product-traffic",
 ]);
 
 const PAGE_TITLES: Record<TabKey, string> = {
@@ -98,6 +100,7 @@ const PAGE_TITLES: Record<TabKey, string> = {
   "live-scorecard": "Live Performance Scorecard",
   "affiliate-tracker": "Affiliate Performance Tracker",
   "omset-doctor": "Omset Doctor (Diagnosis Otomatis)",
+  "product-traffic": "Analisis Trafik Produk",
 };
 
 function getTabFromHash(): TabKey {
@@ -354,6 +357,7 @@ export default function Home() {
       case "live-scorecard": return <LiveScorecardScreen />;
       case "affiliate-tracker": return <AffiliateTrackerScreen />;
       case "omset-doctor": return <OmsetDoctorScreen />;
+      case "product-traffic": return <ProductTrafficScreen />;
       default: return <DashboardScreen />;
     }
   };

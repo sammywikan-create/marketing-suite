@@ -71,6 +71,7 @@ const tabGroups: TabGroup[] = [
       { key: "funnel-analyzer", label: "Funnel Analyzer", icon: <Filter size={18} /> },
       { key: "live-scorecard", label: "Live Scorecard", icon: <Radio size={18} /> },
       { key: "affiliate-tracker", label: "Affiliate Tracker", icon: <Users size={18} /> },
+      { key: "product-traffic", label: "Trafik Produk", icon: <BarChart3 size={18} /> },
       { key: "omset-doctor", label: "Omset Doctor AI", icon: <Stethoscope size={18} /> },
     ],
   },
