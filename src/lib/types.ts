@@ -204,7 +204,89 @@ export type TabKey =
   | "funnel-analyzer"
   | "live-scorecard"
   | "affiliate-tracker"
-  | "omset-doctor";
+  | "omset-doctor"
+  | "product-traffic";
+
+// ═══════════════════════════════════════════════════════════
+// PRODUCT TRAFFIC ANALYZER (Analisis Trafik Produk)
+// Field snake_case = 1:1 dengan kolom tabel Supabase (pola LiveCoreStat)
+// ═══════════════════════════════════════════════════════════
+
+/** Jenis konten pada export Product Traffic TikTok Shop */
+export type ProductTrafficContentType =
+  | "all"
+  | "live_penjual"
+  | "video_penjual"
+  | "kartu_produk"
+  | "afiliasi";
+
+/** Baris harian per produk per jenis konten (tabel product_traffic_daily) */
+export interface ProductTrafficDaily {
+  store_id: string;
+  product_id: string;
+  product_name: string;
+  date: string; // ISO YYYY-MM-DD
+  content_type: ProductTrafficContentType;
+  gmv: number;
+  orders: number;
+  sku_orders: number;
+  products_sold: number;
+  buyers: number;
+  aov: number;
+  impressions: number;
+  clicks: number;
+  ctr: number; // persen
+  atc: number;
+  atc_rate: number; // persen
+  ctor: number; // persen
+  impressions_unique: number;
+  clicks_unique: number;
+  ctr_unique: number; // persen
+}
+
+/** Master produk dari export product_list (tabel product_catalog) */
+export interface ProductCatalogEntry {
+  store_id: string;
+  product_id: string;
+  name: string;
+  status: string;
+  gmv_range: string;
+  period_start: string; // ISO
+  period_end: string; // ISO
+  gmv: number;
+  channel_gmv: Record<string, number>; // breakdown GMV per channel (jsonb)
+  orders: number;
+  sku_orders: number;
+  products_sold: number;
+  buyers: number;
+  aov: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  atc: number;
+  atc_rate: number;
+  ctor: number;
+}
+
+/** Statistik harian channel VIDEO dari Video Performance Core Stats (tabel video_core_stats) */
+export interface VideoCoreStatDaily {
+  store_id: string;
+  date: string; // ISO
+  gmv_from_video: number; // total teratribusi (direct + indirect)
+  gmv_video: number; // direct
+  gmv_indirect: number;
+  vv: number;
+  gpm: number;
+  sku_orders_attr: number;
+  sku_orders_video: number;
+  sku_orders_indirect: number;
+  avg_daily_buyers: number;
+  product_viewers: number;
+  product_impressions: number;
+  product_clicks: number;
+  ctr_video: number; // persen
+  ctor_video: number; // persen
+}
 
 export interface ChannelDropAlert {
   channel: string;

@@ -248,6 +248,19 @@ export const PAGE_HELP_DATA: Record<string, PageHelpItem> = {
     caraGuna: "Buka tab ini saat terjadi penurunan omset untuk mendapatkan petunjuk tindakan perbaikan instan.",
     targetUser: "Direksi / C-Level"
   },
+  "product-traffic": {
+    tabKey: "product-traffic",
+    title: "Analisis Trafik Produk",
+    groupTitle: "Analitik Lanjutan ⭐",
+    tujuan: "Mengimpor export Product Traffic TikTok Shop ke Supabase dan menganalisis funnel per produk per channel (LIVE, Video, Kartu Produk, Afiliasi).",
+    manfaat: [
+      "Melihat produk mana yang menang/kalah di channel mana hingga level konversi harian (Impresi → Klik → Keranjang → Pesanan).",
+      "Deteksi dini funnel bocor: alert otomatis saat GMV/CTR/CTOR drop >20% dibanding rata-rata 7 hari.",
+      "Katalog semua produk dengan breakdown GMV 15 channel, plus perbandingan GMV harian channel Video vs LIVE dari data real."
+    ],
+    caraGuna: "Upload file Product_Traffic Key Metrics, product_list, serta Video/Live Performance Core Stats dari TikTok Shop Analytics — jenis file terdeteksi otomatis.",
+    targetUser: "Tim Marketing / Advertiser"
+  },
 
   // --- GMV ANALYZER ---
   "gmv-upload": {

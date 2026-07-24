@@ -4,6 +4,9 @@ import type {
   AffiliateMonthSummary,
   AffiliateCreatorItem,
   AffiliateCoreSummary,
+  ProductTrafficDaily,
+  ProductCatalogEntry,
+  VideoCoreStatDaily,
 } from '@/lib/types'
 
 function requireSupabase() {
@@ -1070,4 +1073,160 @@ export async function loadAISettingsDb(): Promise<Record<string, any> | null> {
     if (d2?.settings) return d2.settings
   } catch {}
   return null
+}
+
+// ═══════════════════════════════════════════════════════════
+// PRODUCT TRAFFIC ANALYZER (Analisis Trafik Produk)
+// Tabel: product_traffic_daily, product_catalog, video_core_stats
+// Jalankan supabase/migration_product_traffic.sql sebelum pakai.
+// ═══════════════════════════════════════════════════════════
+
+const MIGRATION_HINT =
+  'Tabel Analisis Trafik Produk belum dibuat di Supabase. Jalankan file supabase/migration_product_traffic.sql di Supabase SQL Editor.'
+
+function throwWithMigrationHint(error: { code?: string; message?: string }): never {
+  // 42P01 = undefined_table di PostgreSQL
+  if (error?.code === '42P01' || /does not exist/i.test(error?.message || '')) {
+    throw new Error(MIGRATION_HINT)
+  }
+  throw new Error(error?.message || 'Supabase error')
+}
+
+export async function saveProductTrafficDaily(rows: ProductTrafficDaily[]) {
+  requireSupabase()
+  if (!rows.length) return
+  const BATCH = 200
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH)
+    const { error } = await supabase
+      .from('product_traffic_daily')
+      .upsert(batch, { onConflict: 'store_id,product_id,date,content_type' })
+    if (error) throwWithMigrationHint(error)
+  }
+}
+
+export async function loadProductTrafficDaily(
+  storeId: string,
+  productId?: string
+): Promise<ProductTrafficDaily[]> {
+  requireSupabase()
+  let q = supabase
+    .from('product_traffic_daily')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('date', { ascending: true })
+    .limit(10000)
+  if (productId) q = q.eq('product_id', productId)
+  const { data, error } = await q
+  if (error) throwWithMigrationHint(error)
+  return (data || []) as ProductTrafficDaily[]
+}
+
+export interface ProductTrafficProductInfo {
+  product_id: string
+  product_name: string
+  days: number
+  min_date: string
+  max_date: string
+}
+
+export async function listProductTrafficProducts(
+  storeId: string
+): Promise<ProductTrafficProductInfo[]> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('product_traffic_daily')
+    .select('product_id, product_name, date')
+    .eq('store_id', storeId)
+    .eq('content_type', 'all')
+    .limit(10000)
+  if (error) throwWithMigrationHint(error)
+  const map = new Map<string, ProductTrafficProductInfo>()
+  for (const r of (data || []) as { product_id: string; product_name: string; date: string }[]) {
+    const cur = map.get(r.product_id)
+    if (!cur) {
+      map.set(r.product_id, {
+        product_id: r.product_id,
+        product_name: r.product_name || r.product_id,
+        days: 1,
+        min_date: r.date,
+        max_date: r.date,
+      })
+    } else {
+      cur.days += 1
+      if (r.date < cur.min_date) cur.min_date = r.date
+      if (r.date > cur.max_date) cur.max_date = r.date
+      if (!cur.product_name && r.product_name) cur.product_name = r.product_name
+    }
+  }
+  return [...map.values()].sort((a, b) => b.days - a.days)
+}
+
+export async function saveProductCatalog(entries: ProductCatalogEntry[]) {
+  requireSupabase()
+  if (!entries.length) return
+  const BATCH = 100
+  for (let i = 0; i < entries.length; i += BATCH) {
+    const batch = entries.slice(i, i + BATCH)
+    const { error } = await supabase
+      .from('product_catalog')
+      .upsert(batch, { onConflict: 'store_id,product_id,period_start,period_end' })
+    if (error) throwWithMigrationHint(error)
+  }
+}
+
+export async function loadProductCatalog(storeId: string): Promise<ProductCatalogEntry[]> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('product_catalog')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('period_end', { ascending: false })
+    .limit(2000)
+  if (error) throwWithMigrationHint(error)
+  const rows = (data || []) as ProductCatalogEntry[]
+  // Ambil snapshot periode terbaru saja (period_end paling akhir)
+  if (rows.length === 0) return []
+  const latestEnd = rows[0].period_end
+  return rows.filter((r) => r.period_end === latestEnd)
+}
+
+export async function saveVideoCoreStats(rows: VideoCoreStatDaily[]) {
+  requireSupabase()
+  if (!rows.length) return
+  const BATCH = 200
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH)
+    const { error } = await supabase
+      .from('video_core_stats')
+      .upsert(batch, { onConflict: 'store_id,date' })
+    if (error) throwWithMigrationHint(error)
+  }
+}
+
+export async function loadVideoCoreStats(storeId: string): Promise<VideoCoreStatDaily[]> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('video_core_stats')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('date', { ascending: true })
+    .limit(5000)
+  if (error) throwWithMigrationHint(error)
+  return (data || []) as VideoCoreStatDaily[]
+}
+
+/** Loader live_core_stats untuk tab Channel Harian (tabel sudah ada dari fitur Live Analytics) */
+export async function loadLiveCoreStatsDb(
+  storeId: string
+): Promise<import('@/hooks/useLiveAnalytics').LiveCoreStat[]> {
+  requireSupabase()
+  const { data, error } = await supabase
+    .from('live_core_stats')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('date', { ascending: true })
+    .limit(5000)
+  if (error) throw new Error(error.message)
+  return (data || []) as import('@/hooks/useLiveAnalytics').LiveCoreStat[]
 }
