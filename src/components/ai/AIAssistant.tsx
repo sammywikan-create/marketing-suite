@@ -9,6 +9,7 @@ import { AISettings } from './AISettings'
 interface AIAssistantProps {
   page: string
   context: string
+  storeId?: string
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -17,9 +18,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   openrouter: '🟣 OpenRouter',
 }
 
-export function AIAssistant({ page, context }: AIAssistantProps) {
+export function AIAssistant({ page, context, storeId }: AIAssistantProps) {
   const { isOpen, setOpen, settings, unreadInsights, markRead } = useAIStore()
-  const { messages, isLoading, error, sendMessage, clearHistory } = useAIChat(page, context)
+  const { messages, isLoading, error, sendMessage, clearHistory } = useAIChat(page, context, storeId)
   const [input, setInput] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)

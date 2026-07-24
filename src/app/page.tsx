@@ -438,7 +438,7 @@ export default function Home() {
           </ErrorBoundary>
         </div>
       </main>
-      <AIAssistant page={aiPage} context={aiContext} />
+      <AIAssistant page={aiPage} context={aiContext} storeId={activeStore?.id} />
       <CommandPalette onNavigate={handleTabSelect} />
       <Toaster position="top-right" toastOptions={{ duration: 3000, style: { fontSize: '14px' } }} />
     </div>
