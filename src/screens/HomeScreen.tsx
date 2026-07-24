@@ -200,7 +200,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
         // Cari period Laporan Harian yang cocok dengan periode affiliate aktif
         const periods = await listLaporanHarianPeriods();
         const match = periods.find((p) => p.period === activePeriod);
-        const targetPeriod = match ? match.period : (periods[0]?.period || null);
+        const targetPeriod = match ? match.period : null;
         if (!targetPeriod) { if (!cancelled) setLhData(null); return; }
         const data = await loadLaporanHarianData(targetPeriod);
         if (!cancelled) setLhData(data);
@@ -511,18 +511,37 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const heroCards = useMemo(() => {
     const s = lhData?.summary;
     const ch = lhData?.channels || {};
-    const displayOmzet =
-      (s?.total_omzet_fv || 0) > 0 ? s!.total_omzet_fv
-        : (lhData?.evaluasi_per_brand?.freshvision || 0) > 0 ? (lhData!.evaluasi_per_brand!.freshvision as number)
-          : (ch.shop_tab?.total_omzet || 0) > 0 ? ch.shop_tab!.total_omzet
-            : (s?.total_omzet || 0);
-    const displayRoas = s && s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
-    const daysElapsed = s?.hari || 0;
+
+    let displayOmzet = 0;
+    let daysElapsed = 0;
+    let displayRoas = 0;
+
+    if (lhData && s) {
+      displayOmzet =
+        (s.total_omzet_fv || 0) > 0 ? s.total_omzet_fv
+          : (lhData?.evaluasi_per_brand?.freshvision || 0) > 0 ? (lhData.evaluasi_per_brand.freshvision as number)
+            : (ch.shop_tab?.total_omzet || 0) > 0 ? ch.shop_tab.total_omzet
+              : (s.total_omzet || 0);
+      daysElapsed = s.hari || 0;
+      displayRoas = s.total_biaya_iklan > 0 ? displayOmzet / s.total_biaya_iklan : 0;
+    } else {
+      displayOmzet = agg.totalGMV;
+      if (activePeriod && /^\d{4}-\d{2}$/.test(activePeriod)) {
+        const [yr, mo] = activePeriod.split("-").map(Number);
+        const now = new Date();
+        const isCurrentMonth = now.getFullYear() === yr && (now.getMonth() + 1) === mo;
+        daysElapsed = isCurrentMonth ? Math.max(1, now.getDate()) : new Date(yr, mo, 0).getDate();
+      } else {
+        daysElapsed = 30;
+      }
+      displayRoas = 0;
+    }
+
     const dailyAvgOmzet = daysElapsed > 0 ? displayOmzet / daysElapsed : 0;
     const projectedEOM = dailyAvgOmzet * 30;
 
     return { displayOmzet, displayRoas, daysElapsed, dailyAvgOmzet, projectedEOM };
-  }, [lhData]);
+  }, [lhData, agg.totalGMV, activePeriod]);
 
   // ─── MoM COMPARISON (all metrics) ─────────────────────
   const momAll = useMemo(() => {
