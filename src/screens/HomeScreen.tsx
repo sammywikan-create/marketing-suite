@@ -5,6 +5,13 @@ import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 import type { AffiliateMonthData, AffiliateCreatorItem } from "@/lib/types";
 import { loadAffiliateCreators } from "@/lib/db";
 import { listLaporanHarianPeriods, loadLaporanHarianData } from "@/lib/db";
+import { runOmsetDoctorDiagnosis, extractRealStoreData, computeRevenueBreakdown } from "@/utils/revenueAnalyzer";
+import DoctorDiagnosisCard from "@/components/home/DoctorDiagnosisCard";
+import OKRSnapshotCard from "@/components/home/OKRSnapshotCard";
+import ProfitWaterfall from "@/components/home/ProfitWaterfall";
+import KpiSparkline from "@/components/home/KpiSparkline";
+import ExecExportMenu from "@/components/home/ExecExportMenu";
+import type { ExecSummaryExportData } from "@/lib/exportExecSummary";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -368,63 +375,8 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   }, [periodCreators, allCreatorsPeriod]);
 
   // ─── ALERTS ─────────────────────────────────────────────
-  const alerts = useMemo(() => {
-    const list: Alert[] = [];
-
-    if (agg.refundRate > 20) {
-      list.push({
-        type: "error", icon: "🚨", title: "Refund Rate Tinggi",
-        message: `Refund affiliate mencapai ${fP(agg.refundRate)} — jauh di atas batas aman 15%. Cek kreator bermasalah.`,
-        action: { label: "Lihat Kreator", tab: "affiliate" },
-      });
-    }
-
-    if (targetGMV > 0 && targetProgress >= 100) {
-      list.push({
-        type: "success", icon: "🎉", title: `Target ${formatPeriod(activePeriod)} Tercapai! ${fP(targetProgress)}`,
-        message: `GMV ${fRp(agg.totalGMV)} melampaui target ${fRp(targetGMV)}.`,
-      });
-    }
-
-    if (targetGMV > 0 && targetProgress >= 80 && targetProgress < 100) {
-      list.push({
-        type: "info", icon: "🎯", title: "Target Hampir Tercapai!",
-        message: `${fP(targetProgress)} tercapai. Sisa ${fRp(targetRemaining)} lagi.`,
-        action: { label: "Lihat Detail", tab: "affiliate" },
-      });
-    }
-
-    if (momGrowth !== null && momGrowth < -20) {
-      list.push({
-        type: "warning", icon: "📉", title: "GMV Turun Signifikan",
-        message: `GMV turun ${Math.abs(momGrowth).toFixed(1)}% dibanding ${formatPeriod(prevPeriod || "")}. Perlu investigasi.`,
-        action: { label: "Lihat Tren", tab: "affiliate" },
-      });
-    }
-
-    if (dormantRate > 85) {
-      list.push({
-        type: "warning", icon: "😴", title: "Kreator Dormant Sangat Tinggi",
-        message: `${fP(dormantRate)} kreator (${dormantCount} orang) tidak menghasilkan GMV. Pertimbangkan reaktivasi.`,
-        action: { label: "Lihat Segmentasi", tab: "affiliate" },
-      });
-    }
-
-    if (highRefundCreators.length > 0) {
-      list.push({
-        type: "warning", icon: "⚠️", title: `${highRefundCreators.length} Kreator Refund Ekstrem`,
-        message: `${highRefundCreators.slice(0, 3).map((c) => "@" + c.creatorUsername).join(", ")} refund >50%. Perlu investigasi segera.`,
-        action: { label: "Investigasi", tab: "affiliate" },
-      });
-    }
-
-    return list;
-  }, [agg, targetGMV, targetProgress, targetRemaining, activePeriod, momGrowth, prevPeriod, dormantRate, dormantCount, highRefundCreators]);
-
-  const visibleAlerts = alerts.filter((_, i) => !dismissedAlerts.includes(i));
-  const dismissAlert = useCallback((i: number) => {
-    setDismissedAlerts((prev) => [...prev, i]);
-  }, []);
+  // NOTE: Alert Center lintas modul dipindah ke bawah (setelah pnl/merData/targetPace/unitEcon)
+  // karena kini juga membaca metrik Laporan Harian, P&L, pace target, dan MA7 drop.
 
   // ─── DAILY AVERAGES ───────────────────────────────────
   const dailyAvg = useMemo(() => {
@@ -847,8 +799,248 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     const adROI = pnl.biayaIklan > 0 ? pnl.omzet / pnl.biayaIklan : 0;
     const revenuePerVideo = agg.totalVideos > 0 ? agg.videoGMV / agg.totalVideos : 0;
     const revenuePerLive = agg.totalLive > 0 ? agg.liveGMV / agg.totalLive : 0;
-    return { costPerClosing, costPerBotol, revenuePerCreator, commissionROI, adROI, revenuePerVideo, revenuePerLive, closing, botol };
+    const profitPerClosing = closing > 0 ? pnl.grossProfit / closing : 0;
+    const profitPerBotol = botol > 0 ? pnl.grossProfit / botol : 0;
+    return { costPerClosing, costPerBotol, revenuePerCreator, commissionROI, adROI, revenuePerVideo, revenuePerLive, closing, botol, profitPerClosing, profitPerBotol };
   }, [lhData, pnl, agg]);
+
+  // ─── OMSET DOCTOR & MA7 ENGINE (gabungan semua toko) ────
+  const combinedRaw = useMemo(() => {
+    const overview = stores.flatMap((s) => s.overviewData || []);
+    const affiliate = stores.flatMap((s) => s.affiliateData || []);
+    const video = stores.flatMap((s) => s.videoData || []);
+    return { overview, affiliate, video };
+  }, [stores]);
+
+  const doctorResult = useMemo(
+    () => runOmsetDoctorDiagnosis(combinedRaw.overview, combinedRaw.affiliate, combinedRaw.video),
+    [combinedRaw]
+  );
+
+  const ma7Alerts = useMemo(() => {
+    const daily = extractRealStoreData(combinedRaw.overview, combinedRaw.affiliate, combinedRaw.video);
+    if (!daily || daily.length === 0) return [];
+    return computeRevenueBreakdown(daily).alerts;
+  }, [combinedRaw]);
+
+  // ─── SPARKLINE GMV (maks. 6 periode terakhir) ───────────
+  const gmvSparkline = useMemo(() => {
+    return allPeriods.slice(-6).map((period) =>
+      allAffiliateData
+        .filter((d) => d.period === period)
+        .reduce((a, d) => a + (d.summary.totalGMV || 0), 0)
+    );
+  }, [allPeriods, allAffiliateData]);
+
+  // ─── YoY GROWTH (vs periode sama tahun lalu) ────────────
+  const yoyGrowth = useMemo(() => {
+    const m = activePeriod.match(/^(\d{4})-(\d{2})/);
+    if (!m) return null;
+    const lastYearPeriod = `${Number(m[1]) - 1}-${m[2]}`;
+    if (!allPeriods.includes(lastYearPeriod)) return null;
+    const prevYearGMV = allAffiliateData
+      .filter((d) => d.period === lastYearPeriod)
+      .reduce((a, d) => a + (d.summary.totalGMV || 0), 0);
+    return prevYearGMV > 0 ? ((agg.totalGMV - prevYearGMV) / prevYearGMV) * 100 : null;
+  }, [activePeriod, allPeriods, allAffiliateData, agg.totalGMV]);
+
+  // ─── ALERT CENTER LINTAS MODUL ──────────────────────────
+  // Affiliate + Target + Laporan Harian (ROAS/CAC) + P&L + Pace + MA7 drop
+  const alerts = useMemo(() => {
+    const list: Alert[] = [];
+
+    if (agg.refundRate > 20) {
+      list.push({
+        type: "error", icon: "🚨", title: "Refund Rate Tinggi",
+        message: `Refund affiliate mencapai ${fP(agg.refundRate)} — jauh di atas batas aman 15%. Cek kreator bermasalah.`,
+        action: { label: "Lihat Kreator", tab: "affiliate" },
+      });
+    }
+
+    if (targetGMV > 0 && targetProgress >= 100) {
+      list.push({
+        type: "success", icon: "🎉", title: `Target ${formatPeriod(activePeriod)} Tercapai! ${fP(targetProgress)}`,
+        message: `GMV ${fRp(agg.totalGMV)} melampaui target ${fRp(targetGMV)}.`,
+      });
+    }
+
+    if (targetGMV > 0 && targetProgress >= 80 && targetProgress < 100) {
+      list.push({
+        type: "info", icon: "🎯", title: "Target Hampir Tercapai!",
+        message: `${fP(targetProgress)} tercapai. Sisa ${fRp(targetRemaining)} lagi.`,
+        action: { label: "Lihat Detail", tab: "affiliate" },
+      });
+    }
+
+    if (momGrowth !== null && momGrowth < -20) {
+      list.push({
+        type: "warning", icon: "📉", title: "GMV Turun Signifikan",
+        message: `GMV turun ${Math.abs(momGrowth).toFixed(1)}% dibanding ${formatPeriod(prevPeriod || "")}. Perlu investigasi.`,
+        action: { label: "Lihat Tren", tab: "affiliate" },
+      });
+    }
+
+    if (dormantRate > 85) {
+      list.push({
+        type: "warning", icon: "😴", title: "Kreator Dormant Sangat Tinggi",
+        message: `${fP(dormantRate)} kreator (${dormantCount} orang) tidak menghasilkan GMV. Pertimbangkan reaktivasi.`,
+        action: { label: "Lihat Segmentasi", tab: "affiliate" },
+      });
+    }
+
+    if (highRefundCreators.length > 0) {
+      list.push({
+        type: "warning", icon: "⚠️", title: `${highRefundCreators.length} Kreator Refund Ekstrem`,
+        message: `${highRefundCreators.slice(0, 3).map((c) => "@" + c.creatorUsername).join(", ")} refund >50%. Perlu investigasi segera.`,
+        action: { label: "Investigasi", tab: "affiliate" },
+      });
+    }
+
+    // ── Lintas modul: ROAS dari Laporan Harian ──
+    if (heroCards.displayRoas > 0 && heroCards.displayRoas < 2) {
+      list.push({
+        type: "error", icon: "📣", title: "ROAS Kritis (<2.0×)",
+        message: `ROAS ${heroCards.displayRoas.toFixed(2)}× — pengeluaran iklan belum balik modal sehat. Audit kampanye & materi iklan segera.`,
+        action: { label: "Buka Laporan Harian", tab: "laporan-harian" },
+      });
+    } else if (heroCards.displayRoas > 0 && heroCards.displayRoas < 3) {
+      list.push({
+        type: "warning", icon: "📣", title: "ROAS di Zona Waspada",
+        message: `ROAS ${heroCards.displayRoas.toFixed(2)}× di bawah benchmark sehat 3.0×. Pantau efisiensi iklan harian.`,
+        action: { label: "Buka Laporan Harian", tab: "laporan-harian" },
+      });
+    }
+
+    // ── Lintas modul: P&L ──
+    if (pnl.totalCost > 0 && pnl.grossProfit < 0) {
+      list.push({
+        type: "error", icon: "🩸", title: "Gross Profit Negatif",
+        message: `Total biaya ${fRp(pnl.totalCost)} melebihi omzet ${fRp(pnl.omzet)} — rugi ${fRp(Math.abs(pnl.grossProfit))} periode ini.`,
+        action: { label: "Buka Laporan Harian", tab: "laporan-harian" },
+      });
+    }
+
+    if (merData.combinedSpend > 0 && merData.marketingCostPct > 40) {
+      list.push({
+        type: "warning", icon: "💸", title: "Biaya Marketing >40% Omzet",
+        message: `Marketing cost ratio ${fP(merData.marketingCostPct)} (MER ${merData.mer.toFixed(2)}×). Evaluasi alokasi iklan vs komisi.`,
+      });
+    }
+
+    // ── Lintas modul: Pace target ──
+    if (targetPace && targetPace.status === "BEHIND") {
+      list.push({
+        type: "warning", icon: "🏃", title: "Di Bawah Pace Target",
+        message: `Butuh ${fRp(targetPace.requiredDailyGMV)}/hari untuk capai target, aktual baru ${fRp(targetPace.actualDailyGMV)}/hari (sisa ${targetPace.daysRemaining} hari).`,
+      });
+    }
+
+    // ── Lintas modul: CAC / Cost per Closing ──
+    if ((lhData?.summary?.total_closing || 0) > 0 && unitEcon.costPerClosing > 50000) {
+      list.push({
+        type: "warning", icon: "🎯", title: "Cost per Closing (CAC) Tinggi",
+        message: `Biaya akuisisi ${fRp(unitEcon.costPerClosing)}/closing — di atas ambang ideal Rp50.000.`,
+        action: { label: "Buka Laporan Harian", tab: "laporan-harian" },
+      });
+    }
+
+    // ── Lintas modul: MA7 channel drop (engine Revenue Breakdown) ──
+    ma7Alerts.forEach((a) => {
+      list.push({
+        type: a.severity === "critical" ? "error" : "warning",
+        icon: "📉",
+        title: `Channel ${a.channel} Drop ${a.dropPct.toFixed(0)}% vs MA7`,
+        message: `GMV harian terakhir ${fRp(a.currentValue)} vs rata-rata 7 hari ${fRp(a.avg7Days)} (${a.date}).`,
+        action: { label: "Revenue Breakdown", tab: "revenue-breakdown" },
+      });
+    });
+
+    return list;
+  }, [agg, targetGMV, targetProgress, targetRemaining, activePeriod, momGrowth, prevPeriod, dormantRate, dormantCount, highRefundCreators, heroCards, pnl, merData, targetPace, unitEcon, lhData, ma7Alerts]);
+
+  const visibleAlerts = alerts.filter((_, i) => !dismissedAlerts.includes(i));
+  const dismissAlert = useCallback((i: number) => {
+    setDismissedAlerts((prev) => [...prev, i]);
+  }, []);
+
+  // ─── DATA EXPORT EXECUTIVE SUMMARY (PDF/PPT/Telegram) ───
+  const execExportData: ExecSummaryExportData = useMemo(() => {
+    const recommendations = [...doctorResult.diagnoses]
+      .sort((a, b) => b.impactScore - a.impactScore)
+      .slice(0, 3)
+      .map((d) => ({ title: d.title, text: d.recommendation }));
+
+    const momRows = momAll
+      ? [
+          { metric: "Total GMV", curr: fRp(agg.totalGMV), delta: `${momAll.gmv >= 0 ? "+" : ""}${momAll.gmv.toFixed(1)}%` },
+          { metric: "Total Pesanan", curr: fN(agg.totalOrders), delta: `${momAll.orders >= 0 ? "+" : ""}${momAll.orders.toFixed(1)}%` },
+          { metric: "Kreator Aktif", curr: fN(agg.activePromoters), delta: `${momAll.creators >= 0 ? "+" : ""}${momAll.creators.toFixed(1)}%` },
+          { metric: "Refund Rate", curr: fP(agg.refundRate), delta: `${momAll.refundRate >= 0 ? "+" : ""}${momAll.refundRate.toFixed(1)}pp` },
+          { metric: "Total Komisi", curr: fRp(agg.totalCommission), delta: `${momAll.commission >= 0 ? "+" : ""}${momAll.commission.toFixed(1)}%` },
+        ]
+      : [];
+
+    return {
+      periodLabel: formatPeriod(activePeriod) || "Periode Terbaru",
+      generatedAt: new Date().toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" }),
+      storeNames: activeStores.map((s) => s.name),
+      healthScore: doctorResult.hasData ? doctorResult.healthScore : healthScore.score,
+      healthStatus: doctorResult.hasData ? doctorResult.healthStatus : healthScore.label,
+      kpis: [
+        { label: "Total GMV Affiliate", value: fRp(agg.totalGMV) },
+        { label: "Omzet Pembukuan Store", value: heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "-" },
+        { label: "ROAS", value: heroCards.displayRoas > 0 ? `${heroCards.displayRoas.toFixed(2)}x` : "-" },
+        { label: "Net GMV", value: fRp(agg.netGMV) },
+        { label: "Refund Rate", value: fP(agg.refundRate) },
+        { label: "Total Pesanan", value: fN(agg.totalOrders) },
+        { label: "AOV", value: fRp(agg.aov) },
+        { label: "Kreator Aktif", value: `${fN(agg.activePromoters)} dari ${fN(agg.totalCreators)}` },
+      ],
+      pnlRows: [
+        { label: "Revenue (Omzet)", value: fRp(pnl.omzet) },
+        { label: "Total Biaya", value: fRp(pnl.totalCost) },
+        { label: "Gross Profit", value: fRp(pnl.grossProfit) },
+        { label: "Gross Margin", value: fP(pnl.grossMarginPct) },
+        { label: "Blended MER", value: merData.mer > 0 ? `${merData.mer.toFixed(2)}x` : "-" },
+        { label: "Marketing Cost %", value: fP(merData.marketingCostPct) },
+      ],
+      costBreakdown: pnl.costBreakdown.map((c) => ({
+        label: c.label,
+        value: fRp(c.value),
+        pct: fP(pnl.totalCost > 0 ? (c.value / pnl.totalCost) * 100 : 0),
+      })),
+      target: targetGMV > 0
+        ? [
+            { label: "Target GMV", value: fRp(targetGMV) },
+            { label: "Progress", value: fP(targetProgress) },
+            ...(targetPace
+              ? [
+                  { label: "Status Pace", value: targetPace.status },
+                  { label: "GMV Harian Aktual", value: `${fRp(targetPace.actualDailyGMV)}/hari` },
+                  { label: "GMV Harian Wajib", value: `${fRp(targetPace.requiredDailyGMV)}/hari` },
+                ]
+              : []),
+            { label: "Proyeksi End of Month", value: fRp(heroCards.projectedEOM) },
+          ]
+        : [],
+      momRows,
+      topCreators: top5Creators.map((c, i) => ({
+        rank: i + 1,
+        username: c.creatorUsername,
+        gmv: fRp(c.affiliateGMV),
+        refund: fP(c.refundRate),
+      })),
+      storeRows: storeBreakdown.map((s) => ({
+        name: s.store.name,
+        gmv: fRp(s.gmv),
+        share: fP(s.share),
+        refund: fP(s.refundRate),
+        orders: fN(s.orders),
+      })),
+      alerts: alerts.filter((a) => a.type === "error" || a.type === "warning").map((a) => ({ title: a.title, message: a.message })),
+      recommendations,
+    };
+  }, [activePeriod, activeStores, doctorResult, healthScore, agg, heroCards, pnl, merData, targetGMV, targetProgress, targetPace, top5Creators, storeBreakdown, alerts, momAll]);
 
   // ═══════════════════════════════════════════════════════
   // RENDER
@@ -919,6 +1111,11 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                 </select>
               </label>
             )}
+
+            {/* Export PDF / PPT / Telegram */}
+            <div className={allPeriods.length > 0 ? "self-end pb-0.5" : ""}>
+              <ExecExportMenu data={execExportData} disabled={allPeriods.length === 0 && !lhData?.summary} />
+            </div>
           </div>
         </div>
 
@@ -969,6 +1166,28 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       {activeExecTab === "ringkasan" && (
         <div className="animate-fade-slide-up space-y-5" key="ringkasan">
 
+          {/* Empty State Onboarding — belum ada data sama sekali */}
+          {agg.totalGMV === 0 && !lhLoading && !lhData?.summary && (
+            <div className="rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-900/10 p-8 text-center">
+              <div className="text-4xl mb-3">🚀</div>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">Selamat datang di Executive Summary</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 max-w-md mx-auto leading-relaxed">
+                Belum ada data untuk periode {formatPeriod(activePeriod) || "ini"}. Upload salah satu sumber data di bawah dan dashboard komando ini akan terisi otomatis.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                <button onClick={() => onNavigate("affiliate")} className="text-xs bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition">
+                  📊 Upload Data Affiliate
+                </button>
+                <button onClick={() => onNavigate("gmv-upload")} className="text-xs bg-white dark:bg-gray-800 border border-indigo-200 dark:border-gray-600 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-lg font-medium hover:bg-indigo-50 dark:hover:bg-gray-700 transition">
+                  📈 Upload Data GMV
+                </button>
+                <button onClick={() => onNavigate("laporan-harian")} className="text-xs bg-white dark:bg-gray-800 border border-indigo-200 dark:border-gray-600 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-lg font-medium hover:bg-indigo-50 dark:hover:bg-gray-700 transition">
+                  📋 Sinkron Laporan Harian
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Purpose & Benefit */}
           <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
             <div className="space-y-1">
@@ -991,10 +1210,15 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
               <div className="relative text-left bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all group">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-2xl">💰</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {yoyGrowth !== null && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${yoyGrowth >= 0 ? "bg-emerald-400/20 text-emerald-200" : "bg-orange-400/20 text-orange-200"}`} title="Perbandingan vs periode sama tahun lalu (Year over Year)">
+                        YoY {yoyGrowth >= 0 ? "↑" : "↓"} {Math.abs(yoyGrowth).toFixed(1)}%
+                      </span>
+                    )}
                     {momGrowth !== null && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`}>
-                        {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${momGrowth >= 0 ? "bg-green-400/20 text-green-200" : "bg-red-400/20 text-red-200"}`} title="Perbandingan vs bulan lalu (Month over Month)">
+                        MoM {momGrowth >= 0 ? "↑" : "↓"} {Math.abs(momGrowth).toFixed(1)}%
                       </span>
                     )}
                     <MetricHelpTooltip title="Total GMV Affiliate" desc="Total nilai omset kotor (Gross Merchandise Value) dari seluruh promosi kreator afiliasi sebelum dikurangi refund." formula="GMV Video + GMV Live + GMV Kartu Produk" benchmark="Porsi ideal >70% dari total omset toko" dark />
@@ -1016,6 +1240,14 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                     </div>
                   </div>
                 )}
+                {gmvSparkline.length >= 2 && (
+                  <div className="mt-3 flex items-end justify-between gap-3">
+                    <span className="text-[10px] text-blue-200/80 font-semibold uppercase tracking-wide">
+                      Tren {gmvSparkline.length} periode
+                    </span>
+                    <KpiSparkline values={gmvSparkline} width={130} height={32} />
+                  </div>
+                )}
               </div>
 
               {/* Card 2: Omzet FreshVision */}
@@ -1028,7 +1260,11 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                   </div>
                 </div>
                 <button onClick={() => onNavigate("laporan-harian")} className="w-full text-left">
-                  <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
+                  {lhLoading ? (
+                    <span className="block h-9 w-36 rounded-lg bg-white/20 animate-pulse" aria-label="Memuat omzet" />
+                  ) : (
+                    <p className="text-3xl font-extrabold leading-tight">{heroCards.displayOmzet > 0 ? fRp(heroCards.displayOmzet) : "—"}</p>
+                  )}
                   <p className="text-emerald-200 text-xs mt-1 font-medium">Omzet Pembukuan Store</p>
                 </button>
                 {heroCards.displayOmzet > 0 && heroCards.daysElapsed > 0 && (
@@ -1214,6 +1450,18 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
               </div>
             </div>
           )}
+
+          {/* Diagnosis Omset Doctor (engine resmi) + Snapshot OKR */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <DoctorDiagnosisCard
+              hasData={doctorResult.hasData}
+              healthScore={doctorResult.healthScore}
+              healthStatus={doctorResult.healthStatus}
+              diagnoses={doctorResult.diagnoses}
+              onNavigate={onNavigate}
+            />
+            <OKRSnapshotCard onNavigate={onNavigate} />
+          </div>
 
           {/* Alerts */}
           {visibleAlerts.length > 0 && (
@@ -1587,6 +1835,30 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             )}
           </div>
 
+          {/* Waterfall Omzet → Gross Profit */}
+          {pnl.omzet > 0 && pnl.totalCost > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  💧 Waterfall Omzet → Gross Profit
+                  <MetricHelpTooltip
+                    title="Waterfall Chart"
+                    desc="Visualisasi aliran uang: dari omzet kotor, dikurangi tiap komponen biaya, hingga tersisa gross profit. Segmen merah/oranye = pengurang, biru = hasil akhir."
+                  />
+                </h2>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${pnl.grossProfit >= 0 ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700"}`}>
+                  Sisa {fP(pnl.grossMarginPct)} dari omzet
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mb-3">Ke mana omzet {fRp(pnl.omzet)} mengalir pada {formatPeriod(activePeriod)}</p>
+              <ProfitWaterfall
+                omzet={pnl.omzet}
+                costs={pnl.costBreakdown.map((c) => ({ label: c.label, value: c.value }))}
+                grossProfit={pnl.grossProfit}
+              />
+            </div>
+          )}
+
           {/* Marketing Efficiency Ratio (MER) Card */}
           <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-4">
@@ -1646,6 +1918,8 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                 { label: "Revenue per Video", value: fRp(unitEcon.revenuePerVideo), sub: `${fN(agg.totalVideos)} video`, icon: "📹", benchmark: "Bandingkan antar periode" },
                 { label: "Revenue per LIVE", value: fRp(unitEcon.revenuePerLive), sub: `${fN(agg.totalLive)} sesi`, icon: "🔴", benchmark: "Bandingkan antar periode" },
                 { label: "Gross Margin %", value: fP(pnl.grossMarginPct), sub: fRp(pnl.grossProfit) + " profit", icon: "📈", benchmark: ">30% sehat" },
+                { label: "Profit per Closing", value: fRp(unitEcon.profitPerClosing), sub: `${fN(unitEcon.closing)} closing`, icon: "💵", benchmark: "Positif = tiap pesanan untung" },
+                { label: "Profit per Botol", value: fRp(unitEcon.profitPerBotol), sub: `${fN(unitEcon.botol)} botol`, icon: "🍾", benchmark: "Positif = tiap unit untung" },
               ].map((item) => (
                 <div key={item.label} className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 border border-gray-100 dark:border-gray-600 relative group">
                   <div className="flex items-center justify-between mb-2">
