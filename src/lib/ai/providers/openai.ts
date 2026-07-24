@@ -1,5 +1,3 @@
-import OpenAI from 'openai'
-
 export async function callOpenAI(
   systemPrompt: string,
   messages: { role: string; content: string }[],
@@ -9,8 +7,10 @@ export async function callOpenAI(
   temperature: number = 0.7,
   maxTokens: number = 600
 ): Promise<string> {
-  const finalKey = apiKey || process.env.OPENAI_API_KEY
-  if (!finalKey) throw new Error('API Key OpenAI / WeizeRouter Gateway tidak ditemukan. Harap masukan API Key Anda di Pengaturan AI.')
+  const finalKey = (apiKey || process.env.OPENAI_API_KEY || '').trim()
+  if (!finalKey) {
+    throw new Error('API Key OpenAI / WeizeRouter Gateway tidak ditemukan. Harap masukan API Key Anda di Pengaturan AI.')
+  }
 
   // Clean base URL: strip trailing slashes & accidental /chat/completions suffix
   let cleanBaseUrl = (baseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
@@ -19,25 +19,48 @@ export async function callOpenAI(
   const rawModel = (model || '').trim()
   const selectedModel = rawModel === '*' || !rawModel ? 'gpt-4o-mini' : rawModel
 
-  const client = new OpenAI({
-    baseURL: cleanBaseUrl,
-    apiKey: finalKey,
-  })
+  const endpoint = `${cleanBaseUrl}/chat/completions`
 
-  const response = await client.chat.completions.create({
+  const payload = {
     model: selectedModel,
     messages: [
       { role: 'system', content: systemPrompt },
       ...messages.map((m) => ({
-        role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+        role: m.role === 'assistant' ? 'assistant' : 'user',
         content: m.content,
       })),
     ],
     temperature,
     max_tokens: maxTokens,
+  }
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${finalKey}`,
+    },
+    body: JSON.stringify(payload),
   })
 
-  return response.choices[0]?.message?.content || 'Tidak ada respons.'
+  const data = await res.json().catch(() => null)
+
+  if (!res.ok) {
+    const errorMsg =
+      data?.error?.message ||
+      data?.message ||
+      (typeof data?.error === 'string' ? data.error : null) ||
+      `HTTP ${res.status} ${res.statusText}`
+    throw new Error(`OpenAI/Gateway Error (${res.status}): ${errorMsg}`)
+  }
+
+  const resultText = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text
+  if (!resultText) {
+    if (data?.error) throw new Error(`Gateway Error: ${JSON.stringify(data.error)}`)
+    throw new Error('Gateway tidak mengembalikan respons teks valid.')
+  }
+
+  return resultText
 }
 
 export const OPENAI_MODELS = [
