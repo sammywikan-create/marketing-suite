@@ -1033,23 +1033,22 @@ export async function saveRetentionTarget(
 // ─── AI SETTINGS SYNC (Supabase) ──────────────────────
 export async function saveAISettingsDb(settings: Record<string, any>) {
   if (!isSupabaseConfigured) return
-  try {
-    const { error } = await supabase
-      .from('app_settings')
+  const { error: err1 } = await supabase
+    .from('app_settings')
+    .upsert(
+      { key: 'ai_settings', value: settings, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    )
+  if (err1) {
+    const { error: err2 } = await supabase
+      .from('ai_settings')
       .upsert(
-        { key: 'ai_settings', value: settings, updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
+        { id: 'default', settings, updated_at: new Date().toISOString() },
+        { onConflict: 'id' }
       )
-    if (error) {
-      await supabase
-        .from('ai_settings')
-        .upsert(
-          { id: 'default', settings, updated_at: new Date().toISOString() },
-          { onConflict: 'id' }
-        )
+    if (err2) {
+      throw new Error(`Tabel app_settings di Supabase belum dibuat. Harap jalankan SQL migration query.`)
     }
-  } catch (err) {
-    console.warn('[Supabase AI Settings] Save skipped:', err)
   }
 }
 
