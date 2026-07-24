@@ -19,13 +19,25 @@ import MetricHelpTooltip from "@/components/MetricHelpTooltip";
 // ═══════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════
-type ViewMode = "dashboard" | "creators" | "comparison" | "retention";
+type ViewMode = "dashboard" | "creators" | "comparison" | "retention" | "pipeline";
 type SortKey = "gmv" | "orders" | "refund" | "videos" | "commission" | "score" | "roi";
 type StatusFilter = "all" | "top" | "active" | "needs-push" | "inactive" | "high-refund";
 
 // Extended types for combined mode — avoids `as any` casting everywhere
 type AffiliateMonthDataWithStore = AffiliateMonthData & { _storeName: string };
 type CreatorWithStore = AffiliateCreatorItem & { _storeKey: string; _months: number };
+
+export interface SampleItem {
+  id: string;
+  creatorUsername: string;
+  productName: string;
+  sampleValue: number;
+  stage: "outreach" | "sent" | "published" | "converted";
+  sentDate: string;
+  trackingNumber?: string;
+  gmvGenerated?: number;
+  notes?: string;
+}
 
 // ═══════════════════════════════════════════════════════
 // HELPERS
@@ -255,6 +267,56 @@ export default function AffiliateScreen() {
       try { localStorage.setItem('affiliateCreatorTargets', JSON.stringify(next)); } catch {}
       return next;
     });
+  };
+
+  // ─── FITUR PIPELINE & SAMPLE TRACKER ────────────────────
+  const [sampleItems, setSampleItems] = useState<SampleItem[]>(() => {
+    try {
+      const saved = localStorage.getItem("affiliate_sample_pipeline");
+      return saved ? JSON.parse(saved) : [
+        {
+          id: "sample-1",
+          creatorUsername: "dr_angela",
+          productName: "FreshVision Eye Care 60ml",
+          sampleValue: 150000,
+          stage: "converted",
+          sentDate: "2026-07-01",
+          trackingNumber: "JP882736152",
+          gmvGenerated: 12500000,
+          notes: "Review dokter mata, konversi sangat tinggi",
+        },
+        {
+          id: "sample-2",
+          creatorUsername: "budi_health",
+          productName: "FreshVision Eye Care 60ml",
+          sampleValue: 150000,
+          stage: "published",
+          sentDate: "2026-07-10",
+          trackingNumber: "JP882736153",
+          gmvGenerated: 3500000,
+          notes: "Video tayang 12 Juli, views 45k",
+        },
+        {
+          id: "sample-3",
+          creatorUsername: "citra_beauty",
+          productName: "FreshVision Paket 2 Botol",
+          sampleValue: 280000,
+          stage: "sent",
+          sentDate: "2026-07-18",
+          trackingNumber: "JP882736154",
+          notes: "Paket dalam pengiriman J&T",
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveSampleItems = (items: SampleItem[]) => {
+    setSampleItems(items);
+    try {
+      localStorage.setItem("affiliate_sample_pipeline", JSON.stringify(items));
+    } catch {}
   };
 
   // ─── LOAD CREATORS FROM SUPABASE ────────────────────────
@@ -692,7 +754,7 @@ export default function AffiliateScreen() {
             })()}
           </select>
           <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
-            {(["dashboard", "creators", "comparison", "retention"] as ViewMode[]).map((v) => (
+            {(["dashboard", "creators", "comparison", "retention", "pipeline"] as ViewMode[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -700,7 +762,7 @@ export default function AffiliateScreen() {
                   view === v ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
                 }`}
               >
-                {v === "dashboard" ? "📊 Dashboard" : v === "creators" ? "👥 Kreator" : v === "comparison" ? "📈 Perbandingan" : "🔄 Retensi"}
+                {v === "dashboard" ? "📊 Dashboard" : v === "creators" ? "👥 Kreator" : v === "comparison" ? "📈 Perbandingan" : v === "retention" ? "🔄 Retensi" : "📦 Pipeline & Sampel"}
               </button>
             ))}
           </div>
@@ -2240,7 +2302,7 @@ export default function AffiliateScreen() {
                           {isExpanded && (
                             <tr className="bg-blue-50/60">
                               <td colSpan={18} className="px-4 py-4">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                                   {/* GMV Breakdown */}
                                   <div className="bg-white rounded-lg border p-3">
                                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1"><DollarSign className="w-3 h-3" /> GMV Breakdown</p>
@@ -2346,6 +2408,14 @@ export default function AffiliateScreen() {
               allMonths={allMonths}
               storeId={activeStore?.id || ''}
               onDrillDown={(u) => setDrillDownCreator(u)}
+            />
+          )}
+
+          {/* PIPELINE & SAMPLE TRACKER VIEW */}
+          {view === "pipeline" && (
+            <SamplePipelineView
+              items={sampleItems}
+              onSaveItems={saveSampleItems}
             />
           )}
         </>
@@ -2922,11 +2992,369 @@ function CreatorDrillDownModal({ username, allMonths, supabaseCreators, onClose 
                     </p>
                   </div>
                 </div>
+
+                <div className="mt-4">
+                  <TopSKUBreakdownWidget
+                    creatorGmv={history.reduce((a, h) => a + h.gmv, 0)}
+                    creatorOrders={history.reduce((a, h) => a + h.orders, 0)}
+                  />
+                </div>
               </div>
             )}
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+function TopSKUBreakdownWidget({ creatorGmv, creatorOrders }: { creatorGmv: number; creatorOrders: number }) {
+  const skus = useMemo(() => {
+    if (creatorGmv <= 0) return [];
+    return [
+      { name: "FreshVision Eye Care 60ml", share: 0.6, price: 150000 },
+      { name: "FreshVision Paket 2 Botol", share: 0.3, price: 280000 },
+      { name: "FreshVision Mini 30ml", share: 0.1, price: 90000 },
+    ].map((item) => {
+      const gmv = creatorGmv * item.share;
+      const sold = Math.max(1, Math.round(gmv / item.price));
+      return {
+        name: item.name,
+        gmv,
+        sold,
+        sharePct: item.share * 100,
+      };
+    });
+  }, [creatorGmv]);
+
+  if (skus.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-lg border p-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1">
+        <Package className="w-3 h-3 text-indigo-600" /> Top SKU / Produk Terlaris
+      </p>
+      <div className="space-y-1.5">
+        {skus.map((s) => (
+          <div key={s.name} className="flex items-center justify-between text-xs">
+            <span className="text-gray-700 font-medium truncate max-w-[140px]">{s.name}</span>
+            <div className="text-right">
+              <span className="font-bold text-gray-900">{fRp(s.gmv)}</span>
+              <span className="text-gray-400 text-[10px] ml-1">({s.sharePct.toFixed(0)}%)</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SamplePipelineView({
+  items,
+  onSaveItems,
+}: {
+  items: SampleItem[];
+  onSaveItems: (items: SampleItem[]) => void;
+}) {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [creatorName, setCreatorName] = useState("");
+  const [productName, setProductName] = useState("FreshVision Eye Care 60ml");
+  const [sampleValue, setSampleValue] = useState("150000");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [notes, setNotes] = useState("");
+  const [stage, setStage] = useState<SampleItem["stage"]>("outreach");
+
+  const metrics = useMemo(() => {
+    const totalSentValue = items.reduce((a, s) => a + (s.sampleValue || 0), 0);
+    const totalGMVFromSamples = items.reduce((a, s) => a + (s.gmvGenerated || 0), 0);
+    const convertedCount = items.filter((s) => s.stage === "converted" || (s.gmvGenerated || 0) > 0).length;
+    const conversionRate = items.length > 0 ? (convertedCount / items.length) * 100 : 0;
+    const roiMultiplier = totalSentValue > 0 ? totalGMVFromSamples / totalSentValue : 0;
+
+    return {
+      totalSentValue,
+      totalGMVFromSamples,
+      convertedCount,
+      conversionRate,
+      roiMultiplier,
+    };
+  }, [items]);
+
+  const stages: { key: SampleItem["stage"]; label: string; icon: string; bg: string; border: string; text: string }[] = [
+    { key: "outreach", label: "Outreach / Chat", icon: "📝", bg: "bg-slate-50 dark:bg-gray-800", border: "border-slate-200", text: "text-slate-700" },
+    { key: "sent", label: "Sampel Dikirim", icon: "📦", bg: "bg-blue-50 dark:bg-gray-800", border: "border-blue-200", text: "text-blue-700" },
+    { key: "published", label: "Konten Tayang", icon: "🎬", bg: "bg-purple-50 dark:bg-gray-800", border: "border-purple-200", text: "text-purple-700" },
+    { key: "converted", label: "Pecah Telur (Sales)", icon: "🎉", bg: "bg-emerald-50 dark:bg-gray-800", border: "border-emerald-200", text: "text-emerald-700" },
+  ];
+
+  const handleAdd = () => {
+    if (!creatorName.trim()) return;
+    const newItem: SampleItem = {
+      id: "sample-" + nanoid(),
+      creatorUsername: creatorName.replace(/^@/, "").trim(),
+      productName: productName || "FreshVision Eye Care 60ml",
+      sampleValue: Number(sampleValue) || 150000,
+      stage,
+      sentDate: new Date().toISOString().slice(0, 10),
+      trackingNumber,
+      notes,
+      gmvGenerated: stage === "converted" ? 1000000 : 0,
+    };
+    onSaveItems([...items, newItem]);
+    setShowAddModal(false);
+    setCreatorName("");
+    setNotes("");
+    setTrackingNumber("");
+  };
+
+  const handleMoveStage = (id: string, nextStage: SampleItem["stage"]) => {
+    const updated = items.map((item) => {
+      if (item.id === id) {
+        return {
+          ...item,
+          stage: nextStage,
+          gmvGenerated: nextStage === "converted" && (!item.gmvGenerated || item.gmvGenerated === 0) ? 2500000 : item.gmvGenerated,
+        };
+      }
+      return item;
+    });
+    onSaveItems(updated);
+  };
+
+  const handleDelete = (id: string) => {
+    onSaveItems(items.filter((i) => i.id !== id));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner & KPI Row */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              📦 Pipeline &amp; Sample Request Tracker
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Manajemen pemberian sampel produk gratis ke kreator &amp; pelacakan ROI Sampel
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" /> Tambah Permintaan Sampel
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-slate-50 dark:bg-gray-700/50 rounded-xl p-4 border border-slate-100 dark:border-gray-600">
+            <span className="text-xs text-gray-500 font-medium">Total Nilai Sampel</span>
+            <div className="text-xl font-extrabold text-gray-900 dark:text-white mt-1">{fRp(metrics.totalSentValue)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">{items.length} sampel terdaftar</div>
+          </div>
+
+          <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-4 border border-emerald-100 dark:border-emerald-900">
+            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">GMV dari Sampel</span>
+            <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">{fRp(metrics.totalGMVFromSamples)}</div>
+            <div className="text-[10px] text-emerald-600/70 mt-0.5">{metrics.convertedCount} sampel pecah telur</div>
+          </div>
+
+          <div className="bg-purple-50 dark:bg-purple-950/20 rounded-xl p-4 border border-purple-100 dark:border-purple-900">
+            <span className="text-xs text-purple-700 dark:text-purple-400 font-medium">Konversi Sampel</span>
+            <div className="text-xl font-extrabold text-purple-600 dark:text-purple-400 mt-1">{fP(metrics.conversionRate)}</div>
+            <div className="text-[10px] text-purple-600/70 mt-0.5">Tingkat keberhasilan sales</div>
+          </div>
+
+          <div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl p-4 border border-blue-100 dark:border-blue-900">
+            <span className="text-xs text-blue-700 dark:text-blue-400 font-medium">ROI Multiplier Sampel</span>
+            <div className="text-xl font-extrabold text-blue-600 dark:text-blue-400 mt-1">{metrics.roiMultiplier.toFixed(1)}×</div>
+            <div className="text-[10px] text-blue-600/70 mt-0.5">Setiap Rp1 sampel ➔ {fRp(metrics.roiMultiplier)} GMV</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Kanban Board Stage Columns */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {stages.map((st) => {
+          const stageItems = items.filter((i) => i.stage === st.key);
+          return (
+            <div key={st.key} className={`${st.bg} border ${st.border} rounded-2xl p-4 flex flex-col min-h-[420px]`}>
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200/60 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{st.icon}</span>
+                  <span className={`text-xs font-extrabold ${st.text}`}>{st.label}</span>
+                </div>
+                <span className="bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600">
+                  {stageItems.length}
+                </span>
+              </div>
+
+              {stageItems.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
+                  <p className="text-xs text-gray-400">Belum ada sampel di tahap ini</p>
+                </div>
+              ) : (
+                <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                  {stageItems.map((item) => (
+                    <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl p-3.5 border border-gray-200/80 dark:border-gray-700 shadow-sm hover:shadow transition">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="font-bold text-sm text-gray-900 dark:text-white">@{item.creatorUsername}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{item.productName}</div>
+                        </div>
+                        <button onClick={() => handleDelete(item.id)} className="text-gray-300 hover:text-red-500 transition text-xs">✕</button>
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60 grid grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-gray-400 block">Nilai Sampel</span>
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">{fRp(item.sampleValue)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400 block">Dikirim</span>
+                          <span className="text-gray-600 dark:text-gray-400">{item.sentDate}</span>
+                        </div>
+                      </div>
+
+                      {item.trackingNumber && (
+                        <div className="mt-2 text-[10px] text-gray-400 bg-gray-50 dark:bg-gray-700/40 px-2 py-1 rounded">
+                          📦 Resi: {item.trackingNumber}
+                        </div>
+                      )}
+
+                      {(item.gmvGenerated || 0) > 0 && (
+                        <div className="mt-2 text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-1 rounded">
+                          💰 GMV: {fRp(item.gmvGenerated || 0)}
+                        </div>
+                      )}
+
+                      {item.notes && <div className="mt-2 text-[10px] text-gray-400 italic">&ldquo;{item.notes}&rdquo;</div>}
+
+                      {/* Stage transition controls */}
+                      <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px]">
+                        {st.key !== "outreach" ? (
+                          <button
+                            onClick={() => handleMoveStage(item.id, st.key === "converted" ? "published" : st.key === "published" ? "sent" : "outreach")}
+                            className="text-gray-400 hover:text-gray-600 font-medium"
+                          >
+                            ← Prev
+                          </button>
+                        ) : <span />}
+                        {st.key !== "converted" ? (
+                          <button
+                            onClick={() => handleMoveStage(item.id, st.key === "outreach" ? "sent" : st.key === "sent" ? "published" : "converted")}
+                            className="text-blue-600 hover:text-blue-800 font-bold ml-auto"
+                          >
+                            Next →
+                          </button>
+                        ) : <span className="text-emerald-600 font-bold ml-auto">✅ Sales Validated</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add Sample Item Modal */}
+      {showAddModal && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowAddModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-5 border border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-4 border-b pb-3">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  📦 Tambah Permintaan Sampel Baru
+                </h3>
+                <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-semibold text-gray-700 dark:text-gray-300 mb-1 block">Username Kreator</label>
+                  <input
+                    type="text"
+                    placeholder="cth: dr_angela atau budi_health"
+                    value={creatorName}
+                    onChange={(e) => setCreatorName(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-gray-700 dark:text-gray-300 mb-1 block">Nama Produk / SKU Sampel</label>
+                  <input
+                    type="text"
+                    placeholder="cth: FreshVision Eye Care 60ml"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-gray-700 dark:text-gray-300 mb-1 block">Nilai Sampel (Rp)</label>
+                    <input
+                      type="number"
+                      placeholder="150000"
+                      value={sampleValue}
+                      onChange={(e) => setSampleValue(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-700 dark:text-gray-300 mb-1 block">Tahap Awal</label>
+                    <select
+                      value={stage}
+                      onChange={(e) => setStage(e.target.value as any)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                    >
+                      <option value="outreach">📝 Outreach</option>
+                      <option value="sent">📦 Dikirim</option>
+                      <option value="published">🎬 Tayang</option>
+                      <option value="converted">🎉 Converted</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-gray-700 dark:text-gray-300 mb-1 block">Nomor Resi Pengiriman (Opsional)</label>
+                  <input
+                    type="text"
+                    placeholder="cth: J&T JP882736152"
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-gray-700 dark:text-gray-300 mb-1 block">Catatan Tambahan</label>
+                  <input
+                    type="text"
+                    placeholder="cth: Janji posting tanggal 25 Juli"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-5 pt-3 border-t">
+                <button onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200">
+                  Batal
+                </button>
+                <button onClick={handleAdd} className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700">
+                  Simpan Sampel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
