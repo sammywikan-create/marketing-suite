@@ -11,6 +11,11 @@ import OKRSnapshotCard from "@/components/home/OKRSnapshotCard";
 import ProfitWaterfall from "@/components/home/ProfitWaterfall";
 import KpiSparkline from "@/components/home/KpiSparkline";
 import ExecExportMenu from "@/components/home/ExecExportMenu";
+import ExecutiveVerdict, { type VerdictPillar, type CoverageItem } from "@/components/home/ExecutiveVerdict";
+import MoneyStoryCard from "@/components/home/MoneyStoryCard";
+import TargetRaceCard from "@/components/home/TargetRaceCard";
+import ActionCenterCard, { type ActionItem } from "@/components/home/ActionCenterCard";
+import { useOKRStore } from "@/store/useOKRStore";
 import type { ExecSummaryExportData } from "@/lib/exportExecSummary";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -61,7 +66,7 @@ interface HomeScreenProps {
 // ═══════════════════════════════════════════════════════════
 export default function HomeScreen({ onNavigate }: HomeScreenProps) {
   const { stores } = useStoreManager();
-  const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
+  const okrObjectives = useOKRStore((s) => s.objectives);
   const [chartView, setChartView] = useState<"gabungan" | "pertoko">("gabungan");
   const [chartMetric, setChartMetric] = useState<"gmv" | "refund">("gmv");
   const [targetVersion, setTargetVersion] = useState(0);
@@ -958,10 +963,143 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
     return list;
   }, [agg, targetGMV, targetProgress, targetRemaining, activePeriod, momGrowth, prevPeriod, dormantRate, dormantCount, highRefundCreators, heroCards, pnl, merData, targetPace, unitEcon, lhData, ma7Alerts]);
 
-  const visibleAlerts = alerts.filter((_, i) => !dismissedAlerts.includes(i));
-  const dismissAlert = useCallback((i: number) => {
-    setDismissedAlerts((prev) => [...prev, i]);
-  }, []);
+  // ─── PUSAT AKSI: gabungan alert + rekomendasi Omset Doctor ───
+  const actionItems: ActionItem[] = useMemo(() => {
+    const items: ActionItem[] = [];
+    alerts.forEach((a) => {
+      const priority = (a.type === "error" ? 1 : a.type === "warning" ? 2 : 3) as 1 | 2 | 3;
+      items.push({ priority, icon: a.icon, title: a.title, why: a.message, action: a.action });
+    });
+    doctorResult.diagnoses
+      .filter((d) => d.severity !== "HEALTHY")
+      .forEach((d) => {
+        items.push({
+          priority: d.severity === "CRITICAL" ? 1 : 2,
+          icon: "🩺",
+          title: d.title,
+          why: `${d.rootCause} Solusi: ${d.recommendation}`,
+          action: { label: "Omset Doctor", tab: "omset-doctor" },
+        });
+      });
+    return items.sort((a, b) => a.priority - b.priority).slice(0, 6);
+  }, [alerts, doctorResult]);
+
+  // ─── 5 PILAR PENILAIAN BISNIS ────────────────────────────
+  const pillars: VerdictPillar[] = useMemo(() => {
+    // 1. Penjualan — progress target, fallback pertumbuhan MoM
+    let salesScore: number | null = null;
+    let salesNote = "Belum ada target / data pembanding";
+    if (targetGMV > 0) {
+      salesScore = Math.min(100, targetProgress);
+      salesNote = `${fP(targetProgress)} dari target bulan ini`;
+    } else if (momGrowth !== null) {
+      salesScore = momGrowth >= 20 ? 90 : momGrowth >= 0 ? 70 : momGrowth >= -15 ? 45 : 20;
+      salesNote = `GMV ${momGrowth >= 0 ? "naik" : "turun"} ${Math.abs(momGrowth).toFixed(1)}% vs bulan lalu`;
+    } else if (agg.totalGMV > 0) {
+      salesScore = 60;
+      salesNote = "Data pembanding belum cukup";
+    }
+    // 2. Profitabilitas — margin kotor dari P&L
+    let profitScore: number | null = null;
+    let profitNote = "Upload Laporan Harian untuk hitung biaya";
+    if (pnl.totalCost > 0) {
+      const m = pnl.grossMarginPct;
+      profitScore = m >= 30 ? 95 : m >= 20 ? 80 : m >= 10 ? 60 : m >= 0 ? 35 : 5;
+      profitNote = m >= 0 ? `Margin kotor ${fP(m)}` : `RUGI — margin ${fP(m)}`;
+    }
+    // 3. Efisiensi Iklan — ROAS
+    let adsScore: number | null = null;
+    let adsNote = "Data biaya iklan belum tersedia";
+    if (heroCards.displayRoas > 0) {
+      const r = heroCards.displayRoas;
+      adsScore = r >= 4 ? 95 : r >= 3 ? 80 : r >= 2 ? 50 : 20;
+      adsNote = `ROAS ${r.toFixed(2)}× (sehat ≥3×)`;
+    }
+    // 4. Kreator — tingkat keaktifan
+    let creatorScore: number | null = null;
+    let creatorNote = "Belum ada data kreator";
+    if (agg.totalCreators > 0) {
+      const ar = healthScore.activityRate;
+      creatorScore = ar >= 30 ? 90 : ar >= 20 ? 75 : ar >= 10 ? 55 : 30;
+      creatorNote = `${fP(ar)} kreator aktif (ideal ≥25%)`;
+    }
+    // 5. Kualitas — refund rate
+    let qualityScore: number | null = null;
+    let qualityNote = "Belum ada data penjualan";
+    if (agg.totalGMV > 0) {
+      const rr = agg.refundRate;
+      qualityScore = rr <= 10 ? 95 : rr <= 15 ? 75 : rr <= 20 ? 50 : rr <= 30 ? 25 : 10;
+      qualityNote = `Refund ${fP(rr)} (aman <15%)`;
+    }
+    return [
+      { key: "sales", label: "Penjualan", icon: "💰", score: salesScore, note: salesNote },
+      { key: "profit", label: "Profitabilitas", icon: "📈", score: profitScore, note: profitNote },
+      { key: "ads", label: "Efisiensi Iklan", icon: "📣", score: adsScore, note: adsNote },
+      { key: "creator", label: "Kreator", icon: "👥", score: creatorScore, note: creatorNote },
+      { key: "quality", label: "Kualitas", icon: "🛡️", score: qualityScore, note: qualityNote },
+    ];
+  }, [targetGMV, targetProgress, momGrowth, agg, pnl, heroCards.displayRoas, healthScore.activityRate]);
+
+  // ─── NILAI BISNIS A–E (komposit pilar yang datanya tersedia) ───
+  const bizGrade = useMemo(() => {
+    const avail = pillars.filter((p) => p.score !== null);
+    const score = avail.length > 0 ? Math.round(avail.reduce((a, p) => a + (p.score || 0), 0) / avail.length) : 0;
+    const grade = score >= 85 ? "A" : score >= 70 ? "B" : score >= 55 ? "C" : score >= 40 ? "D" : "E";
+    const gradeLabel =
+      grade === "A" ? "LUAR BIASA" :
+      grade === "B" ? "SEHAT" :
+      grade === "C" ? "CUKUP — BISA NAIK" :
+      grade === "D" ? "PERLU PERHATIAN" : "KRITIS";
+    return { score, grade, gradeLabel };
+  }, [pillars]);
+
+  // ─── VALIDITAS DATA: sumber mana yang aktif ─────────────
+  const dataCoverage: CoverageItem[] = useMemo(() => {
+    const okrActive = okrObjectives.filter((o) => o.status === "active").length;
+    return [
+      { label: "Affiliate", ok: agg.totalGMV > 0, detail: agg.totalGMV > 0 ? formatPeriod(activePeriod) : "belum upload" },
+      { label: "Laporan Harian", ok: !!lhData?.summary, detail: lhData?.summary ? `${lhData.summary.hari || 0} hari` : "belum ada" },
+      { label: "Data Harian Toko", ok: doctorResult.hasData, detail: doctorResult.hasData ? "aktif" : "belum upload" },
+      { label: "Target", ok: targetGMV > 0, detail: targetGMV > 0 ? "ter-set" : "belum di-set" },
+      { label: "OKR", ok: okrActive > 0, detail: okrActive > 0 ? `${okrActive} objective` : "belum ada" },
+    ];
+  }, [agg.totalGMV, activePeriod, lhData, doctorResult.hasData, targetGMV, okrObjectives]);
+
+  // ─── NARASI VERDICT (bahasa manajer, tanpa jargon) ──────
+  const verdictNarrative = useMemo(() => {
+    const lines: string[] = [];
+    const displayOmzet = heroCards.displayOmzet > 0 ? heroCards.displayOmzet : agg.totalGMV;
+    lines.push(
+      bizGrade.grade === "A" ? "Bisnis Anda dalam kondisi luar biasa — pertahankan strategi yang sedang berjalan." :
+      bizGrade.grade === "B" ? "Bisnis Anda sehat dan berjalan di jalur yang benar." :
+      bizGrade.grade === "C" ? "Bisnis berjalan cukup baik, namun ada ruang perbaikan yang jelas." :
+      bizGrade.grade === "D" ? "Bisnis butuh perhatian — beberapa indikator penting di bawah standar." :
+      "Kondisi bisnis kritis — perlu tindakan korektif segera."
+    );
+    if (displayOmzet > 0) {
+      let s = `Omzet ${formatPeriod(activePeriod)} tercatat ${fRp(displayOmzet)}`;
+      if (targetGMV > 0) {
+        s += ` — ${fP(targetProgress)} dari target ${fRp(targetGMV)}`;
+        if (targetPace) {
+          s +=
+            targetPace.status === "ACHIEVED" ? " (target sudah tercapai 🎉)" :
+            targetPace.status === "AHEAD" ? " (lebih cepat dari jadwal)" :
+            targetPace.status === "ON_TRACK" ? " (sesuai jalur)" : " (tertinggal dari jadwal)";
+        }
+      }
+      lines.push(s + ".");
+    }
+    if (pnl.totalCost > 0) {
+      lines.push(
+        pnl.grossProfit >= 0
+          ? `Untung kotor ${fRp(pnl.grossProfit)} (margin ${fP(pnl.grossMarginPct)}) setelah total biaya ${fRp(pnl.totalCost)}.`
+          : `RUGI ${fRp(Math.abs(pnl.grossProfit))} — total biaya ${fRp(pnl.totalCost)} melebihi omzet.`
+      );
+    }
+    const p1 = actionItems.find((i) => i.priority === 1) || actionItems[0];
+    lines.push(p1 ? `Perhatian utama: ${p1.title}.` : "Tidak ada masalah mendesak yang membutuhkan tindakan hari ini.");
+    return lines;
+  }, [bizGrade.grade, heroCards.displayOmzet, agg.totalGMV, activePeriod, targetGMV, targetProgress, targetPace, pnl, actionItems]);
 
   // ─── DATA EXPORT EXECUTIVE SUMMARY (PDF/PPT/Telegram) ───
   const execExportData: ExecSummaryExportData = useMemo(() => {
@@ -1069,9 +1207,9 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
                   {momGrowth >= 0 ? "📈" : "📉"} GMV {momGrowth >= 0 ? "+" : ""}{momGrowth.toFixed(1)}% MoM
                 </span>
               )}
-              {visibleAlerts.length > 0 && (
+              {alerts.length > 0 && (
                 <span className="rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 text-xs font-bold">
-                  ⚠️ {visibleAlerts.length} perhatian
+                  ⚠️ {alerts.length} perhatian
                 </span>
               )}
               {targetGMV > 0 && (
@@ -1188,17 +1326,47 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             </div>
           )}
 
-          {/* Purpose & Benefit */}
-          <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
-            <div className="space-y-1">
-              <span className="font-bold text-foreground flex items-center gap-1.5">🎯 Tujuan Executive Summary:</span>
-              <p className="text-muted">Menyajikan gambaran besar (*bird&apos;s-eye view*) seluruh kondisi bisnis dan pemasaran toko Anda dalam 1 layar komando eksekutif tanpa perlu membaca puluhan tabel terpisah.</p>
+          {/* ═══ VERDICT EKSEKUTIF — kesimpulan bisnis 30 detik ═══ */}
+          {(agg.totalGMV > 0 || lhData?.summary) && (
+            <ExecutiveVerdict
+              grade={bizGrade.grade}
+              gradeLabel={bizGrade.gradeLabel}
+              score={bizGrade.score}
+              pillars={pillars}
+              narrative={verdictNarrative}
+              coverage={dataCoverage}
+              periodLabel={formatPeriod(activePeriod) || "Periode Terbaru"}
+            />
+          )}
+
+          {/* Cerita Uang + Balapan Target */}
+          {(agg.totalGMV > 0 || lhData?.summary) && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <MoneyStoryCard
+                omzet={heroCards.displayOmzet > 0 ? heroCards.displayOmzet : agg.totalGMV}
+                cost={pnl.totalCost}
+                profit={pnl.grossProfit}
+                marginPct={pnl.grossMarginPct}
+                hasCostData={pnl.totalCost > 0}
+                totalGMV={agg.totalGMV}
+                refund={agg.totalRefund}
+                commission={agg.totalCommission}
+                sourceNote={pnl.totalCost > 0
+                  ? "Laporan Harian (pembukuan terverifikasi) + komisi affiliate"
+                  : "Data upload Affiliate — upload Laporan Harian untuk cerita biaya lengkap"}
+              />
+              <TargetRaceCard
+                targetGMV={targetGMV}
+                currentGMV={agg.totalGMV}
+                progressPct={targetProgress}
+                pace={targetPace}
+                projectedEOM={heroCards.projectedEOM}
+                aov={agg.aov}
+                periodLabel={formatPeriod(activePeriod) || "bulan ini"}
+                onSetTarget={() => setActiveExecTab("analisis-tren")}
+              />
             </div>
-            <div className="space-y-1">
-              <span className="font-bold text-foreground flex items-center gap-1.5">💡 Manfaat untuk Direksi & Manajemen:</span>
-              <p className="text-muted">Memungkinkan evaluasi kesehatan bisnis (*Health Score*) dalam 10 detik, memantau perolehan omset vs target bulanan real, serta menerima notifikasi peringatan (*Alert Panel*) untuk potensi kerugian.</p>
-            </div>
-          </div>
+          )}
 
           {/* Hero KPIs — 4 Most Critical */}
           <div>
@@ -1463,40 +1631,9 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
             <OKRSnapshotCard onNavigate={onNavigate} />
           </div>
 
-          {/* Alerts */}
-          {visibleAlerts.length > 0 && (
-            <div className="space-y-2">
-              {visibleAlerts.map((alert, i) => {
-                const origIdx = alerts.indexOf(alert);
-                return (
-                  <div key={i} className={`flex items-start gap-3 p-4 rounded-xl border ${
-                    alert.type === "error" ? "bg-red-50 border-red-200" :
-                    alert.type === "warning" ? "bg-yellow-50 border-yellow-200" :
-                    alert.type === "success" ? "bg-green-50 border-green-200" :
-                    "bg-blue-50 border-blue-200"
-                  }`}>
-                    <span className="text-xl flex-shrink-0 mt-0.5">{alert.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-sm font-semibold ${
-                        alert.type === "error" ? "text-red-800" : alert.type === "warning" ? "text-yellow-800" :
-                        alert.type === "success" ? "text-green-800" : "text-blue-800"
-                      }`}>{alert.title}</div>
-                      <div className={`text-xs mt-0.5 ${
-                        alert.type === "error" ? "text-red-600" : alert.type === "warning" ? "text-yellow-600" :
-                        alert.type === "success" ? "text-green-600" : "text-blue-600"
-                      }`}>{alert.message}</div>
-                    </div>
-                    {alert.action && (
-                      <button onClick={() => onNavigate(alert.action!.tab)} className={`text-xs font-medium px-3 py-1.5 rounded-lg flex-shrink-0 ${
-                        alert.type === "error" ? "bg-red-100 text-red-700" : alert.type === "warning" ? "bg-yellow-100 text-yellow-700" :
-                        alert.type === "success" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                      }`}>{alert.action.label} →</button>
-                    )}
-                    <button onClick={() => dismissAlert(origIdx)} className="text-gray-400 hover:text-gray-600 flex-shrink-0 text-lg leading-none">✕</button>
-                  </div>
-                );
-              })}
-            </div>
+          {/* Pusat Aksi — menggantikan daftar alert mentah */}
+          {(agg.totalGMV > 0 || lhData?.summary) && (
+            <ActionCenterCard items={actionItems} onNavigate={onNavigate} />
           )}
 
           {/* Auto Insights */}
@@ -1523,6 +1660,18 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
               </div>
             </div>
           )}
+
+          {/* Referensi: Tujuan & Manfaat halaman (juga di tombol ? pada header) */}
+          <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed">
+            <div className="space-y-1">
+              <span className="font-bold text-foreground flex items-center gap-1.5">🎯 Tujuan Executive Summary:</span>
+              <p className="text-muted">Menyajikan gambaran besar (*bird&apos;s-eye view*) seluruh kondisi bisnis dan pemasaran toko Anda dalam 1 layar komando eksekutif tanpa perlu membaca puluhan tabel terpisah.</p>
+            </div>
+            <div className="space-y-1">
+              <span className="font-bold text-foreground flex items-center gap-1.5">💡 Manfaat untuk Direksi & Manajemen:</span>
+              <p className="text-muted">Nilai Bisnis A–E dalam 30 detik, cerita uang tanpa jargon, balapan target dengan proyeksi akhir bulan, dan prioritas aksi P1–P3 yang langsung bisa dieksekusi tim.</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1796,6 +1945,17 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
               </h2>
               <button onClick={() => onNavigate("laporan-harian")} className="text-xs text-blue-600 hover:underline">Lihat Detail →</button>
             </div>
+
+            {/* Penjelasan bahasa manajer */}
+            {pnl.totalCost > 0 && (
+              <p className="mb-4 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-blue-100 dark:border-gray-700 px-3.5 py-2.5 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+                💬 <b>Bahasa sederhana:</b> dari omzet <b>{fRp(pnl.omzet)}</b>, total biaya memakan <b>{fRp(pnl.totalCost)}</b> ({fP(pnl.omzet > 0 ? (pnl.totalCost / pnl.omzet) * 100 : 0)} dari omzet), sehingga {pnl.grossProfit >= 0 ? (
+                  <>tersisa untung kotor <b className="text-green-600">{fRp(pnl.grossProfit)}</b></>
+                ) : (
+                  <>terjadi <b className="text-red-600">rugi {fRp(Math.abs(pnl.grossProfit))}</b></>
+                )} — setara margin {fP(pnl.grossMarginPct)}.
+              </p>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
               {[
