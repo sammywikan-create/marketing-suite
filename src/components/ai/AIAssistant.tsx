@@ -1,9 +1,10 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Sparkles, X, Settings, Trash2, Copy, Send } from 'lucide-react'
 import { useAIStore } from '@/store/useAIStore'
 import { useAIChat } from '@/hooks/useAIChat'
 import { QUICK_ACTIONS } from '@/lib/ai/prompts'
+import { renderChatMarkdown } from '@/lib/ai/chatMarkdown'
 import { AISettings } from './AISettings'
 
 interface AIAssistantProps {
@@ -120,9 +121,16 @@ export function AIAssistant({ page, context, storeId }: AIAssistantProps) {
                 <div className={`relative max-w-[85%] group ${
                   msg.role === 'user'
                     ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2'
-                    : 'bg-gray-100 text-gray-800 rounded-2xl rounded-tl-sm px-4 py-2'
+                    : 'bg-gray-100 text-gray-800 rounded-2xl rounded-tl-sm px-4 py-3'
                 }`}>
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  {msg.role === 'assistant' ? (
+                    <div
+                      className="aria-chat-content text-sm"
+                      dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.content) }}
+                    />
+                  ) : (
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  )}
                   {msg.role === 'assistant' && (
                     <button
                       onClick={() => copyMessage(msg.content)}

@@ -380,3 +380,143 @@ html.dark body {
 .stagger-5 { animation: fade-slide-up 0.4s ease-out 0.25s both; }
 .stagger-6 { animation: fade-slide-up 0.4s ease-out 0.3s both; }
 
+/* ═══════════════════════════════════════════════════════════ */
+/* ─── AI Chat Markdown Styles (Aria Analyst)               ─── */
+/* ═══════════════════════════════════════════════════════════ */
+
+.aria-chat-content {
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+/* Headings */
+.aria-chat-content .chat-h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0.75rem 0 0.4rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+.aria-chat-content .chat-h2 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0.75rem 0 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.aria-chat-content .chat-h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+  margin: 0.6rem 0 0.3rem;
+}
+.aria-chat-content .chat-h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  margin: 0.5rem 0 0.25rem;
+}
+
+/* Paragraphs */
+.aria-chat-content .chat-p {
+  margin: 0.35rem 0;
+  color: #374151;
+}
+
+/* Bold & emphasis */
+.aria-chat-content strong {
+  font-weight: 600;
+  color: #1e293b;
+}
+.aria-chat-content em {
+  font-style: italic;
+  color: #4b5563;
+}
+
+/* ─── Tables ─── */
+.aria-chat-content .chat-table-wrap {
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+}
+.aria-chat-content .chat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.aria-chat-content .chat-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #334155;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 2px solid #cbd5e1;
+}
+.aria-chat-content .chat-table td {
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #475569;
+  white-space: nowrap;
+}
+.aria-chat-content .chat-table tbody tr:hover {
+  background: #f8fafc;
+}
+.aria-chat-content .chat-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ─── Lists ─── */
+.aria-chat-content .chat-ul {
+  margin: 0.35rem 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.aria-chat-content .chat-ol {
+  margin: 0.35rem 0;
+  padding-left: 1.25rem;
+  list-style: decimal;
+}
+.aria-chat-content .chat-ul li,
+.aria-chat-content .chat-ol li {
+  margin: 0.2rem 0;
+  color: #374151;
+  line-height: 1.5;
+}
+.aria-chat-content .chat-li-nested {
+  margin-left: 0.75rem;
+  list-style-type: circle;
+}
+
+/* ─── Code ─── */
+.aria-chat-content .chat-inline-code {
+  background: #f1f5f9;
+  color: #7c3aed;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, monospace;
+}
+.aria-chat-content .chat-code-block {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
+  line-height: 1.5;
+}
+
+/* ─── Horizontal Rule ─── */
+.aria-chat-content .chat-hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.6rem 0;
+}
