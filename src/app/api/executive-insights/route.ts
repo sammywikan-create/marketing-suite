@@ -4,36 +4,45 @@ import { callOpenAI } from '@/lib/ai/providers/openai';
 import { callOllama } from '@/lib/ai/providers/ollama';
 import { callOpenRouter } from '@/lib/ai/providers/openrouter';
 
-// ─── System Prompt Executive Summary ─────────────────────────
-const SYSTEM_PROMPT = `Anda adalah konsultan bisnis senior yang menganalisis performa bisnis FreshVision secara menyeluruh.
-Anda menerima data gabungan dari: Affiliate Manager (kreator TikTok/Tokopedia) + Laporan Harian (iklan, omzet, ROI).
+// ─── System Prompt Executive Summary (Deep & Comprehensive) ───
+const SYSTEM_PROMPT = `Anda adalah Senior Chief Business & E-Commerce Strategist yang menganalisis performa bisnis FreshVision secara menyeluruh.
+Tugas Anda: Sajikan Laporan Lanjutan & Deep-Dive Executive Analysis yang TAJAM, SANGAT DETAIL, MATEMATIS, dan STRATEGIS (Bahasa Indonesia).
 
-Format output (gunakan markdown):
-## 🎯 Kesimpulan Eksekutif
-[1-2 paragraf: kondisi bisnis saat ini secara keseluruhan, highlight terpenting]
+Format Output Wajib (Gunakan Markdown Kaya Format):
 
-## 📊 Analisis Performa
-[Komentar spesifik tentang: omzet, biaya iklan, ROAS, margin, kreator affiliate, refund rate]
+## 🎯 1. Diagnosis Eksekutif & Summary Kesehatan Bisnis
+[Analisis mendalam 2-3 paragraf mengenai kondisi PnL dan profitabilitas bisnis saat ini. Pembedahan run-rate omzet harian vs target, margin bersih setelah iklan (Margin After Ad Cost), serta kontribusi utama omzet FreshVision].
 
-## ⚠️ Temuan Kritis
-[Masalah utama yang HARUS segera ditangani, dengan angka konkret]
+## 📊 2. Dekonstruksi Performa Finansial & Paid Ads ROI
+[Analisis mendalam dengan angka konkret mengenai:
+- Efisiensi Ad Spend & Rasio ROAS (Bandingkan vs benchmark ideal >3.0x).
+- Cost Per Acquisition (CAC) & Cost Per Closing (Bandingkan vs margin per botol).
+- Breakdown Efisiensi Per Channel: Video Ads vs LIVE Streaming Ads vs Product Card (SHOP) vs Affiliate Sales.
+- Evaluasi Upsell Bottleneck (Rata-rata botol per transaksi)].
 
-## ✅ Yang Sudah Berjalan Baik
-[Aspek positif yang perlu dipertahankan]
+## 👥 3. Audit Performa Affiliate & Sinergi Marketing
+[Pembedahan mendalam tentang ekosistem affiliate:
+- Keaktifan Kreator: Rasio kreator aktif vs total database (Bandingkan vs benchmark >25%).
+- Ketergantungan Top Creator: Seberapa dominan kreator nomor 1 terhadap total GMV affiliate?
+- Evaluasi Refund Rate & Kebocoran Komisi: Rasio refund nominal & dampaknya terhadap Net GMV].
 
-## 🚀 Langkah Aksi (Prioritas Minggu Ini)
-[5 langkah konkret, spesifik, terurut berdasarkan prioritas]
-1. ...
-2. ...
-3. ...
-4. ...
-5. ...
+## ⚠️ 4. Temuan Kritis, Risiko & Akar Masalah (Root Cause)
+[Identifikasi 3-4 masalah/kebocoran terbesar bisnis saat ini:
+- Sertakan diagnosa Akar Masalah (Root Cause Analysis).
+- Kalkulasi dampak finansial (Estimasi potensi omzet/profit yang hilang dalam Rupiah).
+- Derajat Bahaya (Kritis / Waspada)].
 
-PENTING:
-- Selalu sertakan angka konkret dari data
-- Rekomendasi HARUS actionable dan spesifik
-- Bedakan channel: Video vs Live vs SHOP vs Affiliate
-- Fokus pada ROI dan profitabilitas`;
+## 🚀 5. Blueprint & Roadmap Strategis Eksekusi 30 Hari
+[Buat rencana kerja berjenjang yang actionable per minggu]:
+- **Minggu 1 (Emergency & Quick Wins)**: Fix kebocoran iklan, alokasi budget ulang, & reaktivasi kreator.
+- **Minggu 2 (Scaling Top Performers)**: Scale-up ad spend channel efisien & dorong upsell botol.
+- **Minggu 3 (Affiliate Push & Campaign Optimization)**: Insentif kreator tier mid/nano & optimasi creative hook.
+- **Minggu 4 (Review & Profit Lock)**: Audit Margin After Cost & penyesuaian target bulan depan.
+
+ATURAN WAJIB:
+- Sertakan ANGKA KONKRET (Rp, %, Rasio, Jumlah Kreator) dari data di setiap bagian.
+- Analisis HARUS mendalam dan komprehensif, HINDARI rangkuman pendek atau jawaban umum.
+- Tulis dengan gaya konsultan manajemen kelas atas: lugas, kritis, berbobot, dan berbasis data.`;
 
 function buildExecPrompt(payload: {
   // Laporan Harian
@@ -68,90 +77,78 @@ function buildExecPrompt(payload: {
     topCreatorGMV: number;
   } | null;
   period: string;
-  targetGMV: number;
-  targetProgress: number;
 }): string {
-  const { lh, aff, period, targetGMV, targetProgress } = payload;
-  const fR = (n: number) => 'Rp' + Math.round(n).toLocaleString('id-ID');
+  const { lh, aff, period } = payload;
+  const fR = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
   const fP = (n: number) => n.toFixed(1) + '%';
+  const fX = (n: number) => n.toFixed(2) + 'x';
 
-  let prompt = `# DATA EXECUTIVE SUMMARY — ${period}\n\n`;
+  let p = `# DATA INTEGRASI BISNIS EXECUTIVE SUMMARY — ${period}\n\n`;
 
   if (lh) {
-    prompt += `## LAPORAN HARIAN — FreshVision\n`;
-    prompt += `- Total Omzet FreshVision: ${fR(lh.total_omzet)}\n`;
-    prompt += `- Total Biaya Iklan: ${fR(lh.total_biaya_iklan)}\n`;
-    prompt += `- ROAS: ${lh.roas.toFixed(2)}x\n`;
-    prompt += `- CAC Ads: ${fR(lh.rata_cac_ads)}\n`;
-    prompt += `- Margin Bersih: ${fR(lh.margin_after_cost)}\n`;
-    prompt += `- Total Closing: ${Math.round(lh.total_closing).toLocaleString('id-ID')}\n`;
-    prompt += `- Total Botol: ${Math.round(lh.total_botol).toLocaleString('id-ID')}\n`;
-    prompt += `- Avg Upsell: ${lh.rata_upsell.toFixed(1)}x\n`;
-    prompt += `- Hari Data: ${lh.hari} hari\n`;
-    if (lh.channels) {
-      prompt += `\nBreakdown Channel:\n`;
-      Object.entries(lh.channels).forEach(([ch, d]) => {
-        if (d.total_omzet > 0) {
-          prompt += `  - ${ch.toUpperCase()}: Omzet ${fR(d.total_omzet)}, Iklan ${fR(d.total_biaya_iklan)}, ROI ${d.roi.toFixed(1)}x\n`;
-        }
-      });
+    p += `## 1. DATA LAPORAN HARIAN (STORE & ADVERTISING)\n`;
+    p += `- Durasi Periode: ${lh.hari} hari\n`;
+    p += `- Total Omzet Pembukuan Store (FreshVision): ${fR(lh.total_omzet)} (Rata-rata: ${fR(lh.hari > 0 ? lh.total_omzet / lh.hari : 0)}/hari)\n`;
+    p += `- Total Biaya Iklan (Ad Spend): ${fR(lh.total_biaya_iklan)} (Rata-rata: ${fR(lh.hari > 0 ? lh.total_biaya_iklan / lh.hari : 0)}/hari)\n`;
+    p += `- ROAS (Return on Ad Spend): ${fX(lh.roas)}\n`;
+    p += `- CAC Iklan (Cost Per Acquisition): ${fR(lh.rata_cac_ads)}/closing\n`;
+    p += `- Margin Setelah Iklan (Margin After Cost): ${fR(lh.margin_after_cost)}\n`;
+    p += `- Total Closing (Transaksi): ${lh.total_closing.toLocaleString('id-ID')} order\n`;
+    p += `- Total Botol Terjual: ${lh.total_botol.toLocaleString('id-ID')} botol\n`;
+    p += `- Rata-rata Upsell: ${lh.rata_upsell.toFixed(2)} botol/closing\n`;
+    p += `- Cost Per Closing Net: ${fR(lh.cost_per_closing)}\n`;
+    if (lh.channels && Object.keys(lh.channels).length > 0) {
+      p += `- Performance Per Channel:\n`;
+      for (const [ch, d] of Object.entries(lh.channels)) {
+        p += `  * Channel [${ch}]: Omzet ${fR(d.total_omzet)} | Ad Spend ${fR(d.total_biaya_iklan)} | ROI ${fX(d.roi)}\n`;
+      }
     }
+    p += `\n`;
   } else {
-    prompt += `## LAPORAN HARIAN: Data tidak tersedia\n`;
+    p += `## 1. DATA LAPORAN HARIAN: Data belum tersedia/belum diisi untuk periode ini.\n\n`;
   }
 
   if (aff) {
-    prompt += `\n## AFFILIATE MANAGER\n`;
-    prompt += `- GMV Affiliate Total: ${fR(aff.totalGMV)}\n`;
-    prompt += `- Net GMV (setelah refund): ${fR(aff.netGMV)}\n`;
-    prompt += `- Total Refund: ${fR(aff.totalRefund)} (${fP(aff.refundRate)})\n`;
-    prompt += `- Total Pesanan: ${aff.totalOrders.toLocaleString('id-ID')}\n`;
-    const usedActive = aff.activePromoters ?? aff.activeCreators;
-    prompt += `- Kreator Aktif: ${usedActive} dari ${aff.totalCreators} (${fP(aff.totalCreators > 0 ? (usedActive / aff.totalCreators) * 100 : 0)})\n`;
-    prompt += `- Komisi Affiliate: ${fR(aff.totalCommission)}\n`;
-    prompt += `- GMV dari Video: ${fR(aff.videoGMV)}, dari LIVE: ${fR(aff.liveGMV)}\n`;
-    prompt += `- Top Kreator: ${aff.topCreator} (${fR(aff.topCreatorGMV)})\n`;
-    if (aff.momGrowth !== null) {
-      prompt += `- Growth MoM: ${aff.momGrowth >= 0 ? '+' : ''}${aff.momGrowth.toFixed(1)}%\n`;
-    }
+    p += `## 2. DATA AFFILIATE MANAGER (KREATOR & COMMUNITY)\n`;
+    p += `- Total Gross GMV Affiliate: ${fR(aff.totalGMV)}\n`;
+    p += `- Net GMV Affiliate (setelah refund): ${fR(aff.netGMV)}\n`;
+    p += `- Total Refund: ${fR(aff.totalRefund)} (Refund Rate: ${fP(aff.refundRate)})\n`;
+    p += `- Total Order Affiliate: ${aff.totalOrders.toLocaleString('id-ID')} order\n`;
+    p += `- Database Kreator: ${aff.totalCreators} kreator (Aktif Promosi: ${aff.activePromoters || aff.activeCreators} kreator / ${fP(aff.totalCreators > 0 ? ((aff.activePromoters || aff.activeCreators) / aff.totalCreators) * 100 : 0)})\n`;
+    p += `- Total Komisi Dibayarkan: ${fR(aff.totalCommission)}\n`;
+    p += `- Breakout Channel GMV: Video Shoppable = ${fR(aff.videoGMV)} | LIVE Streaming = ${fR(aff.liveGMV)}\n`;
+    if (aff.momGrowth !== null) p += `- Pertumbuhan MoM GMV: ${aff.momGrowth >= 0 ? '+' : ''}${fP(aff.momGrowth)}\n`;
+    if (aff.topCreator) p += `- Top Performer Creator: ${aff.topCreator} (GMV: ${fR(aff.topCreatorGMV)} / ${fP(aff.totalGMV > 0 ? (aff.topCreatorGMV / aff.totalGMV) * 100 : 0)} dari total affiliate)\n`;
+    p += `\n`;
   } else {
-    prompt += `\n## AFFILIATE: Data tidak tersedia\n`;
+    p += `## 2. DATA AFFILIATE MANAGER: Data belum tersedia untuk periode ini.\n\n`;
   }
 
-  if (targetGMV > 0) {
-    prompt += `\n## TARGET\n`;
-    prompt += `- Target GMV: ${fR(targetGMV)}\n`;
-    prompt += `- Progress: ${fP(targetProgress)}\n`;
-    if (aff) {
-      prompt += `- Sisa yang dibutuhkan: ${fR(Math.max(0, targetGMV - aff.totalGMV))}\n`;
-    }
-  }
-
-  prompt += `\n---\nBerikan evaluasi lengkap sesuai format yang diminta. Fokus pada langkah konkret yang bisa dilakukan minggu ini.`;
-  return prompt;
+  p += `Berdasarkan data lengkap di atas, berikan Laporan Analisis Eksekutif yang SANGAT DETAIL, MENDALAM, MATEMATIS, dan ACTIONABLE sesuai format 5 bagian di atas.`;
+  return p;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { lh, aff, period, targetGMV, targetProgress, settings } = body;
+    const { lh, aff, period, settings } = body;
 
-    const userPrompt = buildExecPrompt({ lh, aff, period, targetGMV, targetProgress });
+    const userPrompt = buildExecPrompt({ lh, aff, period: period || 'Bulan Ini' });
     const messages = [{ role: 'user' as const, content: userPrompt }];
 
-    // Resolve Ollama API key: settings > env var
     const resolvedOllamaKey = settings?.ollamaApiKey || process.env.OLLAMA_API_KEY;
+    const provider = settings?.provider || 'gemini';
+    const targetMaxTokens = Math.max(settings?.maxTokens || 3500, 3500);
 
     let content: string;
-    const provider = settings?.provider || 'gemini'; // fallback ke gemini jika settings kosong
 
     switch (provider) {
       case 'gemini':
         content = await callGemini(
           SYSTEM_PROMPT, messages,
-          settings?.geminiModel || 'gemini-1.5-flash',
+          settings?.geminiModel || 'gemini-2.5-flash',
           settings?.temperature ?? 0.5,
-          Math.max(settings?.maxTokens || 2000, 2000),
+          targetMaxTokens,
           settings?.geminiApiKey
         );
         break;
@@ -163,14 +160,12 @@ export async function POST(req: NextRequest) {
           settings?.openaiBaseUrl || 'https://api.openai.com/v1',
           settings?.openaiApiKey,
           settings?.temperature ?? 0.5,
-          Math.max(settings?.maxTokens || 2000, 2000)
+          targetMaxTokens
         );
         break;
 
       case 'ollama': {
         const baseUrl = settings?.ollamaBaseUrl || 'http://localhost:11434';
-        
-        // Vercel serverless functions cannot reach localhost
         if (process.env.VERCEL && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1'))) {
           throw new Error('Vercel tidak dapat mengakses Ollama di localhost. Harap gunakan IP publik (misal Ngrok) atau gunakan provider Gemini.');
         }
@@ -180,7 +175,7 @@ export async function POST(req: NextRequest) {
           settings?.ollamaModel || 'llama3.2',
           baseUrl,
           settings?.temperature ?? 0.5,
-          Math.max(settings?.maxTokens || 2000, 2000),
+          targetMaxTokens,
           resolvedOllamaKey
         );
         break;
@@ -191,17 +186,16 @@ export async function POST(req: NextRequest) {
           SYSTEM_PROMPT, messages,
           settings?.openrouterModel || 'google/gemini-flash-1.5',
           settings?.temperature ?? 0.5,
-          Math.max(settings?.maxTokens || 2000, 2000),
+          targetMaxTokens,
           settings?.openrouterApiKey
         );
         break;
 
       default:
-        // Last resort: gunakan Gemini jika GEMINI_API_KEY ada
-        if (process.env.GEMINI_API_KEY) {
-          content = await callGemini(SYSTEM_PROMPT, messages, 'gemini-1.5-flash', 0.5, 2000, settings?.geminiApiKey);
+        if (process.env.GEMINI_API_KEY || settings?.geminiApiKey) {
+          content = await callGemini(SYSTEM_PROMPT, messages, 'gemini-2.5-flash', 0.5, targetMaxTokens, settings?.geminiApiKey);
         } else {
-          return NextResponse.json({ error: `Provider '${provider}' tidak dikenal. Konfigurasikan AI di menu AI Analyst.` }, { status: 400 });
+          return NextResponse.json({ error: `Provider '${provider}' tidak dikenal. Konfigurasikan AI di Pengaturan AI.` }, { status: 400 });
         }
     }
 

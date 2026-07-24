@@ -454,7 +454,7 @@ export function AISettings({ onClose }: { onClose: () => void }) {
               <span className="text-xs font-normal bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full">{settings.maxTokens}</span>
             </label>
             <input
-              type="range" min="200" max="2000" step="100"
+              type="range" min="500" max="4000" step="250"
               value={settings.maxTokens}
               onChange={e => updateSettings({ maxTokens: parseInt(e.target.value) })}
               className="w-full mt-1"

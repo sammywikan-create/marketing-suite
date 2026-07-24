@@ -4,31 +4,44 @@ import { callOpenAI } from '@/lib/ai/providers/openai';
 import { callOllama } from '@/lib/ai/providers/ollama';
 import { callOpenRouter } from '@/lib/ai/providers/openrouter';
 
-// ─── System Prompt khusus Affiliate Manager ───────────────
-const SYSTEM_PROMPT = `Anda adalah analis affiliate marketing senior yang menganalisis performa kreator TikTok Shop & Tokopedia.
-Tugas Anda: berikan insight yang TAJAM, SPESIFIK, dan ACTIONABLE dalam bahasa Indonesia natural.
+// ─── System Prompt khusus Affiliate Manager (Deep & Comprehensive) ───
+const SYSTEM_PROMPT = `Anda adalah Senior Affiliate Marketing Strategist yang menganalisis performa kreator TikTok Shop & Tokopedia.
+Tugas Anda: Sajikan Laporan Audit & Strategi Kreator yang SANGAT DETAIL, SPESIFIK NAMA KREATOR, MATEMATIS, dan STRATEGIS (Bahasa Indonesia).
 
-Format output (gunakan markdown):
-## 📊 Ringkasan Performa Kreator
-[Overview: total kreator aktif, total GMV, refund rate keseluruhan, highlights penting]
+Format Output Wajib (Gunakan Markdown Kaya Format):
 
-## 🏆 Kreator Top & Analisis Tier
-[Identifikasi kreator terbaik, distribusi tier (Nano/Micro/Mid/Macro/Mega), rekomendasi fokus]
+## 👥 1. Audit Portofolio Kreator & Status Ekosistem
+[Analisis mendalam 2-3 paragraf mengenai total database kreator, jumlah kreator aktif promosi, ratio keaktifan vs benchmark 25%, total Gross GMV vs Net GMV, serta efisiensi komisi].
 
-## ⚠️ Kreator yang Perlu Perhatian
-[Kreator dengan refund tinggi, dormant, score rendah — berikan nama spesifik dan alasan]
+## 🏆 2. Pembedahan Tier & Top Performer Analysis
+[Identifikasi dan analisis mendalam:
+- Sebutkan NAMA-NAMA KREATOR TOP secara SPESIFIK dengan total GMV, jumlah pesanan, dan persentase kontribusinya.
+- Breakdown Performa Per Tier (Nano, Micro, Mid, Macro, Mega): Mana tier yang menghasilkan ROI komisi tertinggi?
+- Pola Konten Pemenang: Bedahkan apakah Shoppable Video atau LIVE Streaming yang menjadi penggerak utama GMV].
 
-## 📈 Peluang & Potensi
-[Kreator "needs-push" yang bisa dioptimalkan, kreator dengan GMV/Video tinggi tapi score rendah]
+## ⚠️ 3. Audit Risk & Inefisiensi: Refund Rate & Dormant Creators
+[Analisis mendalam terhadap kelemahan ekosistem:
+- Kreator dengan Refund Rate abnormal (>10%): Sebutkan nama kreator dan nominal kerugian.
+- Diagnosa Kreator Pasif (Dormant): Berapa jumlah kreator potensial yang tidak mengunggah konten bulan ini?
+- Dampak Kebocoran Komisi & Retur Barang].
 
-## 💡 Rekomendasi Aksi (minggu ini)
-[3-5 rekomendasi konkret: creator outreach, insentif, penanganan refund, dsb]
+## 📈 4. Formulasi Insentif & Skema Komisi Berjenjang
+[Rekomendasi taktis komisi & campaign insentif]:
+- Skema komisi progresif per tier untuk memacu posting video/LIVE.
+- Taktik pengiriman sampel produk gratis (Free Samples) berbasis historis performa.
+- Program challenge/kontes affiliate berhadiah bonus tunai.
 
-PENTING:
-- Sebutkan nama kreator SPESIFIK dari data yang diberikan
-- Selalu sertakan angka konkret (GMV, refund rate, score, dll)
-- Bedakan rekomendasi untuk TikTok vs Tokopedia jika ada data keduanya
-- Fokus pada ROI: prioritaskan kreator dengan potensi terbesar`;
+## 📝 5. Blueprint Action Plan Affiliate (14 Hari Ke Depan)
+[5 langkah eksekusi konkret terurut prioritas tinggi]:
+1. **Outreach & Reaktivasi**: Rencana mengontak ulang kreator dormant.
+2. **Push Top 10 Creators**: Penawaran eksklusif untuk kreator penyumbang GMV terbesar.
+3. **Handling Refund Abnormal**: Tindakan penanganan terhadap kontroversi atau miskomunikasi deskripsi produk.
+4. **Program Rekrutmen Kreator Baru**: Strategi menambah 20-50 kreator aktif baru per minggu.
+
+ATURAN WAJIB:
+- SEBUTKAN NAMA KREATOR SPESIFIK dari data (seperti nama akun / username kreator).
+- Sertakan ANGKA KONKRET (Rp, %, Jumlah Order, Tier) di setiap bagian.
+- Analisis HARUS mendalam, panjang, dan komprehensif (HINDARI rangkuman pendek atau jawaban umum).`;
 
 // ─── Build prompt dari data affiliate ─────────────────────
 function buildAffiliatePrompt(payload: {
@@ -42,63 +55,64 @@ function buildAffiliatePrompt(payload: {
 }): string {
   const { summary, topCreators, actionItems, tierBreakdown, period, platform, prevSummary } = payload;
 
-  const fR = (n: number) => 'Rp' + Math.round(n).toLocaleString('id-ID');
+  const fR = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
   const fP = (n: number) => n.toFixed(1) + '%';
 
-  let prompt = `# DATA AFFILIATE MANAGER — ${period} (${platform.toUpperCase()})\n\n`;
+  let prompt = `# DATA PERFORMA AFFILIATE MANAGER — ${period} (${platform.toUpperCase()})\n\n`;
 
   // Summary
-  prompt += `## Ringkasan Keseluruhan\n`;
-  prompt += `- Total Kreator: ${summary.totalCreators || 0} (Aktif: ${(summary.activePromoters ?? summary.activeCreators) || 0}, Tidak Aktif: ${summary.inactiveCreators || 0})\n`;
-  prompt += `- Total GMV: ${fR(Number(summary.totalGMV || 0))}\n`;
-  prompt += `- Total Order: ${Number(summary.totalOrders || 0).toLocaleString('id-ID')}\n`;
-  prompt += `- Total Komisi: ${fR(Number(summary.totalCommission || 0))}\n`;
-  prompt += `- Refund Rate: ${fP(Number(summary.refundRate || 0))}\n`;
-  prompt += `- Avg GMV per Kreator Aktif: ${fR(Number(summary.avgGMVPerCreator || 0))}\n`;
-  prompt += `- Top Kreator: ${summary.topCreator || 'N/A'} (${fR(Number(summary.topCreatorGMV || 0))})\n`;
-  prompt += `- Active Rate: ${fP(Number(summary.activeRate || 0))}\n`;
+  prompt += `## 1. IKHTISAR PERFORMA KESELURUHAN\n`;
+  prompt += `- Gross GMV Affiliate: ${fR(Number(summary.totalGMV || 0))}\n`;
+  prompt += `- Net GMV Affiliate: ${fR(Number(summary.netGMV || 0))}\n`;
+  prompt += `- Total Refund: ${fR(Number(summary.totalRefund || 0))} (Refund Rate: ${fP(Number(summary.refundRate || 0))})\n`;
+  prompt += `- Total Pesanan (Orders): ${Number(summary.totalOrders || 0).toLocaleString('id-ID')} pesanan\n`;
+  prompt += `- Database Kreator: ${summary.totalCreators || 0} kreator (Aktif Promosi: ${summary.activePromoters || summary.activeCreators || 0} kreator / ${fP(Number(summary.totalCreators || 0) > 0 ? (Number(summary.activePromoters || summary.activeCreators || 0) / Number(summary.totalCreators)) * 100 : 0)})\n`;
+  prompt += `- Total Komisi Dibayarkan: ${fR(Number(summary.totalCommission || 0))}\n`;
+  prompt += `- Breakout Channel: Video GMV = ${fR(Number(summary.videoGMV || 0))} | LIVE GMV = ${fR(Number(summary.liveGMV || 0))}\n`;
+  if (summary.momGrowth !== undefined && summary.momGrowth !== null) {
+    prompt += `- Pertumbuhan MoM GMV: ${Number(summary.momGrowth) >= 0 ? '+' : ''}${fP(Number(summary.momGrowth))}\n`;
+  }
+  prompt += `\n`;
 
-  // Tier breakdown
-  if (Object.keys(tierBreakdown).length > 0) {
-    prompt += `\n## Distribusi Tier Kreator\n`;
-    Object.entries(tierBreakdown).forEach(([tier, count]) => {
-      if (count > 0) prompt += `- ${tier}: ${count} kreator\n`;
-    });
+  // Tier Breakdown
+  if (tierBreakdown && Object.keys(tierBreakdown).length > 0) {
+    prompt += `## 2. DISTRIBUSI TIER KREATOR\n`;
+    for (const [tier, count] of Object.entries(tierBreakdown)) {
+      prompt += `- Tier [${tier.toUpperCase()}]: ${count} kreator\n`;
+    }
+    prompt += `\n`;
   }
 
-  // Top Creators (max 10)
-  if (topCreators.length > 0) {
-    prompt += `\n## Top ${Math.min(topCreators.length, 10)} Kreator berdasarkan GMV\n`;
-    topCreators.slice(0, 10).forEach((c, i) => {
-      prompt += `${i + 1}. **${c.creatorUsername}** (${c.creatorTier})\n`;
-      prompt += `   - GMV: ${fR(Number(c.affiliateGMV || 0))}, Orders: ${c.affiliateOrders || 0}, Videos: ${c.affiliateShoppableVideos || 0}\n`;
-      prompt += `   - Refund: ${fP(Number(c.refundRate || 0))}, Score: ${c.creatorScore || 0}/100, Upsell followers: ${Number(c.affiliateFollowers || 0).toLocaleString()}\n`;
+  // Top Creators
+  if (topCreators && topCreators.length > 0) {
+    prompt += `## 3. TOP KREATOR PENYUMBANG GMV TERBESAR (DETAIL NAMA & ANGKA)\n`;
+    topCreators.slice(0, 15).forEach((c, idx) => {
+      prompt += `${idx + 1}. **${c.name || c.username || 'Kreator ' + (idx + 1)}** (Tier: ${c.tier || 'N/A'})\n`;
+      prompt += `   - Gross GMV: ${fR(Number(c.gmv || 0))} | Net GMV: ${fR(Number(c.netGmv || c.gmv || 0))}\n`;
+      prompt += `   - Total Pesanan: ${Number(c.orders || 0)} order | Refund Rate: ${fP(Number(c.refundRate || 0))}\n`;
+      prompt += `   - Komisi: ${fR(Number(c.commission || 0))} | Score Performansi: ${c.score || 'N/A'}\n`;
     });
+    prompt += `\n`;
   }
 
-  // Action Items
-  if (actionItems.length > 0) {
-    prompt += `\n## Kreator yang Butuh Perhatian (Action Items)\n`;
-    actionItems.slice(0, 8).forEach((item) => {
-      prompt += `- **[${String(item.severity || '').toUpperCase()}]** ${item.creator}: ${item.reason}\n`;
+  // Action Items / Needing Attention
+  if (actionItems && actionItems.length > 0) {
+    prompt += `## 4. KREATOR YANG PERLU PERHATIAN KHUSUS (HIGH REFUND / NEEDS PUSH)\n`;
+    actionItems.slice(0, 10).forEach((item, idx) => {
+      prompt += `${idx + 1}. **${item.name || item.username}**: Kategori [${item.category || 'Attention'}], GMV: ${fR(Number(item.gmv || 0))}, Refund: ${fP(Number(item.refundRate || 0))}, Alasan: ${item.reason || 'Perlu evaluasi'}\n`;
     });
+    prompt += `\n`;
   }
 
-  // Previous period comparison
+  // Prev Summary Comparison
   if (prevSummary) {
-    prompt += `\n## Perbandingan vs Periode Sebelumnya\n`;
-    const delta = (curr: number, prev: number) =>
-      prev > 0 ? ` (Δ ${(((curr - prev) / prev) * 100).toFixed(1)}%)` : '';
-    const curGMV = Number(summary.totalGMV || 0);
-    const prevGMV = Number(prevSummary.totalGMV || 0);
-    const curActive = Number((summary.activePromoters ?? summary.activeCreators) || 0);
-    const prevActive = Number((prevSummary.activePromoters ?? prevSummary.activeCreators) || 0);
-    prompt += `- GMV: ${fR(curGMV)} vs ${fR(prevGMV)}${delta(curGMV, prevGMV)}\n`;
-    prompt += `- Kreator Aktif: ${curActive} vs ${prevActive}${delta(curActive, prevActive)}\n`;
-    prompt += `- Refund Rate: ${fP(Number(summary.refundRate || 0))} vs ${fP(Number(prevSummary.refundRate || 0))}\n`;
+    prompt += `## 5. DENGAN PERBANDINGAN PERIODE SEBELUMNYA\n`;
+    prompt += `- GMV Periode Lalu: ${fR(Number(prevSummary.totalGMV || 0))}\n`;
+    prompt += `- Refund Rate Periode Lalu: ${fP(Number(prevSummary.refundRate || 0))}\n`;
+    prompt += `- Kreator Aktif Periode Lalu: ${prevSummary.activeCreators || 0}\n\n`;
   }
 
-  prompt += `\n---\nBerikan analisis sesuai format yang diminta. Sebutkan nama kreator spesifik. Fokus pada aksi yang bisa dilakukan minggu ini.`;
+  prompt += `Berdasarkan data lengkap di atas, buatkan Laporan Audit & Strategi Kreator yang SANGAT DETAIL, SPESIFIK NAMA KREATOR, MATEMATIS, dan STRATEGIS sesuai format 5 bagian di atas.`;
   return prompt;
 }
 
@@ -107,71 +121,73 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { summary, topCreators, actionItems, tierBreakdown, period, platform, prevSummary, settings } = body;
 
-    if (!summary || !settings) {
-      return NextResponse.json({ error: 'Missing summary or settings' }, { status: 400 });
+    if (!summary) {
+      return NextResponse.json({ error: 'Data ringkasan affiliate tidak tersedia' }, { status: 400 });
     }
 
     const userPrompt = buildAffiliatePrompt({
-      summary: summary || {},
+      summary,
       topCreators: topCreators || [],
       actionItems: actionItems || [],
       tierBreakdown: tierBreakdown || {},
-      period: period || 'periode aktif',
+      period: period || 'Bulan Ini',
       platform: platform || 'tiktok',
       prevSummary,
     });
 
-    console.log('[Affiliate-Insights] Provider:', settings.provider, '| prompt length:', userPrompt.length);
     const messages = [{ role: 'user' as const, content: userPrompt }];
 
+    const targetMaxTokens = Math.max(settings?.maxTokens || 3500, 3500);
+
     let content: string;
-    switch (settings.provider) {
+    switch (settings?.provider || 'gemini') {
       case 'gemini':
         content = await callGemini(
           SYSTEM_PROMPT, messages,
-          settings.geminiModel || 'gemini-1.5-flash',
-          settings.temperature ?? 0.5,
-          settings.maxTokens ?? 1500,
-          settings.geminiApiKey,
+          settings?.geminiModel || 'gemini-2.5-flash',
+          settings?.temperature ?? 0.5,
+          targetMaxTokens,
+          settings?.geminiApiKey,
         );
         break;
       case 'openai':
         content = await callOpenAI(
           SYSTEM_PROMPT, messages,
-          settings.openaiModel || 'gpt-4o-mini',
-          settings.openaiBaseUrl || 'https://api.openai.com/v1',
-          settings.openaiApiKey,
-          settings.temperature ?? 0.5,
-          settings.maxTokens ?? 1500,
+          settings?.openaiModel || 'gpt-4o-mini',
+          settings?.openaiBaseUrl || 'https://api.openai.com/v1',
+          settings?.openaiApiKey,
+          settings?.temperature ?? 0.5,
+          targetMaxTokens,
         );
         break;
       case 'ollama': {
-        const baseUrl = settings.ollamaBaseUrl || 'http://localhost:11434';
+        const baseUrl = settings?.ollamaBaseUrl || 'http://localhost:11434';
         if (process.env.VERCEL && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1'))) {
           throw new Error('Vercel tidak dapat mengakses Ollama di localhost. Harap gunakan IP publik (misal Ngrok) atau gunakan provider Gemini.');
         }
 
         content = await callOllama(
           SYSTEM_PROMPT, messages,
-          settings.ollamaModel || 'llama3.2',
+          settings?.ollamaModel || 'llama3.2',
           baseUrl,
-          settings.temperature ?? 0.5,
-          Math.max(settings.maxTokens || 2000, 2000),
-          settings.ollamaApiKey,
+          settings?.temperature ?? 0.5,
+          targetMaxTokens,
+          settings?.ollamaApiKey,
         );
         break;
       }
       case 'openrouter':
         content = await callOpenRouter(
           SYSTEM_PROMPT, messages,
-          settings.openrouterModel || 'google/gemini-flash-1.5',
-          settings.temperature ?? 0.5,
-          settings.maxTokens ?? 1500,
-          settings.openrouterApiKey,
+          settings?.openrouterModel || 'google/gemini-flash-1.5',
+          settings?.temperature ?? 0.5,
+          targetMaxTokens,
+          settings?.openrouterApiKey,
         );
         break;
       default:
-        return NextResponse.json({ error: `Provider '${settings.provider}' tidak dikenal` }, { status: 400 });
+        content = await callGemini(SYSTEM_PROMPT, messages, 'gemini-2.5-flash', 0.5, targetMaxTokens, settings?.geminiApiKey);
+        break;
     }
 
     return NextResponse.json({ content });

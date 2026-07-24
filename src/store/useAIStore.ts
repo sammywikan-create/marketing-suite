@@ -55,7 +55,7 @@ export const useAIStore = create<AIStore>()(
         openrouterModel: 'google/gemini-flash-1.5',
         openrouterApiKey: '',
         temperature: 0.7,
-        maxTokens: 600,
+        maxTokens: 3000,
       },
       chatHistory: {},
       isOpen: false,
